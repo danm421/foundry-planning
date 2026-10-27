@@ -186,10 +186,12 @@ export async function updateRevocableTrustForClient(
 
 /** Resolve revocable-trust names to this client's trust ids by exact name,
  *  creating (through the audited create path) any that don't exist yet. Runs on
- *  `tx` so a Save to base creates the trust and tags the account together. */
+ *  `tx` so a Save to base creates the trust and tags the account together.
+ *  `crossFirmMeta` marks a creation made under shared access, as the caller's
+ *  own audit row is marked. */
 export async function findOrCreateRevocableTrustIds(
   tx: Tx,
-  args: { clientId: string; firmId: string },
+  args: { clientId: string; firmId: string; crossFirmMeta?: Record<string, unknown> },
   names: readonly string[],
 ): Promise<Map<string, string>> {
   const ids = new Map<string, string>();

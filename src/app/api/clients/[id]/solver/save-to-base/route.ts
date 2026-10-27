@@ -538,7 +538,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     await db.transaction(async (tx) => {
       const trustIdByName = await findOrCreateRevocableTrustIds(
         tx,
-        { clientId, firmId },
+        { clientId, firmId, crossFirmMeta: crossFirmAuditMeta({ access }, callerOrg) },
         [...new Set([...trustTagChanges.values()].filter((n): n is string => n !== null))],
       );
       const trustIdFor = (accountId: string) => {

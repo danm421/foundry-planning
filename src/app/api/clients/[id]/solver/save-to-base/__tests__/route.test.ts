@@ -123,6 +123,7 @@ import {
 } from "@/lib/db-scoping";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { recordAudit } from "@/lib/audit";
+import { requireClientEditAccess } from "@/lib/clients/authz";
 import { GOAL_FUNDING_529_ERROR } from "@/lib/goals";
 import { partitionBaseSavableMutations } from "@/lib/solver/mutations-to-base-updates";
 import type { SolverMutation } from "@/lib/solver/types";
@@ -1352,6 +1353,21 @@ describe("save-to-base — held editor changes", () => {
       expect(trustInserts()[0].values).toMatchObject({ clientId: CLIENT_ID, name: "Rivera Family Trust" });
       // The mock echoes the inserted row with a generated id.
       expect(accountUpdate().set).toMatchObject({ revocableTrustId: "generated-account-id" });
+    });
+
+    it("marks the trust-creation audit row as a shared-access write", async () => {
+      vi.mocked(requireClientEditAccess).mockResolvedValueOnce({ firmId: FIRM_ID, access: "shared" } as never);
+      vi.mocked(recordAudit).mockClear();
+      withBase();
+      revocableTrustRows = [];
+      const res = await save("Rivera Family Trust");
+      expect(res.status).toBe(200);
+      const created = vi.mocked(recordAudit).mock.calls.find(([a]) => a.action === "revocable_trust.create");
+      expect(created?.[0].metadata).toMatchObject({
+        name: "Rivera Family Trust",
+        crossFirmActor: true,
+        actorFirmId: FIRM_ID,
+      });
     });
 
     it("clears the trust link when the tag is removed", async () => {
