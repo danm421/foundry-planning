@@ -180,9 +180,12 @@ export async function runWorksheetTurn(args: WorksheetTurnArgs): Promise<Workshe
   // stored; its files are marked composed when it commits.
   let human: string;
   const composed: TurnOp[] = [];
+  /** The documents this compose folds in. */
+  let composing: string[] = [];
   if (mode === "compose") {
     const request = composeRequest(start, ctx.files);
     if (request.fileIds.length === 0) return noReply(start);
+    composing = request.fileIds;
     composed.push({ layer: "ws", op: { op: "markComposed", fileIds: request.fileIds } });
     if (request.message === null) {
       // The worksheet already shows every row they read: nothing for the model to do.
@@ -295,10 +298,13 @@ export async function runWorksheetTurn(args: WorksheetTurnArgs): Promise<Workshe
   let committed = false;
   const written = await updateFactFinder(scope, (fresh) => {
     // The ops were made against `start`. If what a staging op touches changed since, or any op
-    // no longer applies, none of them does: a value typed meanwhile is never overwritten.
-    const afterOps = rebaseOps(stagingOps, start, fresh, opContext).kept.length === stagingOps.length ? replay(fresh, replayed, opContext) : null;
+    // no longer applies, none of them does: a value typed meanwhile is never overwritten. Nor
+    // does a compose whose documents another compose (a reload's, another tab's) folded in first.
+    const composedMeanwhile = composing.some((fileId) => fresh.worksheet.composedFileIds.includes(fileId));
+    const rebased = !composedMeanwhile && rebaseOps(stagingOps, start, fresh, opContext).kept.length === stagingOps.length;
+    const afterOps = rebased ? replay(fresh, replayed, opContext) : null;
     committed = afterOps !== null;
-    // A compose nobody asked for leaves nothing behind: its documents stay owed, and the screen composes them again.
+    // A compose nobody asked for leaves nothing behind: its documents not composed yet stay owed, and the screen composes them again.
     if (!afterOps) {
       return mode === "compose" ? fresh : { ...fresh, transcript: [...fresh.transcript, ...userTurns, assistant(CHANGED_MEANWHILE)] };
     }

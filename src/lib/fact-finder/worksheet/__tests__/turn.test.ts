@@ -280,6 +280,36 @@ describe("runWorksheetTurn — compose", () => {
     expect(result).toMatchObject({ turnId: null, ops: {} });
   });
 
+  it("a second compose of the same document, started before the first committed, writes nothing — its rows stay once", async () => {
+    // A reload mid-compose: the screen saw the pay stub still owed and composed it again while the first compose ran.
+    store.files = [file("f2", "paystub.pdf")];
+    const owed = fixture({ readings: { f2: done("freeform") } });
+    store.state = owed;
+    const paychecks = () => scripted(callTool("create_table", { title: "Paychecks", columns: [{ header: "Employer" }] }), new AIMessage("Added a Paychecks table."));
+    await compose(paychecks().model);
+    const first = store.state!;
+    vi.mocked(loadFactFinder).mockResolvedValueOnce(owed);
+    const result = await compose(paychecks().model);
+
+    expect(store.state).toBe(first); // tables, transcript and Undo as the first compose left them
+    expect(first.worksheet.tables.map((t) => t.title)).toEqual(["Accounts", "Paychecks"]);
+    expect(lines()).toEqual(["tool", "assistant: Added a Paychecks table."]);
+    expect(result).toMatchObject({ factFinder: first, turnId: null, ops: {} }); // the screen shows the first compose's rows
+  });
+
+  it("a compose whose documents another compose partly folded in writes nothing; the rest stays owed", async () => {
+    store.files = [file("f2", "paystub.pdf"), file("f3", "notes.docx")];
+    const owed = fixture({ readings: { f2: done("freeform"), f3: done("freeform") } });
+    store.state = { ...owed, worksheet: { ...owed.worksheet, composedFileIds: ["f2"] } }; // f2's compose committed meanwhile
+    const before = store.state;
+    vi.mocked(loadFactFinder).mockResolvedValueOnce(owed);
+    const fake = scripted(callTool("create_table", { title: "Paychecks", columns: [{ header: "Employer" }] }), new AIMessage("Added a Paychecks table."));
+    await compose(fake.model);
+
+    expect(store.state).toBe(before);
+    expect(store.state!.worksheet.composedFileIds).toEqual(["f2"]); // f3 is still owed: the screen composes it again
+  });
+
   it("undoing a compose reply takes back its table and keeps its documents composed", async () => {
     // The first compose: the worksheet is still derived from staging.
     store.files = [file("f1", "schwab-june.pdf"), file("f2", "notes.docx")];
