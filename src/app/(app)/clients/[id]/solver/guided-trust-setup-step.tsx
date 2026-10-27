@@ -60,7 +60,7 @@ export function GuidedTrustSetupStep({ answers, ctx, onChange }: Props) {
         grantor={answers.grantor}
         onGrantorChange={setGrantor}
         value={answers.splitInterest}
-        onChange={(next) => setSplit(next)}
+        onChange={setSplit}
       />
       {subType === "clt" ? (
         <div className="mt-3">

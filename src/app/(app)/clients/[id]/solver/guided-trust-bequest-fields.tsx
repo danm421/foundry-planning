@@ -11,7 +11,7 @@ import { applyMutations } from "@/lib/solver/apply-mutations";
 import type { FundingItem } from "@/lib/solver/guided-trust";
 import { buildBequestMutations, willConflictNote } from "@/lib/solver/guided-trust-bequests";
 import type { GuidedTrustContext } from "@/lib/solver/guided-trust";
-import { Callout, focusRing } from "./guided-trust-ui";
+import { AddButton, Callout, focusRing } from "./guided-trust-ui";
 
 type BequestItem = Extract<FundingItem, { kind: "bequest" }>;
 type From = BequestItem["from"];
@@ -165,16 +165,12 @@ export function GuidedTrustBequestFields({ trust, ctx, existing, onAdd }: Props)
         />
       ) : null}
       {note ? <Callout>{note}</Callout> : null}
-      <div className="mt-2.5 flex justify-end">
-        <button
-          type="button"
-          disabled={!item}
-          onClick={() => item && onAdd(item)}
-          className={`rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-[12.5px] font-medium text-accent-on disabled:opacity-40 ${focusRing}`}
-        >
-          Add bequest
-        </button>
-      </div>
+      <AddButton
+        disabled={!item}
+        onClick={() => item && onAdd(item)}
+      >
+        Add bequest
+      </AddButton>
     </div>
   );
 }

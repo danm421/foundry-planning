@@ -6,11 +6,10 @@
 
 import { useMemo, useState } from "react";
 import type { Account, ClientData, EntitySummary } from "@/engine/types";
-import { crummeyBeneficiaryCount } from "@/lib/gifts/crummey-count";
 import { guidedKindOf, guidedTrustContext, type FundingItem } from "@/lib/solver/guided-trust";
-import { buildFundingMutations, fundingItemLabel } from "@/lib/solver/guided-trust-batch";
+import { buildFundingMutations, fundingItemLabel, fundingTrustOf } from "@/lib/solver/guided-trust-batch";
 import type { SolverMutation } from "@/lib/solver/types";
-import { GuidedTrustFundingStep, type FundingTrust } from "./guided-trust-funding-step";
+import { GuidedTrustFundingStep } from "./guided-trust-funding-step";
 import { focusRing } from "./guided-trust-ui";
 
 interface Props {
@@ -25,18 +24,10 @@ export function GuidedTrustFundingPane({ trust, tree, annualExclusionByYear, onC
   const [items, setItems] = useState<FundingItem[]>([]);
   const ctx = useMemo(() => guidedTrustContext(tree, annualExclusionByYear), [tree, annualExclusionByYear]);
 
-  const grantor = trust.grantor ?? "client";
-  const fundingTrust: FundingTrust = {
-    id: trust.id,
-    name: trust.name?.trim() || "Trust",
-    grantor,
-    crummeyPowers: trust.crummeyPowers ?? false,
-    kind: guidedKindOf(trust),
-    crummeyHolders: crummeyBeneficiaryCount(trust, {
-      donor: grantor,
-      charityIds: new Set((tree.externalBeneficiaries ?? []).filter((b) => b.kind === "charity").map((b) => b.id)),
-    }),
-  };
+  const fundingTrust = useMemo(
+    () => fundingTrustOf(trust, tree, trust.name?.trim() || "Trust", guidedKindOf(trust)),
+    [trust, tree],
+  );
 
   function add() {
     const { mutations, fundedOriginals } = buildFundingMutations(items, trust, tree);

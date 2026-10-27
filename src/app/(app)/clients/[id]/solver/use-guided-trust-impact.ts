@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ClientData, ProjectionResult } from "@/engine";
 import type { SolverMutation, SolverSource } from "@/lib/solver/types";
 import { applyMutations } from "@/lib/solver/apply-mutations";
@@ -46,10 +46,17 @@ async function project(
 
 /** Runs the Solver's current changes with and without the draft trust batch,
  *  for the Review step's estimated estate-tax / heirs impact. Re-runs only
- *  when the batch's content changes, not its array identity. */
+ *  when the batch's content changes, not its array identity. The "before"
+ *  projection depends only on the Solver's own changes, so it is fetched once
+ *  per set of changes and reused while the batch is edited. */
 export function useGuidedTrustImpact(args: Args): State {
   const { clientId, source, enabled } = args;
-  const batchKey = JSON.stringify(args.batch);
+  const batchKey = useMemo(() => JSON.stringify(args.batch), [args.batch]);
+  const beforeKey = useMemo(
+    () => JSON.stringify({ clientId, source, mutations: args.mutations }),
+    [clientId, source, args.mutations],
+  );
+  const beforeCache = useRef<{ key: string; projection: ProjectionResult } | null>(null);
   // Latest inputs, read inside the effect so only the content key re-triggers it.
   const latest = useRef(args);
   useEffect(() => {
@@ -65,11 +72,13 @@ export function useGuidedTrustImpact(args: Args): State {
     const controller = new AbortController();
     (async () => {
       try {
+        const cached = beforeCache.current?.key === beforeKey ? beforeCache.current.projection : null;
         const [beforeProj, afterProj] = await Promise.all([
-          project(clientId, source, mutations, controller.signal),
+          cached ?? project(clientId, source, mutations, controller.signal),
           project(clientId, source, [...mutations, ...batch], controller.signal),
         ]);
         if (controller.signal.aborted) return;
+        beforeCache.current = { key: beforeKey, projection: beforeProj };
         setResult({
           key: batchKey,
           ok: true,
@@ -81,7 +90,7 @@ export function useGuidedTrustImpact(args: Args): State {
       }
     })();
     return () => controller.abort();
-  }, [enabled, clientId, source, batchKey]);
+  }, [enabled, clientId, source, batchKey, beforeKey]);
 
   if (!enabled) return IDLE;
   if (!result || result.key !== batchKey) return { status: "loading", before: null, after: null };

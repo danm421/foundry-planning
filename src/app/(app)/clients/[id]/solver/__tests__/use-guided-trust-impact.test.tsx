@@ -71,4 +71,16 @@ describe("useGuidedTrustImpact", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(result.current.status).toBe("ready");
   });
+
+  it("re-posts only the 'after' request when the batch changes", async () => {
+    const { result, rerender } = setup([mut("x")]);
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    rerender({ batch: [mut("x"), mut("y")], enabled: true });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    // The third call is current + batch (1 + 2 mutations); "before" was reused.
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body).mutations).toHaveLength(3);
+    expect(result.current.before?.taxesAndCosts).toBe(2);
+  });
 });

@@ -6,7 +6,6 @@
 
 import { useMemo, useRef, useState } from "react";
 import type { ClientData } from "@/engine/types";
-import { crummeyBeneficiaryCount } from "@/lib/gifts/crummey-count";
 import {
   defaultTrustName,
   guidedTrustContext,
@@ -19,6 +18,7 @@ import {
 import {
   buildGuidedTrustBatch,
   buildGuidedTrustEntity,
+  fundingTrustOf,
   type GuidedTrustBatch,
 } from "@/lib/solver/guided-trust-batch";
 import type { SolverMutation, SolverSource } from "@/lib/solver/types";
@@ -68,6 +68,13 @@ export function GuidedTrustWizard({
   const [editingFromReview, setEditingFromReview] = useState(false);
 
   const ctx = useMemo(() => guidedTrustContext(tree, annualExclusionByYear), [tree, annualExclusionByYear]);
+  const fundingTrust = useMemo(
+    () =>
+      step === "funding"
+        ? fundingTrustOf(buildGuidedTrustEntity(answers), tree, answers.name || defaultTrustName(answers, tree), answers.kind)
+        : null,
+    [step, answers, tree],
+  );
   const steps = stepsFor(answers.kind);
   const index = Math.max(0, steps.indexOf(step));
   const stepHint = stepBlocker(step, answers, ctx);
@@ -164,27 +171,14 @@ export function GuidedTrustWizard({
       case "powers":
         return <GuidedTrustPowersStep answers={answers} ctx={ctx} onChange={change} />;
       case "funding": {
-        const charityIds = new Set(
-          (tree.externalBeneficiaries ?? []).filter((b) => b.kind === "charity").map((b) => b.id),
-        );
-        return (
+        return fundingTrust ? (
           <GuidedTrustFundingStep
-            trust={{
-              id: entityId,
-              name: answers.name || defaultTrustName(answers, tree),
-              grantor: answers.grantor,
-              crummeyPowers: answers.crummeyPowers,
-              kind: answers.kind,
-              crummeyHolders: crummeyBeneficiaryCount(buildGuidedTrustEntity(answers), {
-                donor: answers.grantor,
-                charityIds,
-              }),
-            }}
+            trust={fundingTrust}
             items={answers.funding}
             onItemsChange={(funding) => change({ ...answers, funding })}
             ctx={ctx}
           />
-        );
+        ) : null;
       }
       case "accounts":
         return <GuidedTrustAccountsStep answers={answers} ctx={ctx} onChange={change} />;

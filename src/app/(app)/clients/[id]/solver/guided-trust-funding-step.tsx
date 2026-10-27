@@ -10,22 +10,12 @@ import GiftForm, { giftFormRecipientsFromClientData } from "@/components/gift-fo
 import type { Account } from "@/engine/types";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import type { FundingItem, GuidedTrustContext, GuidedTrustKind } from "@/lib/solver/guided-trust";
-import { fundingItemLabel, giftExemptionPreview } from "@/lib/solver/guided-trust-batch";
+import { fundingItemLabel, giftExemptionPreview, type FundingTrust } from "@/lib/solver/guided-trust-batch";
 import { roleFirstName } from "@/lib/solver/trust-labels";
 import { usd } from "@/lib/solver/technique-summaries";
 import { isRetitleFundingEligible } from "@/lib/solver/trust-levers";
 import { GuidedTrustBequestFields } from "./guided-trust-bequest-fields";
-import { Callout, StepHeader, focusRing } from "./guided-trust-ui";
-
-export interface FundingTrust {
-  id: string;
-  name: string;
-  grantor: "client" | "spouse";
-  crummeyPowers: boolean;
-  kind: GuidedTrustKind;
-  /** How many people hold Crummey powers (sizes the annual-exclusion cover). */
-  crummeyHolders: number;
-}
+import { AddButton, Callout, StepHeader, focusRing } from "./guided-trust-ui";
 
 interface Props {
   trust: FundingTrust;
@@ -35,8 +25,6 @@ interface Props {
 }
 
 type Tile = "gift" | "bequest" | "policy" | "retitle" | "sale";
-
-const addBtn = `rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-[12.5px] font-medium text-accent-on disabled:opacity-40 ${focusRing}`;
 
 const TILES: Record<Tile, { name: string; note: string }> = {
   gift: { name: "During life", note: "A gift now or later. Removes it, and its growth, from the estate." },
@@ -248,20 +236,16 @@ function GiftPanel({
       ) : blocked ? (
         <p className="mt-2 text-[12px] leading-snug text-ink-3">{blocked}</p>
       ) : null}
-      <div className="mt-2.5 flex justify-end">
-        <button
-          type="button"
-          disabled={!draft}
-          onClick={() => {
+      <AddButton
+        disabled={!draft}
+        onClick={() => {
             if (!draft) return;
             onAdd(draft);
             setFormKey((k) => k + 1);
           }}
-          className={addBtn}
-        >
-          Add gift
-        </button>
-      </div>
+      >
+        Add gift
+      </AddButton>
     </div>
   );
 }
@@ -292,19 +276,15 @@ function PolicyPanel({ accounts, onAdd }: { accounts: Account[]; onAdd: (account
         A policy transferred within three years of death is pulled back into the estate. This projection doesn&apos;t
         apply that rule to a transfer.
       </Callout>
-      <div className="mt-2.5 flex justify-end">
-        <button
-          type="button"
-          disabled={!id}
-          onClick={() => {
+      <AddButton
+        disabled={!id}
+        onClick={() => {
             onAdd(id);
             setId("");
           }}
-          className={addBtn}
-        >
-          Add transfer
-        </button>
-      </div>
+      >
+        Add transfer
+      </AddButton>
     </div>
   );
 }
@@ -328,19 +308,15 @@ function RetitlePanel({ accounts, onAdd }: { accounts: Account[]; onAdd: (ids: s
         Moves the whole account into the trust. It isn&apos;t recorded as a gift, so no exemption is used. Use a gift
         of the account to model the gift tax.
       </Callout>
-      <div className="mt-2.5 flex justify-end">
-        <button
-          type="button"
-          disabled={picked.length === 0}
-          onClick={() => {
+      <AddButton
+        disabled={picked.length === 0}
+        onClick={() => {
             onAdd(picked);
             setPicked([]);
           }}
-          className={addBtn}
-        >
-          {`Add ${picked.length} account${picked.length === 1 ? "" : "s"}`}
-        </button>
-      </div>
+      >
+        {`Add ${picked.length} account${picked.length === 1 ? "" : "s"}`}
+      </AddButton>
     </div>
   );
 }

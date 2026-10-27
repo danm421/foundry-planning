@@ -165,3 +165,27 @@ export function Callout({ children }: { children: ReactNode }) {
     </div>
   );
 }
+
+/** The right-aligned "Add ..." button that ends each funding panel. */
+export function AddButton({
+  disabled,
+  onClick,
+  children,
+}: {
+  disabled: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="mt-2.5 flex justify-end">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={onClick}
+        className={`rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-[12.5px] font-medium text-accent-on disabled:opacity-40 ${focusRing}`}
+      >
+        {children}
+      </button>
+    </div>
+  );
+}

@@ -2,9 +2,11 @@ import type { Account, ClientData, EntitySummary, RemainderBeneficiaryRef } from
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { discountedGiftValue } from "@/lib/gifts/apply-valuation-discount";
 import { computeGiftTaxTreatment } from "@/lib/gifts/compute-tax-treatment";
+import { crummeyBeneficiaryCount } from "@/lib/gifts/crummey-count";
 import {
   type FundingItem,
   type GuidedTrustAnswers,
+  type GuidedTrustKind,
   type PersonRef,
   type SolverTrustDraft,
 } from "./guided-trust";
@@ -62,6 +64,37 @@ function remainderOf(a: GuidedTrustAnswers): RemainderBeneficiaryRef[] {
  * defaults plus the split-interest snapshot — absent until the Setup step is
  * done — and a CLT names who gets what's left.
  */
+/** What the Funding step needs to know about the trust being funded. */
+export interface FundingTrust {
+  id: string;
+  name: string;
+  grantor: "client" | "spouse";
+  crummeyPowers: boolean;
+  kind: GuidedTrustKind;
+  /** How many people hold Crummey powers (sizes the annual-exclusion cover). */
+  crummeyHolders: number;
+}
+
+export function fundingTrustOf(
+  entity: EntitySummary,
+  tree: ClientData,
+  name: string,
+  kind: GuidedTrustKind,
+): FundingTrust {
+  const grantor = entity.grantor ?? "client";
+  return {
+    id: entity.id,
+    name,
+    grantor,
+    crummeyPowers: entity.crummeyPowers ?? false,
+    kind,
+    crummeyHolders: crummeyBeneficiaryCount(entity, {
+      donor: grantor,
+      charityIds: new Set((tree.externalBeneficiaries ?? []).filter((b) => b.kind === "charity").map((b) => b.id)),
+    }),
+  };
+}
+
 export function buildGuidedTrustEntity(a: GuidedTrustAnswers): EntitySummary {
   const { entityId: id, grantor } = a;
   const name = a.name.trim();
@@ -197,12 +230,11 @@ export function buildGuidedTrustBatch(
     mutations.push(buildRetitleFundingMutation(account, entity.id));
     fundedOriginals.push(account);
   }
-  if (a.kind === "clt" && si) {
-    const remainderGiftId = newId();
+  const remainderGiftId = a.kind === "clt" && si ? newId() : undefined;
+  if (remainderGiftId && si) {
     mutations.push(buildCltRemainderGiftMutation(entity.id, si.snapshot, a.grantor, remainderGiftId));
-    return { mutations, draft: { entity, fundedOriginals, remainderGiftId }, select };
   }
-  return { mutations, draft: { entity, fundedOriginals }, select };
+  return { mutations, draft: { entity, fundedOriginals, ...(remainderGiftId ? { remainderGiftId } : {}) }, select };
 }
 
 const TRUST_RECIPIENT = { isIrrevocable: true, entityType: "trust" } as const;

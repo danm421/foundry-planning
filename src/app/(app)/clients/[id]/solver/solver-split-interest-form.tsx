@@ -33,8 +33,8 @@ interface Props {
   onGrantorChange: (next: "client" | "spouse") => void;
   /** Seeds the form on mount; later edits stay local and are reported via onChange. */
   value: SplitInterestAnswers | null;
-  /** Complete answers, or null plus the reason they are not complete yet. */
-  onChange: (next: SplitInterestAnswers | null, blockedReason: string | null) => void;
+  /** Complete answers, or null while they are not complete yet. */
+  onChange: (next: SplitInterestAnswers | null) => void;
 }
 
 type PendingCharity = NonNullable<SplitInterestAnswers["newCharity"]>;
@@ -211,7 +211,7 @@ export function SolverSplitInterestForm({
     onChangeRef.current = onChange;
   });
   useEffect(() => {
-    onChangeRef.current(answers, blockedReason);
+    onChangeRef.current(answers);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- answersJson keys both
   }, [answersJson]);
 
