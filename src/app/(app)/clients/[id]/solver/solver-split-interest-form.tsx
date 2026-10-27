@@ -15,7 +15,7 @@ import {
 } from "@/lib/solver/split-interest-levers";
 import CrtDetailsSection from "@/components/forms/crt-details-section";
 import CltDetailsSection from "@/components/forms/clt-details-section";
-import type { SolverTrustDraft } from "./solver-trust-form";
+import type { SolverTrustDraft } from "@/lib/solver/guided-trust";
 
 const inputClassName =
   "mt-1 h-9 w-full rounded-md border border-hair-2 bg-card px-2.5 text-[14px] text-ink focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30";

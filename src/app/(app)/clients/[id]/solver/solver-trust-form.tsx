@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { Account, ClientData, EntitySummary } from "@/engine/types";
+import type { Account, ClientData } from "@/engine/types";
 import type { SolverMutation } from "@/lib/solver/types";
 import {
   SOLVER_TRUST_SUBTYPES_3A,
@@ -11,6 +11,7 @@ import {
   buildRetitleFundingMutation,
   isRetitleFundingEligible,
 } from "@/lib/solver/trust-levers";
+import type { SolverTrustDraft } from "@/lib/solver/guided-trust";
 import { SolverSplitInterestForm } from "./solver-split-interest-form";
 
 /** 3a subtypes plus the 3b split-interest subtypes the picker can now create. */
@@ -23,14 +24,6 @@ const SUBTYPE_LABELS: Record<SolverTrustSubType, string> = {
   crt: "CRT (charitable remainder trust)",
   clt: "CLT (charitable lead trust)",
 };
-
-export interface SolverTrustDraft {
-  entity: EntitySummary;
-  /** Accounts retitled into the trust, captured BEFORE retitle (for revert). */
-  fundedOriginals: Account[];
-  /** CLT only: id of the auto-emitted remainder-interest gift, cleared on removal. */
-  remainderGiftId?: string;
-}
 
 interface Props {
   clientData: ClientData;

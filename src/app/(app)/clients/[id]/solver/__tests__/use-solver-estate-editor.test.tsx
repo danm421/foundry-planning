@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import type { Account, ClientData, EntitySummary } from "@/engine/types";
 import type { SolverMutation } from "@/lib/solver/types";
-import type { SolverTrustDraft } from "../solver-trust-form";
+import type { SolverTrustDraft } from "@/lib/solver/guided-trust";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { useSolverEstateEditor } from "../use-solver-estate-editor";
 import { partitionBaseSavableMutations } from "@/lib/solver/mutations-to-base-updates";

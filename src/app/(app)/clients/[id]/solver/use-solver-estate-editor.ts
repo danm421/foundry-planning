@@ -15,7 +15,7 @@ import {
   buildRevertFundingMutation,
 } from "@/lib/solver/trust-levers";
 import { buildRemoveCharityMutations } from "@/lib/solver/charity-levers";
-import type { SolverTrustDraft } from "./solver-trust-form";
+import type { SolverTrustDraft } from "@/lib/solver/guided-trust";
 import { currentTrustEntities, currentCharities } from "@/lib/solver/estate-current";
 import type { EstatePane, RailCharity, RailTrust } from "./solver-estate-rail";
 
