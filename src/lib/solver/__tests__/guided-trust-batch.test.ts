@@ -456,7 +456,7 @@ describe("fundingItemLabel", () => {
     ).toBe("Bequest · everything · Jordan's will, if Alex has died");
     expect(
       fundingItemLabel({ kind: "bequest", from: "client", what: { mode: "all_assets" }, condition: "always" }, t),
-    ).toBe("Bequest · everything · Alex's will");
+    ).toBe("Bequest · everything · Alex's will, either way");
   });
 
   it("labels transfers and move-ins, falling back when the account is gone", () => {

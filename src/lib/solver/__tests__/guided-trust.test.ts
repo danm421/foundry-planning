@@ -140,6 +140,15 @@ describe("stepBlocker", () => {
       stepBlocker("people", base({ lifetime: [kid], remainder: [{ ...kid, percentage: 100.005 }] }), c),
     ).toBeNull();
   });
+  it("people: a share outside 0–100 blocks even when the total is 100", () => {
+    const split = [{ ...kid, percentage: -50 }, { ...share("spouse"), percentage: 150 }];
+    expect(stepBlocker("people", base({ lifetime: split, remainder: [kid] }), c)).toBe(
+      "Each share must be between 0% and 100%.",
+    );
+    expect(stepBlocker("people", base({ lifetime: [kid], remainder: split }), c)).toBe(
+      "Each share must be between 0% and 100%.",
+    );
+  });
   it("accounts", () => {
     expect(stepBlocker("accounts", base({ kind: "revocable" }), c)).toBe(
       "Pick at least one account to move in.",
@@ -154,6 +163,21 @@ describe("stepBlocker", () => {
       stepBlocker("accounts", base({ kind: "revocable", name: "Other", revocableAccountIds: ["a1"] }), ctx(t)),
     ).toBeNull();
   });
+  it("accounts: a name matches another trust whatever its case and spacing", () => {
+    const t = tree({
+      accounts: [{ id: "a1", revocableTrustName: "Smith Trust" }] as unknown as ClientData["accounts"],
+    });
+    expect(
+      stepBlocker("accounts", base({ kind: "revocable", name: "  smith TRUST ", revocableAccountIds: ["a1"] }), ctx(t)),
+    ).toBe("A trust named smith TRUST already exists. Open it from the list to add accounts.");
+  });
+  it("accounts: a base trust whose accounts were all unticked still counts", () => {
+    // No working-tree account carries the name; the base does.
+    const c2 = guidedTrustContext(tree(), { 2026: 19000 }, ["Smith Trust"]);
+    expect(
+      stepBlocker("accounts", base({ kind: "revocable", name: "Smith Trust", revocableAccountIds: ["a1"] }), c2),
+    ).toBe("A trust named Smith Trust already exists. Open it from the list to add accounts.");
+  });
   it("setup", () => {
     expect(stepBlocker("setup", base({ kind: "crt" }), c)).toBe("Finish the trust's payout and funding.");
     const si = { snapshot: {}, fundingAccountIds: [], newCharity: null } as unknown as GuidedTrustAnswers["splitInterest"];
@@ -162,10 +186,22 @@ describe("stepBlocker", () => {
       "Pick who gets what's left — the 'to heirs' figures credit them.",
     );
     expect(stepBlocker("setup", base({ kind: "clt", splitInterest: si, remainder: [kid] }), c)).toBeNull();
+    const bad = [{ ...kid, percentage: 120 }, { ...share("spouse"), percentage: -20 }];
+    expect(stepBlocker("setup", base({ kind: "clt", splitInterest: si, remainder: bad }), c)).toBe(
+      "Each share must be between 0% and 100%.",
+    );
+    expect(
+      stepBlocker("setup", base({ kind: "clt", splitInterest: si, remainder: [{ ...kid, percentage: 90 }] }), c),
+    ).toBe("Shares under 'Gets what's left' must add up to 100%.");
   });
   it("review and pass-through steps", () => {
     expect(stepBlocker("review", base({ name: "  " }), c)).toBe("Name the trust.");
     expect(stepBlocker("review", base({ name: "X" }), c)).toBeNull();
+    const withTrust = ctx(tree({ entities: [{ id: "t9", name: "Kid Smith Irrevocable Trust" }] as unknown as ClientData["entities"] }));
+    expect(stepBlocker("review", base({ name: " kid smith irrevocable trust " }), withTrust)).toBe(
+      "A trust named kid smith irrevocable trust already exists. Pick another name.",
+    );
+    expect(stepBlocker("review", base({ name: "Kid Smith Trust" }), withTrust)).toBeNull();
     for (const s of ["type", "powers", "funding"] as const) expect(stepBlocker(s, base(), c)).toBeNull();
   });
 });
@@ -173,12 +209,12 @@ describe("stepBlocker", () => {
 describe("trustPeopleOptions", () => {
   it("married lifetime: spouse first, then family, individuals, other heirs", () => {
     const o = trustPeopleOptions(tree(), "client", "lifetime");
-    expect(o.map((x) => x.label)).toEqual(["Jane (spouse)", "Kid (child)", "Pat Friend", "Other heirs"]);
+    expect(o.map((x) => x.label)).toEqual(["Jane", "Kid (child)", "Pat Friend", "Other heirs"]);
     expect(o[0]).toMatchObject({ ref: { kind: "household", role: "spouse" } });
   });
   it("spouse grantor offers the client", () => {
     const o = trustPeopleOptions(tree(), "spouse", "lifetime");
-    expect(o[0]).toMatchObject({ ref: { kind: "household", role: "client" }, label: "Dan (spouse)" });
+    expect(o[0]).toMatchObject({ ref: { kind: "household", role: "client" }, label: "Dan" });
   });
   it("remainder omits the household option", () => {
     const o = trustPeopleOptions(tree(), "client", "remainder");
@@ -252,6 +288,23 @@ describe("defaultTrustName", () => {
       familyMembers: [{ id: "fm-1", role: "child", relationship: "child", firstName: "Kid", lastName: "Jones" }] as unknown as ClientData["familyMembers"],
     });
     expect(defaultTrustName(base({ remainder: [kid] }), t2)).toBe("Kid Jones Irrevocable Trust");
+  });
+  it("adds a number when another trust in the tree has the name", () => {
+    const named = (...names: string[]) =>
+      tree({ entities: names.map((name, i) => ({ id: `t${i}`, name })) as unknown as ClientData["entities"] });
+    expect(defaultTrustName(base({ remainder: [kid] }), named("Kid Smith Irrevocable Trust"))).toBe(
+      "Kid Smith Irrevocable Trust 2",
+    );
+    expect(
+      defaultTrustName(base({ remainder: [kid] }), named(" kid smith irrevocable trust ", "Kid Smith Irrevocable Trust 2")),
+    ).toBe("Kid Smith Irrevocable Trust 3");
+    expect(defaultTrustName(base({ kind: "crt" }), named("Charitable Remainder Trust"))).toBe(
+      "Charitable Remainder Trust 2",
+    );
+    const tagged = tree({
+      accounts: [{ id: "a1", revocableTrustName: "Smith Family Revocable Trust" }] as unknown as ClientData["accounts"],
+    });
+    expect(defaultTrustName(base({ kind: "revocable" }), tagged)).toBe("Smith Family Revocable Trust 2");
   });
   it("two remainder people fall back to the kind name", () => {
     const two = [{ ...kid, percentage: 50 }, share("spouse", 50)];

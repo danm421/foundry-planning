@@ -1,5 +1,6 @@
 import { firesAtDeath, selectResiduaryTier } from "@/engine/death-event";
 import type {
+  Account,
   ClientData,
   Will,
   WillBequest,
@@ -8,6 +9,7 @@ import type {
 } from "@/engine/types";
 import { formatNameList } from "@/lib/intake/estate";
 import { spouseOf, type FundingItem } from "./guided-trust";
+import { isTrustHeld } from "./revocable-trust-rows";
 import { accountName, roleFirstName } from "./trust-labels";
 import type { SolverMutation } from "./types";
 
@@ -35,6 +37,40 @@ function targets(item: BequestItem): { grantor: Grantor; condition: Condition }[
     ];
   }
   return [{ grantor: item.from, condition: item.condition }];
+}
+
+/** Categories a will never passes: retirement and life insurance go by
+ *  beneficiary designation (as the base bequest editor hides them), and a
+ *  specific bequest ignores a business interest. */
+const NOT_BY_WILL = new Set<Account["category"]>(["retirement", "life_insurance", "business"]);
+
+/**
+ * The accounts an "At death → One account" bequest can name: owned (alone or
+ * jointly) by the will's maker — either spouse for "whoever dies second" — and
+ * never trust-held, gifted to a trust, or already funding this trust
+ * (`excluded`). Anything else the engine would pay out some other way first,
+ * so the clause would silently pass nothing.
+ */
+export function bequestableAccounts(
+  tree: ClientData,
+  from: BequestItem["from"],
+  excluded: ReadonlySet<string>,
+): Account[] {
+  const roles: Grantor[] = from === "second_death" ? ["client", "spouse"] : [from];
+  const makers = new Set(
+    (tree.familyMembers ?? []).flatMap((f) => (roles.includes(f.role as Grantor) ? [f.id] : [])),
+  );
+  const giftedToTrust = new Set(
+    (tree.giftEvents ?? []).flatMap((e) => (e.kind === "asset" && e.recipientEntityId ? [e.accountId] : [])),
+  );
+  return tree.accounts.filter(
+    (a) =>
+      !NOT_BY_WILL.has(a.category) &&
+      !excluded.has(a.id) &&
+      !giftedToTrust.has(a.id) &&
+      !isTrustHeld(a) &&
+      a.owners.some((o) => o.kind === "family_member" && makers.has(o.familyMemberId) && o.percent > 0),
+  );
 }
 
 /**

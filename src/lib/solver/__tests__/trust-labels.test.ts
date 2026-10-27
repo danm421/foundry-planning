@@ -19,4 +19,9 @@ describe("trust-labels", () => {
     expect(pct(33.333)).toBe("33.33%");
     expect(bequestWhen("client", "if_spouse_survives", tree("Sam"))).toBe("Pat's will, if Sam survives");
   });
+  it("says 'either way' for a married household's unconditional clause, and nothing for a single client", () => {
+    const married = { ...tree("Sam"), client: { firstName: "Pat", spouseName: "Sam", spouseDob: "1970-01-01" } } as unknown as ClientData;
+    expect(bequestWhen("spouse", "always", married)).toBe("Sam's will, either way");
+    expect(bequestWhen("client", "always", tree(null))).toBe("Pat's will");
+  });
 });

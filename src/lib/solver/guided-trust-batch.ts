@@ -57,13 +57,6 @@ function remainderOf(a: GuidedTrustAnswers): RemainderBeneficiaryRef[] {
   }));
 }
 
-/**
- * The trust entity the answers describe. Irrevocable / SLAT / ILIT / IDGT take
- * the people and powers from the answers (a SLAT is an irrevocable trust whose
- * lifetime list holds the grantor's spouse). A CRT or CLT keeps its own
- * defaults plus the split-interest snapshot — absent until the Setup step is
- * done — and a CLT names who gets what's left.
- */
 /** What the Funding step needs to know about the trust being funded. */
 export interface FundingTrust {
   id: string;
@@ -95,6 +88,13 @@ export function fundingTrustOf(
   };
 }
 
+/**
+ * The trust entity the answers describe. Irrevocable / SLAT / ILIT / IDGT take
+ * the people and powers from the answers (a SLAT is an irrevocable trust whose
+ * lifetime list holds the grantor's spouse). A CRT or CLT keeps its own
+ * defaults plus the split-interest snapshot — absent until the Setup step is
+ * done — and a CLT names who gets what's left.
+ */
 export function buildGuidedTrustEntity(a: GuidedTrustAnswers): EntitySummary {
   const { entityId: id, grantor } = a;
   const name = a.name.trim();

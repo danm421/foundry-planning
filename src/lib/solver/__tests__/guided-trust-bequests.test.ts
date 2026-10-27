@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { Account, ClientData, Will, WillBequest } from "@/engine/types";
 import type { FundingItem } from "../guided-trust";
-import { buildBequestMutations, willConflictNote } from "../guided-trust-bequests";
+import { bequestableAccounts, buildBequestMutations, willConflictNote } from "../guided-trust-bequests";
 
 type BequestItem = Extract<FundingItem, { kind: "bequest" }>;
 
@@ -370,5 +370,41 @@ describe("willConflictNote", () => {
     expect(willConflictNote(everything("second_death", "always"), t)).toBe(
       "Jane's will already leaves everything to Kid at that death; this trust shares it — 50% to this trust.",
     );
+  });
+});
+
+describe("bequestableAccounts", () => {
+  const own = (fmId: string, percent = 1) => ({ kind: "family_member", familyMemberId: fmId, percent });
+  const t = tree({
+    accounts: [
+      account("dan", "Dan Brokerage"),
+      account("jane", "Jane Savings", { owners: [own("fm-s")] } as Partial<Account>),
+      account("joint", "Joint Checking", { category: "cash", owners: [own("fm-c", 0.5), own("fm-s", 0.5)] } as Partial<Account>),
+      account("ira", "Dan IRA", { category: "retirement" }),
+      account("pol", "Dan Term Life", { category: "life_insurance" }),
+      account("biz", "Dan LLC", { category: "business" }),
+      account("held", "Trust Cash", { owners: [{ kind: "entity", entityId: "ent-old", percent: 1 }] } as Partial<Account>),
+      account("half", "Half Gifted", {
+        owners: [own("fm-c", 0.5), { kind: "gifted_away", recipient: { kind: "entity", id: "ent-old" }, percent: 0.5 }],
+      } as Partial<Account>),
+      account("later", "Gifted Later"),
+      account("moved", "Moved In"),
+    ],
+    giftEvents: [
+      { kind: "asset", year: 2030, accountId: "later", percent: 1, grantor: "client", recipientEntityId: "ent-old" },
+    ],
+  } as Partial<ClientData>);
+  const names = (from: BequestItem["from"], excluded: string[] = []) =>
+    bequestableAccounts(t, from, new Set(excluded)).map((a) => a.id);
+
+  it("a will offers only what that person owns, alone or jointly — never a beneficiary-designation, business or trust-held account", () => {
+    expect(names("client")).toEqual(["dan", "joint", "moved"]);
+    expect(names("spouse")).toEqual(["jane", "joint"]);
+  });
+  it("whoever dies second can leave either spouse's accounts or a joint one", () => {
+    expect(names("second_death")).toEqual(["dan", "jane", "joint", "moved"]);
+  });
+  it("skips accounts this trust is already being funded with", () => {
+    expect(names("client", ["moved", "joint"])).toEqual(["dan"]);
   });
 });

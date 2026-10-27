@@ -3,6 +3,8 @@
 // Wizard step 5: name the trust, check each answer (Edit jumps back to its
 // step), and see the estimated estate-tax / heirs impact before adding it. The
 // wizard owns the impact hook and seeds `answers.name` when it arrives here.
+// Answers sit on the left and the impact panel on the right, so the step fits
+// the dialog without scrolling.
 
 import type {
   GuidedStep,
@@ -12,7 +14,7 @@ import type {
 } from "@/lib/solver/guided-trust";
 import { personKey, trustPeopleOptions } from "@/lib/solver/guided-trust";
 import { usd } from "@/lib/solver/technique-summaries";
-import { roleFirstName } from "@/lib/solver/trust-labels";
+import { pct, roleFirstName } from "@/lib/solver/trust-labels";
 import { fundingItemLabel } from "@/lib/solver/guided-trust-batch";
 import { formatCompact } from "@/lib/format-compact";
 import { kindName } from "./guided-trust-type-step";
@@ -59,7 +61,7 @@ function setupLine(a: GuidedTrustAnswers, ctx: GuidedTrustContext): string {
   const snap = s.snapshot;
   const payout =
     snap.payoutType === "unitrust"
-      ? `${snap.payoutPercent ?? 0}% unitrust`
+      ? `${pct((snap.payoutPercent ?? 0) * 100)} unitrust`
       : `${usd(snap.payoutAmount ?? 0)} annuity`;
   const term = {
     years: `${snap.termYears} years`,
@@ -94,7 +96,9 @@ function Line({
   return (
     <li className="flex items-baseline gap-3 border-b border-hair py-1.5 text-[12.5px] last:border-b-0">
       <span className="w-24 shrink-0 text-ink-3">{label}</span>
-      <span className="min-w-0 flex-1 truncate text-ink">{value}</span>
+      <span title={value} className="min-w-0 flex-1 truncate text-ink">
+        {value}
+      </span>
       <button
         type="button"
         aria-label={`Edit ${label}`}
@@ -118,23 +122,23 @@ function ImpactRow({ label, before, after, lowerIsBetter }: {
   const good = lowerIsBetter ? delta < 0 : delta > 0;
   const tone = delta === 0 ? "text-ink-3" : good ? "text-good" : "text-crit";
   return (
-    <div className="flex items-baseline justify-between gap-3 py-1 text-[12.5px]">
-      <span className="text-ink-2">{label}</span>
-      <span className="flex items-baseline gap-2 tabular-nums">
+    <div className="py-1">
+      <div className="text-[12px] text-ink-2">{label}</div>
+      <div className="tabular flex items-baseline justify-between gap-2 text-[12.5px]">
         <span className="text-ink">
           {known ? `${formatCompact(before)} → ${formatCompact(after)}` : "—"}
         </span>
         {known ? (
           <span className={tone}>{`${delta > 0 ? "+" : ""}${formatCompact(delta)}`}</span>
         ) : null}
-      </span>
+      </div>
     </div>
   );
 }
 
 function ImpactPanel({ impact }: { impact: Props["impact"] }) {
   return (
-    <div className="mt-3 rounded-[var(--radius-sm)] border border-hair border-l-[3px] border-l-accent bg-card-2 px-3 py-2">
+    <div className="rounded-[var(--radius-sm)] border border-hair border-l-[3px] border-l-accent bg-card-2 px-3 py-2">
       <div className="text-[10.5px] uppercase tracking-[0.12em] text-ink-4">Estimated impact</div>
       {impact.status === "ready" ? (
         <>
@@ -175,71 +179,75 @@ export function GuidedTrustReviewStep({ answers, ctx, onChange, onEdit, impact }
     <div>
       <StepHeader title="Review" subtitle="Check the answers, then add the trust." />
 
-      <div className="mb-2 flex items-center gap-3">
-        <label htmlFor="guided-trust-name" className="w-24 shrink-0 text-[12.5px] text-ink-3">
-          Name
-        </label>
-        <input
-          id="guided-trust-name"
-          value={answers.name}
-          onChange={(e) => onChange({ ...answers, name: e.target.value })}
-          className={`h-8 min-w-0 flex-1 rounded-[var(--radius-sm)] border border-hair-2 bg-card px-2 text-[13px] text-ink ${focusRing}`}
-        />
-      </div>
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_16rem]">
+        <div className="min-w-0">
+          <div className="mb-2 flex items-center gap-3">
+            <label htmlFor="guided-trust-name" className="w-24 shrink-0 text-[12.5px] text-ink-3">
+              Name
+            </label>
+            <input
+              id="guided-trust-name"
+              value={answers.name}
+              onChange={(e) => onChange({ ...answers, name: e.target.value })}
+              className={`h-8 min-w-0 flex-1 rounded-[var(--radius-sm)] border border-hair-2 bg-card px-2 text-[13px] text-ink ${focusRing}`}
+            />
+          </div>
 
-      <ul aria-label="Your answers" className="border-y border-hair">
-        <Line label="Type" value={kindName(kind)} step="type" onEdit={onEdit} />
-        {kind === "revocable" ? (
-          <Line label="Accounts" value={accountsLine(answers, ctx)} step="accounts" onEdit={onEdit} />
-        ) : (
-          <>
-            {ctx.isMarried ? (
-              <Line label="Grantor" value={grantorName} step={split ? "setup" : "people"} onEdit={onEdit} />
-            ) : null}
-            {split ? (
-              <>
-                <Line label="Setup" value={setupLine(answers, ctx)} step="setup" onEdit={onEdit} />
-                {kind === "clt" ? (
-                  <Line
-                    label="Gets what's left"
-                    value={peopleLine(answers.remainder, "remainder", answers, ctx)}
-                    step="setup"
-                    onEdit={onEdit}
-                  />
-                ) : null}
-              </>
+          <ul aria-label="Your answers" className="border-y border-hair">
+            <Line label="Type" value={kindName(kind)} step="type" onEdit={onEdit} />
+            {kind === "revocable" ? (
+              <Line label="Accounts" value={accountsLine(answers, ctx)} step="accounts" onEdit={onEdit} />
             ) : (
               <>
-                <Line
-                  label="Benefits now"
-                  value={peopleLine(answers.lifetime, "lifetime", answers, ctx)}
-                  step="people"
-                  onEdit={onEdit}
-                />
-                <Line
-                  label="Gets what's left"
-                  value={peopleLine(answers.remainder, "remainder", answers, ctx)}
-                  step="people"
-                  onEdit={onEdit}
-                />
-                <Line label="Powers" value={powersLine(answers)} step="powers" onEdit={onEdit} />
-                <Line
-                  label="Funding"
-                  value={
-                    answers.funding.length === 0
-                      ? "Not funded yet"
-                      : answers.funding.map((f) => fundingItemLabel(f, ctx.tree)).join(" · ")
-                  }
-                  step="funding"
-                  onEdit={onEdit}
-                />
+                {ctx.isMarried ? (
+                  <Line label="Grantor" value={grantorName} step={split ? "setup" : "people"} onEdit={onEdit} />
+                ) : null}
+                {split ? (
+                  <>
+                    <Line label="Setup" value={setupLine(answers, ctx)} step="setup" onEdit={onEdit} />
+                    {kind === "clt" ? (
+                      <Line
+                        label="Gets what's left"
+                        value={peopleLine(answers.remainder, "remainder", answers, ctx)}
+                        step="setup"
+                        onEdit={onEdit}
+                      />
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    <Line
+                      label="Benefits now"
+                      value={peopleLine(answers.lifetime, "lifetime", answers, ctx)}
+                      step="people"
+                      onEdit={onEdit}
+                    />
+                    <Line
+                      label="Gets what's left"
+                      value={peopleLine(answers.remainder, "remainder", answers, ctx)}
+                      step="people"
+                      onEdit={onEdit}
+                    />
+                    <Line label="Powers" value={powersLine(answers)} step="powers" onEdit={onEdit} />
+                    <Line
+                      label="Funding"
+                      value={
+                        answers.funding.length === 0
+                          ? "Not funded yet"
+                          : answers.funding.map((f) => fundingItemLabel(f, ctx.tree)).join(" · ")
+                      }
+                      step="funding"
+                      onEdit={onEdit}
+                    />
+                  </>
+                )}
               </>
             )}
-          </>
-        )}
-      </ul>
+          </ul>
+        </div>
 
-      <ImpactPanel impact={impact} />
+        <ImpactPanel impact={impact} />
+      </div>
     </div>
   );
 }

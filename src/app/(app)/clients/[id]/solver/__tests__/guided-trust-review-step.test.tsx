@@ -72,7 +72,7 @@ describe("GuidedTrustReviewStep", () => {
 
   it("summarises answers and jumps back with Edit", () => {
     const { onEdit } = setup();
-    expect(screen.getByText("Jordan (spouse)")).toBeTruthy();
+    expect(screen.getByText("Jordan")).toBeTruthy();
     expect(screen.getByText("Sam (child) 50% · Ava (child) 50%")).toBeTruthy();
     expect(screen.getByText("Grantor trust · Crummey")).toBeTruthy();
     expect(screen.getByText("Irrevocable gift trust")).toBeTruthy();
@@ -126,7 +126,7 @@ describe("GuidedTrustReviewStep", () => {
         fundingAccountIds: [],
         newCharity: null,
         snapshot: {
-          inceptionYear: 2026, inceptionValue: 1, payoutType: "unitrust", payoutPercent: 5,
+          inceptionYear: 2026, inceptionValue: 1, payoutType: "unitrust", payoutPercent: 0.05,
           payoutAmount: null, irc7520Rate: 0.05, termType: "years", termYears: 20,
           measuringLife1Id: null, measuringLife2Id: null, charityId: "ch1",
           originalIncomeInterest: 0, originalRemainderInterest: 0,

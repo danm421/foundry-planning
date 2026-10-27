@@ -19,7 +19,9 @@ export function accountName(accountId: string, tree: ClientData, fallback = "an 
 /** 0–100 → "25%" / "33.33%". */
 export const pct = (n: number): string => `${Number(n.toFixed(2))}%`;
 
-/** Which will a bequest sits in, and when it applies, e.g. "Pat's will, if Sam survives". */
+/** Which will a bequest sits in, and when it applies, e.g. "Pat's will, if Sam
+ *  survives". A married couple's unconditional clause says "either way"; a
+ *  single client's will has no other case to name. */
 export function bequestWhen(grantor: Role, condition: WillBequest["condition"], tree: ClientData): string {
   const will = `${roleFirstName(grantor, tree)}'s will`;
   const other = roleFirstName(grantor === "client" ? "spouse" : "client", tree);
@@ -29,6 +31,6 @@ export function bequestWhen(grantor: Role, condition: WillBequest["condition"], 
     case "if_spouse_predeceased":
       return `${will}, if ${other} has died`;
     case "always":
-      return will;
+      return tree.client.spouseDob != null ? `${will}, either way` : will;
   }
 }

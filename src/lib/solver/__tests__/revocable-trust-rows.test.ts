@@ -3,6 +3,7 @@ import type { Account } from "@/engine/types";
 import {
   revocableTrustRows,
   revocableEligibleAccounts,
+  sameTrustName,
   buildRevocableMembershipMutations,
   buildRevocableRenameMutations,
 } from "../revocable-trust-rows";
@@ -54,6 +55,21 @@ describe("revocableEligibleAccounts", () => {
   it("excludes other trusts, ineligible categories and trust-held accounts", () => {
     expect(revocableEligibleAccounts(accts, "T").map((a) => a.id)).toEqual(["free", "mine"]);
     expect(revocableEligibleAccounts(accts, null).map((a) => a.id)).toEqual(["free"]);
+  });
+  it("lists by name, so a tick (which re-orders the tree) never moves a row", () => {
+    const named = (id: string, name: string) => ({ ...acct(id, "cash"), name });
+    const tree = [named("h", "Home Cash"), named("b", "Brokerage"), named("c", "Checking")];
+    const after = [tree[1], tree[2], tree[0]];
+    expect(revocableEligibleAccounts(tree, null).map((a) => a.id)).toEqual(["b", "c", "h"]);
+    expect(revocableEligibleAccounts(after, null).map((a) => a.id)).toEqual(["b", "c", "h"]);
+  });
+});
+
+describe("sameTrustName", () => {
+  it("ignores case and surrounding spaces", () => {
+    expect(sameTrustName(" Smith Trust ", "smith trust")).toBe(true);
+    expect(sameTrustName("Smith Trust", "Smith Trust 2")).toBe(false);
+    expect(sameTrustName(null, "")).toBe(true);
   });
 });
 

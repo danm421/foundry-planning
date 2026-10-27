@@ -97,7 +97,7 @@ describe("trustFundingSummary", () => {
 
   it("names a will bequest naming the trust", () => {
     const t = tree({ wills: [will("client", [{ percentage: 50 }])] });
-    expect(trustFundingSummary(trust, t, [])).toBe("Bequest · 50% of Joint Brokerage · Alex's will");
+    expect(trustFundingSummary(trust, t, [])).toBe("Bequest · 50% of Joint Brokerage · Alex's will, either way");
   });
 
   it("reads a second-death pair from both wills as one bequest", () => {
@@ -140,7 +140,7 @@ describe("trustFundingSummary", () => {
     } as unknown as Account;
     const t = tree({ accounts: [brokerage, held], wills: [will("client", [{}])] });
     expect(trustFundingSummary(trust, t, [cashGift()])).toBe("Gift $1,000,000 · 2026 +2 more");
-    expect(trustFundingSummary(trust, t, [])).toBe("Bequest · 100% of Joint Brokerage · Alex's will +1 more");
+    expect(trustFundingSummary(trust, t, [])).toBe("Bequest · 100% of Joint Brokerage · Alex's will, either way +1 more");
   });
 });
 
