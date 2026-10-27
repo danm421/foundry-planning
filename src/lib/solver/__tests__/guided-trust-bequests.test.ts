@@ -39,6 +39,11 @@ function tree(over: Partial<ClientData> & { married?: boolean } = {}): ClientDat
 }
 
 const toKid = [{ recipientKind: "family_member" as const, recipientId: "fm-1", percentage: 100, sortOrder: 0 }];
+const toSpouse = [{ recipientKind: "spouse" as const, recipientId: null, percentage: 100, sortOrder: 0 }];
+const spouseAndKid = [
+  { recipientKind: "spouse" as const, recipientId: null, percentage: 50, sortOrder: 0 },
+  { recipientKind: "family_member" as const, recipientId: "fm-1", percentage: 50, sortOrder: 1 },
+];
 
 function clause(over: Partial<WillBequest>): WillBequest {
   return {
@@ -173,23 +178,53 @@ describe("willConflictNote", () => {
   });
 
   describe("everything vs an existing 'everything' clause", () => {
-    it("says the two share it, and the trust's weighted share", () => {
+    it("names who it already goes to, and the trust's weighted share", () => {
       const t = tree({ wills: [will("client", { bequests: [clause({})] })] });
       expect(willConflictNote(everything("client"), t)).toBe(
-        "Dan's will already leaves everything to Kid at that death; the two share it — 50% to this trust.",
+        "Dan's will already leaves everything to Kid at that death; this trust shares it — 50% to this trust.",
       );
       const half = tree({ wills: [will("client", { bequests: [clause({ percentage: 50 })] })] });
       expect(willConflictNote(everything("client"), half)).toBe(
-        "Dan's will already leaves everything to Kid at that death; the two share it — 67% to this trust.",
+        "Dan's will already leaves everything to Kid at that death; this trust shares it — 67% to this trust.",
       );
     });
 
-    it("names the grantor's spouse for a 'spouse' recipient", () => {
-      const toSpouse = [{ recipientKind: "spouse" as const, recipientId: null, percentage: 100, sortOrder: 0 }];
+    it("names the grantor's spouse for a 'spouse' recipient at the first death", () => {
       const t = tree({ wills: [will("client", { bequests: [clause({ recipients: toSpouse })] })] });
       expect(willConflictNote(everything("client"), t)).toBe(
-        "Dan's will already leaves everything to Jane at that death; the two share it — 50% to this trust.",
+        "Dan's will already leaves everything to Jane at that death; this trust shares it — 50% to this trust.",
       );
+    });
+
+    it("at the final death a spouse heir has died: no names, only the trust's share", () => {
+      // The engine still weighs the spouse's clause, but pays it to no one.
+      const t = tree({ wills: [will("client", { bequests: [clause({ recipients: toSpouse })] })] });
+      expect(willConflictNote(everything("second_death"), t)).toBe(
+        "Dan's will has another clause leaving everything at that death, so this trust gets only 50%.",
+      );
+      const partly = tree({ wills: [will("client", { bequests: [clause({ recipients: spouseAndKid })] })] });
+      expect(willConflictNote(everything("client", "if_spouse_predeceased"), partly)).toBe(
+        "Dan's will has another clause leaving everything at that death, so this trust gets only 50%.",
+      );
+    });
+
+    it("shares among every firing clause, however many", () => {
+      const toCharity = [{ recipientKind: "external_beneficiary" as const, recipientId: "ex-1", percentage: 100, sortOrder: 0 }];
+      const t = tree({
+        wills: [will("client", { bequests: [clause({}), clause({ id: "b-2", sortOrder: 1, recipients: toCharity })] })],
+      });
+      expect(willConflictNote(everything("client"), t)).toBe(
+        "Dan's will already leaves everything to Kid and Red Cross at that death; this trust shares it — 33% to this trust.",
+      );
+    });
+
+    it("says nothing about a 0% clause — the engine can't split one", () => {
+      const zero = tree({ wills: [will("client", { bequests: [clause({ percentage: 0 })] })] });
+      expect(willConflictNote(everything("client"), zero)).toBeNull();
+      const withResiduary = tree({
+        wills: [will("client", { bequests: [clause({ percentage: 0 })], residuaryRecipients: toKid })],
+      });
+      expect(willConflictNote(everything("client"), withResiduary)).toBeNull();
     });
 
     it("stays quiet when the two clauses fire at different deaths", () => {
@@ -249,6 +284,33 @@ describe("willConflictNote", () => {
       expect(willConflictNote(everything("client"), t2)).not.toBeNull();
     });
 
+    it("stays quiet when a spouse's lapsed share of an account falls to the residuary", () => {
+      const contingentKid = [{ ...toKid[0], tier: "contingent" as const }];
+      const home = (recipients: WillBequest["recipients"]) =>
+        clause({ assetMode: "specific", accountId: "acct-home", name: "Home", recipients });
+      // Home → Jane 50% / Kid 50%: at the final death Kid's half is claimed, so
+      // the clause touched Home and Jane's half goes to the residuary.
+      const partly = tree({
+        wills: [will("client", { bequests: [home(spouseAndKid)], residuaryRecipients: contingentKid })],
+      });
+      expect(willConflictNote(everything("client", "if_spouse_predeceased"), partly)).toBeNull();
+      // Home → Jane 100%: the clause claims nothing, so this sweeps Home too.
+      const wholly = tree({
+        wills: [will("client", { bequests: [home(toSpouse)], residuaryRecipients: contingentKid })],
+      });
+      expect(willConflictNote(everything("client", "if_spouse_predeceased"), wholly)).toBe(
+        "This takes everything a specific bequest doesn't, so Dan's residuary heirs (Kid) get nothing at that death.",
+      );
+    });
+
+    it("never names a residuary heir who has died", () => {
+      const contingent = (rs: typeof spouseAndKid) => rs.map((r) => ({ ...r, tier: "contingent" as const }));
+      const both = tree({ wills: [will("client", { residuaryRecipients: contingent(spouseAndKid) })] });
+      expect(willConflictNote(everything("client", "if_spouse_predeceased"), both)).toMatch(/residuary heirs \(Kid\)/);
+      const spouseOnly = tree({ wills: [will("client", { residuaryRecipients: contingent(toSpouse) })] });
+      expect(willConflictNote(everything("client", "if_spouse_predeceased"), spouseOnly)).toBeNull();
+    });
+
     it("stays quiet when the grantor holds a business the will doesn't name", () => {
       const biz = account("acct-biz", "Smith LLC", { category: "business" });
       const t = tree({
@@ -277,6 +339,18 @@ describe("willConflictNote", () => {
       );
     });
 
+    it("names only heirs who take; silent when the other bequest pays no one", () => {
+      const toJane = tree({ wills: [will("client", { bequests: [brk(60, { recipients: toSpouse })] })] });
+      expect(willConflictNote(oneAccount("acct-brk", 50, "if_spouse_survives"), toJane)).toBe(
+        "With the existing bequest of Schwab Brokerage to Jane, this is over 100%, so both are scaled down.",
+      );
+      expect(willConflictNote(oneAccount("acct-brk", 50, "if_spouse_predeceased"), toJane)).toBeNull();
+      const split = tree({ wills: [will("client", { bequests: [brk(60, { recipients: spouseAndKid })] })] });
+      expect(willConflictNote(oneAccount("acct-brk", 50, "if_spouse_predeceased"), split)).toBe(
+        "With the existing bequest of Schwab Brokerage to Kid, this is over 100%, so both are scaled down.",
+      );
+    });
+
     it("is null at exactly 100%, on another account, or at a different death", () => {
       const t = tree({ wills: [will("client", { bequests: [brk(60)] })] });
       expect(willConflictNote(oneAccount("acct-brk", 40), t)).toBeNull();
@@ -294,7 +368,7 @@ describe("willConflictNote", () => {
       ],
     });
     expect(willConflictNote(everything("second_death", "always"), t)).toBe(
-      "Jane's will already leaves everything to Kid at that death; the two share it — 50% to this trust.",
+      "Jane's will already leaves everything to Kid at that death; this trust shares it — 50% to this trust.",
     );
   });
 });
