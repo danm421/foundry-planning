@@ -119,4 +119,11 @@ describe("ClientsFilterBar", () => {
     expect(screen.getByLabelText("Filter by status")).toBeDefined();
     expect(screen.getByLabelText("Viewing advisor's book")).toBeDefined();
   });
+
+  it("focuses the search box on load so typing searches straight away", () => {
+    renderBar();
+    expect(document.activeElement).toBe(
+      screen.getByLabelText("Search by household or contact name"),
+    );
+  });
 });

@@ -108,6 +108,8 @@ export function ClientsFilterBar({ canManage }: { canManage: boolean }) {
         <>
           <input
             type="search"
+            // Landing on the list means looking someone up — start typing.
+            autoFocus
             placeholder="Search by household or contact name"
             defaultValue={searchParams.get("search") ?? ""}
             onChange={(e) => updateParam("search", e.target.value, true)}
