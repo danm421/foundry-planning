@@ -3,7 +3,6 @@ import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { discountedGiftValue } from "@/lib/gifts/apply-valuation-discount";
 import { computeGiftTaxTreatment } from "@/lib/gifts/compute-tax-treatment";
 import {
-  spouseOf,
   type FundingItem,
   type GuidedTrustAnswers,
   type PersonRef,
@@ -13,6 +12,7 @@ import { buildBequestMutations } from "./guided-trust-bequests";
 import { buildRevocableMembershipMutations } from "./revocable-trust-rows";
 import { buildCltRemainderGiftMutation, buildSplitInterestTrustEntity } from "./split-interest-levers";
 import { usd } from "./technique-summaries";
+import { accountName, bequestWhen, pct } from "./trust-labels";
 import {
   buildIlitFundingMutation,
   buildRetitleFundingMutation,
@@ -244,17 +244,6 @@ export function giftExemptionPreview(
   return { lifetimeUsed: t.lifetimeUsed, annualExcluded: t.annualExcluded, perYear: gift.kind === "series" };
 }
 
-function accountName(accountId: string, tree: ClientData): string {
-  return tree.accounts.find((a) => a.id === accountId)?.name?.trim() || "an account";
-}
-
-function firstName(role: "client" | "spouse", tree: ClientData): string {
-  return role === "client" ? tree.client.firstName : (tree.client.spouseName ?? "Spouse");
-}
-
-/** 0–100 → "25%" / "33.33%". */
-const pct = (n: number) => `${Number(n.toFixed(2))}%`;
-
 function giftLabel(g: EstateFlowGift, tree: ClientData): string {
   switch (g.kind) {
     case "cash-once":
@@ -266,18 +255,8 @@ function giftLabel(g: EstateFlowGift, tree: ClientData): string {
   }
 }
 
-function bequestWhen(item: Extract<FundingItem, { kind: "bequest" }>, tree: ClientData): string {
-  if (item.from === "second_death") return "whoever dies second";
-  const will = `${firstName(item.from, tree)}'s will`;
-  const other = firstName(spouseOf(item.from), tree);
-  switch (item.condition) {
-    case "if_spouse_survives":
-      return `${will}, if ${other} survives`;
-    case "if_spouse_predeceased":
-      return `${will}, if ${other} has died`;
-    case "always":
-      return will;
-  }
+function bequestWhenOf(item: Extract<FundingItem, { kind: "bequest" }>, tree: ClientData): string {
+  return item.from === "second_death" ? "whoever dies second" : bequestWhen(item.from, item.condition, tree);
 }
 
 /** One line per funding item, e.g. "Gift $1,000,000 · 2026" or
@@ -292,7 +271,7 @@ export function fundingItemLabel(item: FundingItem, tree: ClientData): string {
         what.mode === "all_assets"
           ? "everything"
           : `${pct(what.percentage)} of ${accountName(what.accountId, tree)}`;
-      return `Bequest · ${thing} · ${bequestWhen(item, tree)}`;
+      return `Bequest · ${thing} · ${bequestWhenOf(item, tree)}`;
     }
     case "retitle":
       return `Move in · ${accountName(item.accountId, tree)}`;

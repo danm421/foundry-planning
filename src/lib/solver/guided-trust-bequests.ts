@@ -8,6 +8,7 @@ import type {
 } from "@/engine/types";
 import { formatNameList } from "@/lib/intake/estate";
 import { spouseOf, type FundingItem } from "./guided-trust";
+import { accountName, roleFirstName } from "./trust-labels";
 import type { SolverMutation } from "./types";
 
 // The guided trust wizard's "at death" funding: each bequest answer becomes a
@@ -36,11 +37,6 @@ function targets(item: BequestItem): { grantor: Grantor; condition: Condition }[
   return [{ grantor: item.from, condition: item.condition }];
 }
 
-function accountName(accountId: string, tree: ClientData): string {
-  // Same fallback the will editor's bequest dialog uses.
-  return tree.accounts.find((a) => a.id === accountId)?.name?.trim() || "Asset bequest";
-}
-
 /**
  * One `will-upsert` per will the items touch. The Solver's working set keeps
  * one mutation per key, so a second upsert for the same will would REPLACE the
@@ -65,7 +61,7 @@ export function buildBequestMutations(
         { id: newId(), grantor, bequests: [] };
       const bequest: WillBequest = {
         id: newId(),
-        name: specific ? accountName(specific.accountId, tree) : "Remaining Estate Value",
+        name: specific ? accountName(specific.accountId, tree, "Asset bequest") : "Remaining Estate Value",
         kind: "asset",
         assetMode: what.mode,
         accountId: specific?.accountId ?? null,
@@ -84,10 +80,6 @@ export function buildBequestMutations(
   return [...wills.values()].map((w) => ({ kind: "will-upsert", id: w.id, value: w }));
 }
 
-function firstName(role: Grantor, tree: ClientData): string {
-  return role === "client" ? tree.client.firstName : (tree.client.spouseName ?? "Spouse");
-}
-
 function recipientName(r: Recipient, grantor: Grantor, tree: ClientData): string {
   switch (r.recipientKind) {
     case "family_member":
@@ -98,7 +90,7 @@ function recipientName(r: Recipient, grantor: Grantor, tree: ClientData): string
       return tree.entities?.find((e) => e.id === r.recipientId)?.name ?? "an heir";
     case "spouse":
       // The engine pays a "spouse" recipient to whoever survives the grantor.
-      return firstName(spouseOf(grantor), tree);
+      return roleFirstName(spouseOf(grantor), tree);
     case "other_heirs":
       return "other heirs";
   }
@@ -167,7 +159,7 @@ function noteFor(will: Will, what: BequestItem["what"], condition: Condition, tr
   const { grantor } = will;
   const married = tree.client.spouseDob != null;
   const deaths = firingDeaths(condition, married);
-  const first = firstName(grantor, tree);
+  const first = roleFirstName(grantor, tree);
   const nameList = (rs: Recipient[]) =>
     formatNameList([...new Set(rs.map((r) => recipientName(r, grantor, tree)))]);
   // Only recipients who actually take something are ever named.

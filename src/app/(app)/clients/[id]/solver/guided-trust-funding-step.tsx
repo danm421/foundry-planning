@@ -11,6 +11,7 @@ import type { Account } from "@/engine/types";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import type { FundingItem, GuidedTrustContext, GuidedTrustKind } from "@/lib/solver/guided-trust";
 import { fundingItemLabel, giftExemptionPreview } from "@/lib/solver/guided-trust-batch";
+import { roleFirstName } from "@/lib/solver/trust-labels";
 import { usd } from "@/lib/solver/technique-summaries";
 import { isRetitleFundingEligible } from "@/lib/solver/trust-levers";
 import { GuidedTrustBequestFields } from "./guided-trust-bequest-fields";
@@ -215,7 +216,7 @@ function GiftPanel({
         accountValue: (id) => tree.accounts.find((a) => a.id === id)?.value ?? 0,
       })
     : null;
-  const grantorName = trust.grantor === "client" ? tree.client.firstName : (tree.client.spouseName ?? "Spouse");
+  const grantorName = roleFirstName(trust.grantor, tree);
   const suffix = preview?.perYear ? " a year" : "";
 
   return (

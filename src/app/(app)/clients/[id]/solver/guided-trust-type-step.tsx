@@ -50,7 +50,7 @@ const GROUPS: { label: string; rows: Row[] }[] = [
         kind: "slat",
         name: "SLAT · spousal access",
         tag: "removes growth",
-        note: "Same, but your spouse can still take distributions, so the couple keeps indirect access.",
+        note: "Same, but the grantor's husband or wife can still take distributions, so the couple keeps indirect access.",
         marriedOnly: true,
       },
       {

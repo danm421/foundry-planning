@@ -12,6 +12,7 @@ import type {
   PersonShare,
 } from "@/lib/solver/guided-trust";
 import { trustPeopleOptions } from "@/lib/solver/guided-trust";
+import { roleFirstName } from "@/lib/solver/trust-labels";
 import { fundingItemLabel } from "@/lib/solver/guided-trust-batch";
 import { formatCompact } from "@/lib/format-compact";
 import { kindName } from "./guided-trust-type-step";
@@ -173,7 +174,7 @@ function ImpactPanel({ impact }: { impact: Props["impact"] }) {
 export function GuidedTrustReviewStep({ answers, ctx, onChange, onEdit, impact }: Props) {
   const { kind, grantor } = answers;
   const grantorName =
-    grantor === "spouse" ? (ctx.tree.client.spouseName ?? "Spouse") : ctx.tree.client.firstName;
+    roleFirstName(grantor, ctx.tree);
   const split = kind === "crt" || kind === "clt";
 
   return (

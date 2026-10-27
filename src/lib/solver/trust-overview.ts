@@ -1,19 +1,13 @@
 import type { ClientData, EntitySummary, Will, WillBequest } from "@/engine/types";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { fundingItemLabel } from "./guided-trust-batch";
+import { bequestWhen, pct, roleFirstName } from "./trust-labels";
 
 // One-line descriptions for the Estate planning dialog's overview list: who
 // gets what's left of a trust, and what funds it. Display only — read off the
 // working tree and the dialog's planned-gift list.
 
 type Grantor = Will["grantor"];
-
-/** 0–100 → "25%" / "33.33%". */
-const pct = (n: number) => `${Number(n.toFixed(2))}%`;
-
-function firstName(role: Grantor, tree: ClientData): string {
-  return role === "client" ? tree.client.firstName : (tree.client.spouseName ?? "Spouse");
-}
 
 function bequestThing(b: WillBequest, share: number, tree: ClientData): string {
   if (b.assetMode === "all_assets") return share >= 100 ? "everything" : `${pct(share)} of everything`;
@@ -22,19 +16,6 @@ function bequestThing(b: WillBequest, share: number, tree: ClientData): string {
     (b.entityId && tree.entities?.find((e) => e.id === b.entityId)?.name?.trim()) ||
     "an account";
   return `${pct((b.percentage * share) / 100)} of ${name}`;
-}
-
-function bequestWhen(grantor: Grantor, condition: WillBequest["condition"], tree: ClientData): string {
-  const will = `${firstName(grantor, tree)}'s will`;
-  const other = firstName(grantor === "client" ? "spouse" : "client", tree);
-  switch (condition) {
-    case "if_spouse_survives":
-      return `${will}, if ${other} survives`;
-    case "if_spouse_predeceased":
-      return `${will}, if ${other} has died`;
-    case "always":
-      return will;
-  }
 }
 
 /**
@@ -56,7 +37,7 @@ function bequestLines(entity: EntitySummary, tree: ClientData): string[] {
     for (const r of will.residuaryRecipients ?? []) {
       if (r.recipientKind !== "entity" || r.recipientId !== entity.id || (r.tier ?? "primary") !== "primary") continue;
       const share = r.percentage >= 100 ? "" : `${pct(r.percentage)} of `;
-      residues.push(`Bequest · ${share}what's left · ${firstName(will.grantor, tree)}'s will`);
+      residues.push(`Bequest · ${share}what's left · ${roleFirstName(will.grantor, tree)}'s will`);
     }
   }
 
@@ -115,7 +96,7 @@ export function trustFundingSummary(
 /** Who gets what's left, by first name — a CRT's charity included — or "—". */
 export function remainderSummary(entity: EntitySummary, tree: ClientData): string {
   const names = (entity.remainderBeneficiaries ?? []).map((r) => {
-    if (r.householdRole) return firstName(r.householdRole, tree);
+    if (r.householdRole) return roleFirstName(r.householdRole, tree);
     if (r.familyMemberId) return tree.familyMembers?.find((f) => f.id === r.familyMemberId)?.firstName ?? "An heir";
     if (r.externalBeneficiaryId) {
       return tree.externalBeneficiaries?.find((x) => x.id === r.externalBeneficiaryId)?.name ?? "An heir";

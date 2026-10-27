@@ -13,6 +13,7 @@ import {
   type GuidedTrustContext,
   type PersonShare,
 } from "@/lib/solver/guided-trust";
+import { roleFirstName } from "@/lib/solver/trust-labels";
 import { GuidedTrustPeoplePicker } from "./guided-trust-people-picker";
 import { Callout, StepHeader } from "./guided-trust-ui";
 
@@ -34,9 +35,7 @@ export function GuidedTrustPeopleStep({
   remainderTouched,
   onRemainderTouched,
 }: Props) {
-  const { client } = ctx.tree;
-  const firstName = (role: "client" | "spouse") =>
-    (role === "client" ? client.firstName : client.spouseName) ?? (role === "client" ? "Client" : "Spouse");
+  const firstName = (role: "client" | "spouse") => roleFirstName(role, ctx.tree);
   const spouseRole = spouseOf(answers.grantor);
 
   function setLifetime(lifetime: PersonShare[]) {

@@ -6,6 +6,7 @@
 // leave it, never counting the one being built.
 
 import { useMemo, useState } from "react";
+import { roleFirstName } from "@/lib/solver/trust-labels";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import type { FundingItem } from "@/lib/solver/guided-trust";
 import { buildBequestMutations, willConflictNote } from "@/lib/solver/guided-trust-bequests";
@@ -65,7 +66,7 @@ function Pills<T extends string>({
 
 export function GuidedTrustBequestFields({ trust, ctx, existing, onAdd }: Props) {
   const { tree, isMarried } = ctx;
-  const spouseFirst = tree.client.spouseName ?? "Spouse";
+  const spouseFirst = roleFirstName("spouse", tree);
 
   const [from, setFrom] = useState<From>("client");
   const [mode, setMode] = useState<"all_assets" | "specific">("all_assets");

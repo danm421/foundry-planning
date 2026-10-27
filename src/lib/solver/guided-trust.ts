@@ -8,6 +8,7 @@ import type {
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import type { SplitInterestFundingPick } from "@/lib/forms/split-interest-funding-diff";
 import { householdAgePeople, type AgePerson } from "@/lib/year-or-age";
+import { roleFirstName } from "./trust-labels";
 
 // The answers behind the Solver's step-by-step "add a trust" wizard, plus the
 // pure rules around them: what each trust type presets, which steps it shows,
@@ -97,7 +98,7 @@ export function guidedTrustContext(
         clientBirthYear: birthYear(tree.client.dateOfBirth),
         spouseBirthYear: birthYear(tree.client.spouseDob),
       },
-      { client: tree.client.firstName, spouse: tree.client.spouseName ?? "Spouse" },
+      { client: tree.client.firstName, spouse: roleFirstName("spouse", tree) },
     ),
     annualExclusionByYear,
     planStartYear: tree.planSettings.planStartYear,
@@ -233,10 +234,9 @@ export function trustPeopleOptions(
   const options: PersonOption[] = [];
   if (group === "lifetime" && tree.client.spouseDob != null) {
     const role = spouseOf(grantor);
-    const first = role === "spouse" ? tree.client.spouseName : tree.client.firstName;
     options.push({
       ref: { kind: "household", role },
-      label: `${first ?? "Spouse"} (spouse)`,
+      label: `${roleFirstName(role, tree)} (spouse)`,
       isGrantorSpouse: true,
     });
   }
