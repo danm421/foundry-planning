@@ -139,8 +139,8 @@ export function SwitchRow({
       >
         <span
           aria-hidden
-          className={`absolute top-[2px] h-[13px] w-[13px] rounded-full bg-white transition-all ${
-            checked ? "left-[15px]" : "left-[2px]"
+          className={`absolute top-[2px] h-[13px] w-[13px] rounded-full transition-all ${
+            checked ? "left-[15px] bg-accent-on" : "left-[2px] bg-card"
           }`}
         />
       </button>

@@ -4,6 +4,7 @@
 // box each; adding or removing a pick re-splits evenly. The wizard's People
 // step uses it twice, and the CLT setup reuses it for "Gets what's left".
 
+import { useState } from "react";
 import { evenShares, type PersonOption, type PersonRef, type PersonShare } from "@/lib/solver/guided-trust";
 
 interface Props {
@@ -66,15 +67,10 @@ export function GuidedTrustPeoplePicker({ label, note, options, value, onChange 
               </button>
               {share && value.length >= 2 ? (
                 <span className="mr-2 inline-flex items-center gap-0.5 text-ink-3">
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step="any"
-                    aria-label={`Percent for ${o.label}`}
+                  <PercentBox
+                    label={`Percent for ${o.label}`}
                     value={share.percentage}
-                    onChange={(e) => setPercent(key, Number(e.target.value) || 0)}
-                    className="tabular h-5 w-12 rounded-[var(--radius-sm)] border border-hair-2 bg-paper px-1 text-right text-[12px] text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
+                    onCommit={(n) => setPercent(key, n)}
                   />
                   %
                 </span>
@@ -84,5 +80,38 @@ export function GuidedTrustPeoplePicker({ label, note, options, value, onChange 
         })}
       </div>
     </div>
+  );
+}
+
+/** A % box that keeps what's being typed as text, so it can be blanked and
+ *  retyped. Only a value that parses to a number is committed; on blur an
+ *  empty or invalid box reverts to the last committed value. */
+function PercentBox({
+  label,
+  value,
+  onCommit,
+}: {
+  label: string;
+  value: number;
+  onCommit: (n: number) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <input
+      type="number"
+      min={0}
+      max={100}
+      step="any"
+      aria-label={label}
+      value={draft ?? String(value)}
+      onChange={(e) => {
+        const text = e.target.value;
+        setDraft(text);
+        const n = text.trim() === "" ? NaN : Number(text);
+        if (Number.isFinite(n)) onCommit(n);
+      }}
+      onBlur={() => setDraft(null)}
+      className="tabular h-5 w-12 rounded-[var(--radius-sm)] border border-hair-2 bg-paper px-1 text-right text-[12px] text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
+    />
   );
 }

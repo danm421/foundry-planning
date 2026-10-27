@@ -80,9 +80,11 @@ export function GuidedTrustPowersStep({ answers, ctx, onChange }: Props) {
 
       <SwitchRow
         name="Crummey powers"
-        note={`Beneficiaries get a short window to withdraw each gift, so ${
-          exclusion != null ? `up to ${dollars(exclusion)} a year per beneficiary` : "the annual exclusion per beneficiary"
-        } counts against the annual exclusion instead of lifetime exemption.`}
+        note={
+          exclusion != null
+            ? `Beneficiaries get a short window to withdraw each gift, so up to ${dollars(exclusion)} a year per beneficiary counts against the annual exclusion instead of lifetime exemption.`
+            : "Beneficiaries get a short window to withdraw each gift, so up to the annual exclusion a year per beneficiary counts against it instead of lifetime exemption."
+        }
         why={why("crummeyPowers")}
         checked={answers.crummeyPowers}
         onToggle={() => onChange({ ...answers, crummeyPowers: !answers.crummeyPowers })}

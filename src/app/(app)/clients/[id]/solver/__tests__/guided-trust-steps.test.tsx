@@ -154,6 +154,28 @@ describe("GuidedTrustPeopleStep", () => {
     expect(next.lifetime.map((s) => s.percentage)).toEqual([60, 50]);
   });
 
+  it("a share box can be cleared and retyped, and takes decimals", async () => {
+    const emit = vi.fn();
+    render(<PeopleHost ctx={ctxFor()} onEmit={emit} />);
+    const benefits = screen.getByRole("group", { name: /benefits now/i });
+    await userEvent.click(within(benefits).getByRole("button", { name: /Sam/ }));
+    await userEvent.click(within(benefits).getByRole("button", { name: /Casey/ }));
+    const box = () => within(benefits).getAllByRole("spinbutton")[0] as HTMLInputElement;
+    await userEvent.clear(box());
+    expect(box().value).toBe("");
+    await userEvent.type(box(), "60");
+    expect(box().value).toBe("60");
+    expect((emit.mock.calls.at(-1)![0] as GuidedTrustAnswers).lifetime[0].percentage).toBe(60);
+    await userEvent.clear(box());
+    await userEvent.type(box(), "33.5");
+    expect(box().value).toBe("33.5");
+    expect((emit.mock.calls.at(-1)![0] as GuidedTrustAnswers).lifetime[0].percentage).toBe(33.5);
+    // Leaving a blank box restores the last committed number.
+    await userEvent.clear(box());
+    await userEvent.tab();
+    expect(box().value).toBe("33.5");
+  });
+
   it("remainder follows benefits-now minus the spouse until it is edited", async () => {
     const emit = vi.fn();
     render(<PeopleHost ctx={ctxFor()} onEmit={emit} />);
