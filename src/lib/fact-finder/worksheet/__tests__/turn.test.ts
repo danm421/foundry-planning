@@ -734,12 +734,38 @@ describe("runWorksheetTurn — a document's row the plan already has", () => {
     );
     await match(fake.model);
 
-    expect(toolLines()).toEqual(["Got 1 row from Salary & Wages ready for the plan", 'Linked "Salary & Wages — Client" to "Salary — Larkspur Engineering LLC"']);
+    // The re-score already linked it for certain, so the model's set_link changes nothing.
+    expect(toolLines()).toEqual(["Got 1 row from Salary & Wages ready for the plan", '"Salary & Wages — Client" is already linked to "Salary — Larkspur Engineering LLC"']);
     expect(fake.seen.flat().map(text).join("\n")).not.toContain("no candidates");
     expect(review.mock.calls[0][2]).toMatchObject({ onlyRows: ["salary:Client"] });
     expect(store.state!.transcript.at(-1)).toMatchObject({ role: "proposal", rowIds: ["salary:Client"] });
     // The row the document gave is the one that's ready for the plan: it keeps its source.
     expect(store.state!.worksheet.tables[1].rows).toEqual([{ ...wages.rows[0], ref: { rowId: "salary:Client" } }]);
+  });
+
+  it("a later Match's set_link to the record the chat linked in the reply that filled the row is a quiet success — never a steer toward a new record", async () => {
+    // Two salary records: the re-score can't pick, so the chat's set_link (the advisor said which) settles the link.
+    vi.mocked(loadExistingRecords).mockResolvedValue(salaryRecords(LARKSPUR, { ...LARKSPUR, id: "inc-2", name: "Salary — Old Employer" }));
+    const linkSalary = (id: string) => callTool("set_link", { rowId: "salary:Client", kind: "existing", recordId: "inc-1" }, id);
+    await match(scripted(stageSalary(), linkSalary("call-link"), new AIMessage("Nathan's salary is ready for the plan.")).model);
+    const salary = () => store.state!.sections.salary.find((r) => r.id === "salary:Client")!;
+    expect(toolLines()).toEqual(["Got 1 row from Salary & Wages ready for the plan", 'Linked "Salary & Wages — Client" to "Salary — Larkspur Engineering LLC"']);
+    expect(salary().link).toMatchObject({ kind: "existing", recordId: "inc-1", confirmed: true, by: "chat" });
+    // The link settled in the reply that filled the row keeps the row's candidates.
+    expect(salary().linkCandidates).toEqual([
+      { recordId: "inc-1", label: "Salary — Larkspur Engineering LLC", score: 0.5 },
+      { recordId: "inc-2", label: "Salary — Old Employer", score: 0.5 },
+    ]);
+    const firstLines = toolLines().length;
+
+    const again = scripted(linkSalary("call-relink"), new AIMessage("It's already linked."));
+    await match(again.model);
+
+    expect(toolLines().slice(firstLines)).toEqual(['"Salary & Wages — Client" is already linked to "Salary — Larkspur Engineering LLC"']);
+    const seen = again.seen.flat().map(text).join("\n");
+    expect(seen).not.toContain("no candidates");
+    expect(seen).not.toContain("use kind");
+    expect(store.state!.transcript.at(-1)).toMatchObject({ role: "proposal", rowIds: ["salary:Client"] });
   });
 
   it("a Match proposes a row linked for certain to a plan record, not saved yet, though the model proposed nothing", async () => {
@@ -759,7 +785,7 @@ describe("runWorksheetTurn — a document's row the plan already has", () => {
     await turn("Use the pay stub's salary for Nathan.", fake.model);
 
     expect(text(fake.seen[1][0])).toContain('links to "Salary — Larkspur Engineering LLC" (inc-1) 100% — confirmed'); // as the commit will leave it
-    expect(toolLines()).toEqual(['Set Annual salary on "Salary & Wages — Client" to $162,500.00', 'Linked "Salary & Wages — Client" to "Salary — Larkspur Engineering LLC"']);
+    expect(toolLines()).toEqual(['Set Annual salary on "Salary & Wages — Client" to $162,500.00', '"Salary & Wages — Client" is already linked to "Salary — Larkspur Engineering LLC"']);
     expect(store.state!.sections.salary.find((r) => r.id === "salary:Client")?.link).toMatchObject({ kind: "existing", recordId: "inc-1", confirmed: true });
   });
 

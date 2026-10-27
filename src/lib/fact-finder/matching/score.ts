@@ -311,8 +311,10 @@ function pickLinks(scoredRows: ScoredCandidate[][], claimed: Set<string>): FFLin
   });
 }
 
+const candidatesOf = (scored: ScoredCandidate[]): FFLinkCandidate[] => scored.map(({ recordId, label, score }) => ({ recordId, label, score }));
+
 function withLink(row: FFRow, link: FFLink, scored: ScoredCandidate[]): FFRow {
-  const linkCandidates: FFLinkCandidate[] = scored.map(({ recordId, label, score }) => ({ recordId, label, score }));
+  const linkCandidates = candidatesOf(scored);
   if (sameJson(row.link ?? null, link) && sameJson(row.linkCandidates ?? [], linkCandidates)) return row;
   return { ...row, link, linkCandidates };
 }
@@ -360,9 +362,15 @@ export function applyLinkScores(state: FactFinderState, records: ExistingRecords
     for (const s of sectionsLinkingTo(kind)) {
       const fixed = fixedLabelsOf(s).length > 0;
       (sections[s.id] ?? []).forEach((row, index) => {
-        if (!needsScoring(row) || !rowHasValues(row)) return;
+        const rescore = needsScoring(row);
+        // A link to a record settled before its row was ever scored (the chat's set_link in the reply that filled the
+        // row) keeps its link and gets the candidates it never had.
+        const unscored = !rescore && row.link?.kind === "existing" && row.linkCandidates === undefined;
+        if (!(rescore || unscored) || !rowHasValues(row)) return;
         const scored = fixed ? implicitCandidates(s, row, records) : scoreCandidates(s, row, records);
-        if (scored) pending.push({ sectionId: s.id, index, row, scored });
+        if (!scored) return;
+        if (rescore) pending.push({ sectionId: s.id, index, row, scored });
+        else sections = { ...sections, [s.id]: sections[s.id].map((r, i) => (i === index ? { ...row, linkCandidates: candidatesOf(scored) } : r)) };
       });
     }
     const links = pickLinks(pending.map((p) => p.scored), liveClaims(sections, kind));

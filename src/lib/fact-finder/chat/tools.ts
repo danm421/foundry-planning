@@ -351,6 +351,10 @@ async function dispatch(name: string, raw: unknown, state: FactFinderState, ctx:
       if (!a.recordId) throw new Error('set_link needs a recordId when kind is "existing".');
       const candidates = row.linkCandidates ?? [];
       const candidate = candidates.find((c) => c.recordId === a.recordId);
+      if (link?.kind === "existing" && link.confirmed && link.recordId === a.recordId) {
+        const summary = `${label} is already linked to ${candidate ? quote(candidate.label) : "that plan record"}`;
+        return { ops: [], summary, result: fenceUntrusted(`Done: ${summary}.`) };
+      }
       if (!candidate) {
         if (candidates.length === 0) {
           throw new Error(`${label} has no candidates to link to — use kind "new", or leave the link to the advisor.`);

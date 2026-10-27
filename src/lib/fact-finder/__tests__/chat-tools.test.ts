@@ -222,6 +222,21 @@ describe("runTool — links", () => {
     );
   });
 
+  it("set_link to the record a row is already linked to changes nothing and refuses nothing, candidates or not", async () => {
+    const state = fixture();
+    state.sections.cash[0] = { ...state.sections.cash[0], link: { kind: "existing", recordId: "acct-1", score: 0.74, confirmed: true, by: "advisor" } };
+    // Linked by the chat in the reply that filled it: no candidates stored.
+    state.sections.cash[1] = { ...state.sections.cash[1], link: { kind: "existing", recordId: "acct-7", score: null, confirmed: true, by: "chat" } };
+    const again = (rowId: string, recordId: string) => runTool("set_link", { rowId, kind: "existing", recordId }, state, context());
+
+    const known = await again("c1", "acct-1");
+    expect(known.ops).toEqual([]);
+    expect(known.summary).toBe('"Joint Checking" is already linked to "Joint Checking ··1234"');
+    const bare = await again("c2", "acct-7");
+    expect(bare.ops).toEqual([]);
+    expect(bare.summary).toBe('"Joint Checking (copy)" is already linked to that plan record');
+  });
+
   it("set_link refuses a row already linked to the record it saved: it's in the plan, so leave it — never make it new", async () => {
     const state = fixture();
     state.sections.cash[1] = { ...state.sections.cash[1], link: { kind: "existing", recordId: "acct-7", score: null, confirmed: true, by: "advisor" } };
