@@ -6,6 +6,7 @@ import type {
   WillBequest,
 } from "@/engine/types";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
+import type { SplitInterestFundingPick } from "@/lib/forms/split-interest-funding-diff";
 import { householdAgePeople, type AgePerson } from "@/lib/year-or-age";
 
 // The answers behind the Solver's step-by-step "add a trust" wizard, plus the
@@ -39,7 +40,10 @@ export type FundingItem =
 
 export interface SplitInterestAnswers {
   snapshot: TrustSplitInterestSnapshot;
+  /** Ids of the asset picks (what the batch retitles). */
   fundingAccountIds: string[];
+  /** The full picks (percentages, cash) so Back / Edit reopens exactly what was chosen. */
+  fundingPicks?: SplitInterestFundingPick[];
   newCharity: { id: string; name: string; charityType: "public" | "private" } | null;
 }
 

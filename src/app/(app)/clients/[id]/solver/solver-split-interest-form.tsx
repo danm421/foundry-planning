@@ -67,8 +67,10 @@ export function SolverSplitInterestForm({
       charityId: snap?.charityId ?? "",
     };
   });
-  const [fundingPicks, setFundingPicks] = useState<SplitInterestFundingPick[]>(() =>
-    (value?.fundingAccountIds ?? []).map((accountId) => ({ kind: "asset", accountId, percent: 1 })),
+  const [fundingPicks, setFundingPicks] = useState<SplitInterestFundingPick[]>(
+    () =>
+      value?.fundingPicks ??
+      (value?.fundingAccountIds ?? []).map((accountId) => ({ kind: "asset", accountId, percent: 1 })),
   );
   // A charity typed in here is only held; the wizard's Add trust creates it.
   const [pendingCharity, setPendingCharity] = useState<PendingCharity | null>(
@@ -191,7 +193,8 @@ export function SolverSplitInterestForm({
     return {
       snapshot,
       fundingAccountIds: fundingPicks.flatMap((p) => (p.kind === "asset" ? [p.accountId] : [])),
-      newCharity: pendingCharity,
+      fundingPicks,
+      newCharity: pendingCharity && pendingCharity.id === splitInput.charityId ? pendingCharity : null,
     };
     // ageAt reads splitInput and familyMembers, both listed.
     // eslint-disable-next-line react-hooks/exhaustive-deps

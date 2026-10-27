@@ -13,6 +13,7 @@ import {
   stepBlocker,
   type GuidedTrustAnswers,
 } from "@/lib/solver/guided-trust";
+import { buildSplitInterestSnapshot } from "@/lib/solver/split-interest-levers";
 import { GuidedTrustSetupStep } from "../guided-trust-setup-step";
 
 const CHARITY = "11111111-1111-4111-8111-111111111111";
@@ -44,11 +45,13 @@ const ctx = guidedTrustContext(tree(), { 2026: 19000 });
 function Host({
   kind,
   onEmit,
+  start,
 }: {
   kind: "crt" | "clt";
   onEmit: (a: GuidedTrustAnswers) => void;
+  start?: Partial<GuidedTrustAnswers>;
 }) {
-  const [answers, setAnswers] = useState<GuidedTrustAnswers>({ ...initialAnswers("e1"), kind });
+  const [answers, setAnswers] = useState<GuidedTrustAnswers>({ ...initialAnswers("e1"), kind, ...start });
   onEmit(answers);
   return <GuidedTrustSetupStep answers={answers} ctx={ctx} onChange={setAnswers} />;
 }
@@ -123,5 +126,40 @@ describe("GuidedTrustSetupStep", () => {
     render(<Host kind="crt" onEmit={(a) => (last = a)} />);
     await user.selectOptions(screen.getByLabelText(/grantor/i), "spouse");
     expect(last.grantor).toBe("spouse");
+  });
+
+  it("deselecting the pending charity clears newCharity but keeps it listed", async () => {
+    const user = userEvent.setup();
+    let last!: GuidedTrustAnswers;
+    render(<Host kind="crt" onEmit={(a) => (last = a)} />);
+    await user.type(screen.getByLabelText(/new charity/i), "Local Food Bank");
+    await user.click(screen.getByRole("button", { name: "Add" }));
+    await pickFunding(user);
+    expect(last.splitInterest?.newCharity).not.toBeNull();
+    await user.selectOptions(screen.getByLabelText(/remainder charity|charitable beneficiary/i), CHARITY);
+    expect(last.splitInterest?.newCharity).toBeNull();
+    expect(last.splitInterest?.snapshot.charityId).toBe(CHARITY);
+    expect(screen.getByRole("option", { name: "Local Food Bank (new)" })).toBeTruthy();
+  });
+
+  it("reopening with saved answers reports nothing new (50% asset pick + cash pick survive)", () => {
+    const picks = [
+      { kind: "asset" as const, accountId: "a-brk", percent: 0.5 },
+      { kind: "cash" as const, grantor: "client" as const, amount: 10_000 },
+    ];
+    const snapshot = buildSplitInterestSnapshot(
+      {
+        origin: "new", inceptionYear: 2026, inceptionValue: 330_000, payoutType: "unitrust",
+        payoutPercent: 0.05, irc7520Rate: 0.04, termType: "years", termYears: 20, charityId: CHARITY,
+      },
+      "crt",
+      { age1: undefined, age2: undefined },
+    );
+    const splitInterest = { snapshot, fundingAccountIds: ["a-brk"], fundingPicks: picks, newCharity: null };
+    const seen: GuidedTrustAnswers[] = [];
+    render(<Host kind="crt" start={{ splitInterest }} onEmit={(a) => seen.push(a)} />);
+    expect(seen.every((a) => a.splitInterest === splitInterest)).toBe(true);
+    expect(seen.at(-1)?.splitInterest?.snapshot.inceptionValue).toBe(330_000);
+    expect(screen.getByText(/Partial percentages/)).toBeTruthy();
   });
 });
