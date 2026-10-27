@@ -4,7 +4,7 @@
 // footer. It owns the answers; on Review it builds one memoised batch for the
 // impact projection and for "Add trust". Cancel emits nothing.
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { ClientData } from "@/engine/types";
 import { crummeyBeneficiaryCount } from "@/lib/gifts/crummey-count";
 import {
@@ -73,25 +73,46 @@ export function GuidedTrustWizard({
   const ctx = useMemo(() => guidedTrustContext(tree, annualExclusionByYear), [tree, annualExclusionByYear]);
   const steps = stepsFor(answers.kind);
   const index = Math.max(0, steps.indexOf(step));
-  const blocker = stepBlocker(step, answers, ctx);
+  const stepHint = stepBlocker(step, answers, ctx);
 
-  // buildGuidedTrustBatch mints fresh ids on every call: build once per answer
-  // set, and only on Review, where the answers are known to be complete.
-  const batch = useMemo(
-    () => (step === "review" ? buildGuidedTrustBatch(answers, tree) : null),
-    [step, answers, tree],
-  );
+  // buildGuidedTrustBatch mints ids: draw them from a per-wizard pool, restarting
+  // at 0 each build, so an unchanged rebuild is byte-identical.
+  const idPool = useRef<string[]>([]);
+  const buildBatch = (a: GuidedTrustAnswers) => {
+    let i = 0;
+    return buildGuidedTrustBatch(a, tree, () => (idPool.current[i] ??= crypto.randomUUID(), idPool.current[i++]));
+  };
+
+  // The impact projection sees the batch as of the last Review render, keyed on
+  // the answers WITHOUT the name, so typing a name or an Edit that changes
+  // nothing never re-projects. Set during render (derived state), not in an effect.
+  const [impactSeen, setImpactSeen] = useState<{ key: string; tree: ClientData; mutations: SolverMutation[] } | null>(null);
+  if (step === "review") {
+    const key = JSON.stringify({ ...answers, name: defaultTrustName(answers, tree) });
+    if (!impactSeen || impactSeen.key !== key || impactSeen.tree !== tree) {
+      setImpactSeen({ key, tree, mutations: buildBatch({ ...answers, name: defaultTrustName(answers, tree) }).mutations });
+    }
+  }
   const impact = useGuidedTrustImpact({
     clientId,
     source,
     mutations,
     tree,
-    batch: batch?.mutations ?? [],
-    enabled: step === "review",
+    batch: impactSeen?.mutations ?? [],
+    enabled: impactSeen != null,
   });
 
+  // Add trust needs every step of this kind complete, not just the one shown.
+  const reviewBlocker =
+    step === "review"
+      ? steps.map((s) => stepBlocker(s, answers, ctx)).find((h) => h != null) ?? null
+      : null;
+
   function change(next: GuidedTrustAnswers) {
-    if (next.kind !== answers.kind) setRemainderTouched(false);
+    if (next.kind !== answers.kind) {
+      setRemainderTouched(false);
+      setEditingFromReview(false);
+    }
     setAnswers(next);
   }
 
@@ -122,6 +143,7 @@ export function GuidedTrustWizard({
   }
 
   const isReview = step === "review";
+  const blocker = isReview ? reviewBlocker : stepHint;
   const primaryLabel = isReview
     ? "Add trust"
     : editingFromReview
@@ -213,7 +235,7 @@ export function GuidedTrustWizard({
           <button
             type="button"
             disabled={blocker != null}
-            onClick={isReview ? () => batch && onAdd(batch, answers) : next}
+            onClick={isReview ? () => onAdd(buildBatch(answers), answers) : next}
             className={`shrink-0 rounded-[var(--radius-sm)] bg-accent px-3.5 py-1.5 font-medium text-accent-on disabled:opacity-40 ${focusRing}`}
           >
             {primaryLabel}

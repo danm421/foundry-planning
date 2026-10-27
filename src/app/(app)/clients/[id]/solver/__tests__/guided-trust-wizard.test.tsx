@@ -112,7 +112,33 @@ describe("GuidedTrustWizard", () => {
     expect(screen.getByRole("button", { name: "Add trust" })).toBeEnabled();
     expect(fetchMock).toHaveBeenCalledTimes(2); // before + after
     await userEvent.type(screen.getByLabelText("Name"), "!");
-    expect(fetchMock).toHaveBeenCalledTimes(2 + 2); // name change is a new batch, nothing else
+    expect(fetchMock).toHaveBeenCalledTimes(2); // typing the name never re-projects
+  });
+
+  it("Edit with no change then Back to review does not re-project", async () => {
+    setup();
+    await toReview();
+    await userEvent.click(screen.getByRole("button", { name: "Edit Grantor" }));
+    await click("Back to review");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("Edit that changes the grantor re-projects exactly once more", async () => {
+    setup();
+    await toReview();
+    await userEvent.click(screen.getByRole("button", { name: "Edit Grantor" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Jordan" }));
+    await click("Back to review");
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("changing the kind from Review walks the new kind's steps instead of returning", async () => {
+    setup();
+    await toReview();
+    await userEvent.click(screen.getByRole("button", { name: "Edit Type" }));
+    await userEvent.click(screen.getByRole("radio", { name: /^CRT/ }));
+    expect(screen.getByRole("button", { name: /Next: Setup/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Back to review" })).toBeNull();
   });
 
   it("Edit from Review -> change grantor -> Back to review returns to Review", async () => {
