@@ -31,6 +31,7 @@ import {
 } from "@/lib/solver/revocable-trust-funding-group";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import { mutationsToScenarioChanges } from "@/lib/solver/mutations-to-scenario-changes";
+import { trustSetupGroups } from "@/lib/solver/trust-setup-groups";
 import { heldScenarioChanges } from "@/lib/solver/held-changes";
 import type { SolverMutation, SolverScenarioChangeDraft } from "@/lib/solver/types";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
@@ -440,7 +441,7 @@ export function resolveToggleGroups(args: {
   nextOrderIndex: number;
 } {
   const { groupIdByTarget, newGroupRows } = resolveFundingGroupRows(
-    revocableTrustFundingGroups([...args.drafts]),
+    [...revocableTrustFundingGroups([...args.drafts]), ...trustSetupGroups(args.drafts)],
     args.existingGroups,
     args.scenarioId,
     args.startOrderIndex,
