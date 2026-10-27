@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Account, ClientData } from "@/engine/types";
 import type { TrustSplitInterestInput } from "@/lib/schemas/trust-split-interest";
 import type { SplitInterestFundingPickerAccount } from "@/components/forms/split-interest-funding-picker";
@@ -10,6 +10,7 @@ import { buildSplitInterestSnapshot } from "@/lib/solver/split-interest-levers";
 import CrtDetailsSection from "@/components/forms/crt-details-section";
 import CltDetailsSection from "@/components/forms/clt-details-section";
 import type { SplitInterestAnswers } from "@/lib/solver/guided-trust";
+import { roleFirstName } from "@/lib/solver/trust-labels";
 
 const inputClassName =
   "mt-1 h-9 w-full rounded-md border border-hair-2 bg-card px-2.5 text-[14px] text-ink focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30";
@@ -35,6 +36,8 @@ interface Props {
   value: SplitInterestAnswers | null;
   /** Complete answers, or null while they are not complete yet. */
   onChange: (next: SplitInterestAnswers | null) => void;
+  /** Extra controls under the payout and funding section (the CLT's remainder). */
+  children?: ReactNode;
 }
 
 type PendingCharity = NonNullable<SplitInterestAnswers["newCharity"]>;
@@ -47,6 +50,7 @@ export function SolverSplitInterestForm({
   onGrantorChange,
   value,
   onChange,
+  children,
 }: Props) {
   const planStartYear = clientData.planSettings.planStartYear;
 
@@ -217,21 +221,55 @@ export function SolverSplitInterestForm({
 
   const Section = subType === "crt" ? CrtDetailsSection : CltDetailsSection;
 
+  // Who gives and the new-charity field share one row; the payout and funding
+  // section keeps the full width so its funding picker can show account names.
   return (
     <div className="space-y-3">
-      {isMarried && (
-        <label className="block text-[12px] text-ink-2">
-          Grantor
+      <div className="grid items-end gap-x-4 gap-y-3 lg:grid-cols-2">
+        {isMarried && (
+          <label className="block text-[12px] text-ink-2">
+            Grantor
+            <select
+              value={grantor}
+              onChange={(e) => onGrantorChange(e.target.value as "client" | "spouse")}
+              className={inputClassName}
+            >
+              <option value="client">{roleFirstName("client", clientData)}</option>
+              <option value="spouse">{roleFirstName("spouse", clientData)}</option>
+            </select>
+          </label>
+        )}
+
+        {/* Inline "add charity" — makes a new charity available as the remainder. */}
+        <div className="flex items-end gap-2">
+          <label className="min-w-0 flex-1 text-[12px] text-ink-2">
+            New charity
+            <input
+              type="text"
+              value={charityName}
+              onChange={(e) => setCharityName(e.target.value)}
+              placeholder="Charity name"
+              className={inputClassName}
+            />
+          </label>
           <select
-            value={grantor}
-            onChange={(e) => onGrantorChange(e.target.value as "client" | "spouse")}
-            className={inputClassName}
+            aria-label="Charity type"
+            value={charityType}
+            onChange={(e) => setCharityType(e.target.value as "public" | "private")}
+            className="h-9 rounded-md border border-hair-2 bg-card px-2.5 text-[14px] text-ink focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
           >
-            <option value="client">Client</option>
-            <option value="spouse">Co-client</option>
+            <option value="public">Public</option>
+            <option value="private">Private</option>
           </select>
-        </label>
-      )}
+          <button
+            type="button"
+            onClick={addCharity}
+            className="h-9 rounded-md border border-hair-2 bg-card px-3 text-[13px] text-ink hover:border-accent"
+          >
+            Add
+          </button>
+        </div>
+      </div>
 
       <Section
         value={sectionValue}
@@ -262,35 +300,7 @@ export function SolverSplitInterestForm({
         </p>
       )}
 
-      {/* Inline "add charity" — makes a new charity available as the remainder. */}
-      <div className="flex items-end gap-2">
-        <label className="flex-1 text-[12px] text-ink-2">
-          New charity
-          <input
-            type="text"
-            value={charityName}
-            onChange={(e) => setCharityName(e.target.value)}
-            placeholder="Charity name"
-            className={inputClassName}
-          />
-        </label>
-        <select
-          aria-label="Charity type"
-          value={charityType}
-          onChange={(e) => setCharityType(e.target.value as "public" | "private")}
-          className="h-9 rounded-md border border-hair-2 bg-card px-2.5 text-[14px] text-ink focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
-        >
-          <option value="public">Public</option>
-          <option value="private">Private</option>
-        </select>
-        <button
-          type="button"
-          onClick={addCharity}
-          className="h-9 rounded-md border border-hair-2 bg-card px-3 text-[13px] text-ink hover:border-accent"
-        >
-          Add
-        </button>
-      </div>
+      {children}
 
       {blockedReason && <p className="text-[12px] text-ink-3">{blockedReason}</p>}
     </div>

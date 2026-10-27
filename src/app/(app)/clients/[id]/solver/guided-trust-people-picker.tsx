@@ -72,8 +72,8 @@ export function GuidedTrustPeoplePicker({ label, note, options, value, onChange 
 }
 
 /** A % box that keeps what's being typed as text, so it can be blanked and
- *  retyped. Only a value that parses to a number is committed; on blur an
- *  empty or invalid box reverts to the last committed value. */
+ *  retyped. Only a value that parses to a number is committed, clamped to
+ *  0–100; on blur the box shows the committed value. */
 function PercentBox({
   label,
   value,
@@ -96,7 +96,7 @@ function PercentBox({
         const text = e.target.value;
         setDraft(text);
         const n = text.trim() === "" ? NaN : Number(text);
-        if (Number.isFinite(n)) onCommit(n);
+        if (Number.isFinite(n)) onCommit(Math.min(100, Math.max(0, n)));
       }}
       onBlur={() => setDraft(null)}
       className="tabular h-5 w-12 rounded-[var(--radius-sm)] border border-hair-2 bg-paper px-1 text-right text-[12px] text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"

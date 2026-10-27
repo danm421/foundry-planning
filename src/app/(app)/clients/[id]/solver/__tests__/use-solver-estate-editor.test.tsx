@@ -425,4 +425,16 @@ describe("useSolverEstateEditor — revocable trusts", () => {
     ]);
     expect(view.result.current.selection).toEqual({ kind: "overview" });
   });
+
+  it("unticking an added trust's last account returns to the overview; a base trust's pane stays open", () => {
+    const working = clientData({ accounts: [tagged("a1", "Family Trust"), tagged("a2", "Lake Trust")] });
+    const { view } = setup({ base, working });
+    act(() => view.result.current.setSelection({ kind: "revocable", name: "Lake Trust" }));
+    act(() => view.result.current.setRevocableMembership("Lake Trust", new Set()));
+    expect(view.result.current.selection).toEqual({ kind: "overview" });
+
+    act(() => view.result.current.setSelection({ kind: "revocable", name: "Family Trust" }));
+    act(() => view.result.current.setRevocableMembership("Family Trust", new Set()));
+    expect(view.result.current.selection).toEqual({ kind: "revocable", name: "Family Trust" });
+  });
 });

@@ -9,6 +9,10 @@ import { useId, type ReactNode } from "react";
 export const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
 
+/** The filled verdigris action (Next, Add trust, Add …): `.btn-primary`'s
+ *  colours and hover, at the wizard's compact size. */
+export const primaryButton = `rounded-[var(--radius-sm)] bg-accent font-medium text-accent-on transition-colors hover:bg-accent-ink disabled:opacity-40 disabled:hover:bg-accent ${focusRing}`;
+
 /** The numbered progress strip. `current` is an index into `steps`. */
 export function StepBar({ steps, current }: { steps: string[]; current: number }) {
   return (
@@ -79,7 +83,7 @@ export function ChoiceRow({
       role="radio"
       aria-checked={checked}
       onClick={onSelect}
-      className={`mb-1.5 flex w-full items-start gap-2.5 rounded-[var(--radius-sm)] border px-2.5 py-1.5 text-left transition-colors ${focusRing} ${
+      className={`mb-1.5 flex w-full items-start gap-2.5 rounded-[var(--radius-sm)] border px-2.5 py-1 text-left transition-colors last:mb-0 ${focusRing} ${
         checked ? "border-accent bg-accent-wash" : "border-hair hover:border-hair-2"
       }`}
     >
@@ -106,8 +110,8 @@ export function ChoiceRow({
   );
 }
 
-/** A switch with its name, a one-line note, an optional control underneath
- *  (`children`) and an optional "why it's on" line. */
+/** A switch with its name (and, beside it, an optional quiet "why it's on"),
+ *  a one-line note and an optional control underneath (`children`). */
 export function SwitchRow({
   name,
   note,
@@ -125,7 +129,7 @@ export function SwitchRow({
 }) {
   const id = useId();
   return (
-    <div className="flex items-start gap-3 border-b border-hair py-2.5 last:border-b-0">
+    <div className="flex items-start gap-3 border-b border-hair py-2 last:border-b-0">
       <button
         type="button"
         role="switch"
@@ -145,14 +149,16 @@ export function SwitchRow({
         />
       </button>
       <div className="min-w-0">
-        <div id={`${id}-name`} className="text-[13px] font-medium text-ink">
-          {name}
+        <div className="flex flex-wrap items-baseline gap-x-2">
+          <span id={`${id}-name`} className="text-[13px] font-medium text-ink">
+            {name}
+          </span>
+          {why ? <span className="text-[11.5px] text-ink-3">{why}</span> : null}
         </div>
         <div id={`${id}-note`} className="mt-0.5 text-[12px] leading-snug text-ink-3">
           {note}
         </div>
         {children}
-        {why ? <div className="mt-1 text-[11.5px] text-accent-ink">{why}</div> : null}
       </div>
     </div>
   );
@@ -182,7 +188,7 @@ export function AddButton({
         type="button"
         disabled={disabled}
         onClick={onClick}
-        className={`rounded-[var(--radius-sm)] bg-accent px-3 py-1 text-[12.5px] font-medium text-accent-on disabled:opacity-40 ${focusRing}`}
+        className={`${primaryButton} px-3 py-1 text-[12.5px]`}
       >
         {children}
       </button>

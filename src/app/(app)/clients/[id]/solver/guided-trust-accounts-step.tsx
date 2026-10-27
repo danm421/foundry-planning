@@ -11,7 +11,7 @@ import {
   type GuidedTrustContext,
 } from "@/lib/solver/guided-trust";
 import { revocableEligibleAccounts } from "@/lib/solver/revocable-trust-rows";
-import { Callout, StepHeader } from "./guided-trust-ui";
+import { Callout, StepHeader, focusRing } from "./guided-trust-ui";
 import { RevocableAccountChecklist } from "./solver-revocable-trust-pane";
 
 interface Props {
@@ -36,15 +36,18 @@ export function GuidedTrustAccountsStep({ answers, ctx, onChange }: Props) {
   return (
     <div>
       <StepHeader title="Which accounts go in?" subtitle="Name the trust and pick the accounts to move into it." />
-      <label className="block text-[12px] text-ink-3">
-        Trust name
+      <div className="flex items-center gap-3">
+        <label htmlFor="guided-trust-rev-name" className="w-24 shrink-0 text-[12.5px] text-ink-3">
+          Trust name
+        </label>
         <input
+          id="guided-trust-rev-name"
           type="text"
           value={name}
           onChange={(e) => onChange({ ...answers, name: e.target.value })}
-          className="mt-1 block w-full max-w-sm rounded border border-ink-3 bg-card px-2 py-1 text-[13px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+          className={`h-8 w-full max-w-sm rounded-[var(--radius-sm)] border border-hair-2 bg-card px-2 text-[13px] text-ink ${focusRing}`}
         />
-      </label>
+      </div>
       <div className="mb-1.5 mt-3 text-[10.5px] uppercase tracking-[0.12em] text-ink-4">Accounts</div>
       <RevocableAccountChecklist accounts={eligible} checked={checked} onToggle={toggle} />
       <Callout>Accounts skip probate. You keep full control, and they stay in your taxable estate.</Callout>

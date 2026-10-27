@@ -27,7 +27,10 @@ interface Props {
 type Tile = "gift" | "bequest" | "policy" | "retitle" | "sale";
 
 const TILES: Record<Tile, { name: string; note: string }> = {
-  gift: { name: "During life", note: "A gift now or later. Removes it, and its growth, from the estate." },
+  gift: {
+    name: "During life",
+    note: "A gift now or later. Its growth, and any part the annual exclusion covers, leaves the taxable estate.",
+  },
   bequest: {
     name: "At death",
     note: "A bequest in the will. Doesn't lower that death's estate tax; it controls who gets it and how.",
@@ -69,10 +72,15 @@ export function GuidedTrustFundingStep({ trust, items, onItemsChange, ctx }: Pro
   const giftedIds = new Set(
     items.flatMap((i) => (i.kind === "gift" && i.gift.kind === "asset-once" ? [i.gift.accountId] : [])),
   );
+  const fundingIds = new Set([
+    ...movedIds,
+    ...giftedIds,
+    ...items.flatMap((i) => (i.kind === "policy" ? [i.accountId] : [])),
+  ]);
   const bequests = items.filter((i): i is Extract<FundingItem, { kind: "bequest" }> => i.kind === "bequest");
 
   return (
-    <div>
+    <div className="flex h-full min-h-0 flex-col">
       <StepHeader title="What goes in, and when?" subtitle="Add one or more. You can skip and fund it later." />
 
       {items.length > 0 ? (
@@ -82,9 +90,9 @@ export function GuidedTrustFundingStep({ trust, items, onItemsChange, ctx }: Pro
             return (
               <li
                 key={i}
-                className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-2.5 py-1 text-[12.5px] text-ink-2"
+                className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-2.5 py-0.5 text-[12.5px] text-ink-2"
               >
-                <span className="rounded-[3px] bg-accent-wash px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-accent-ink">
+                <span className="rounded-[3px] border border-hair-2 bg-card px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-ink-3">
                   {CHIP[item.kind]}
                 </span>
                 <span className="min-w-0 flex-1 truncate">{label}</span>
@@ -138,9 +146,9 @@ export function GuidedTrustFundingStep({ trust, items, onItemsChange, ctx }: Pro
         })}
       </div>
 
-      {/* Fallback only: the step targets no scrolling, but a tall gift form
-          plus a long item list may overflow the dialog. */}
-      <div className="mt-3 max-h-[34vh] overflow-y-auto pr-1">
+      {/* The step fills the dialog body and only this form scrolls, so a tall
+          gift form never pushes the step itself into scrolling. */}
+      <div className="mt-3 min-h-[6rem] flex-1 overflow-y-auto pr-1">
         {tile === "gift" ? (
           <GiftPanel trust={trust} ctx={ctx} excludedAccountIds={movedIds} onAdd={(g) => add({ kind: "gift", gift: g })} />
         ) : tile === "bequest" ? (
@@ -148,6 +156,7 @@ export function GuidedTrustFundingStep({ trust, items, onItemsChange, ctx }: Pro
             trust={{ id: trust.id, name: trust.name }}
             ctx={ctx}
             existing={bequests}
+            excludedAccountIds={fundingIds}
             onAdd={(b) => add(b)}
           />
         ) : tile === "policy" ? (
@@ -259,7 +268,7 @@ function PolicyPanel({ accounts, onAdd }: { accounts: Account[]; onAdd: (account
         <select
           value={id}
           onChange={(e) => setId(e.target.value)}
-          className="mt-1 block w-full max-w-xs rounded border border-ink-3 bg-card px-2 py-1 text-[13px] text-ink"
+          className="mt-1 block w-full max-w-xs rounded border border-hair-2 bg-card px-2 py-1 text-[13px] text-ink"
         >
           <option value="">Select a policy…</option>
           {accounts.map((a) => (

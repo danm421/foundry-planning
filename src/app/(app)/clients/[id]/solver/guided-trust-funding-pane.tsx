@@ -10,7 +10,7 @@ import { guidedKindOf, guidedTrustContext, type FundingItem } from "@/lib/solver
 import { buildFundingMutations, fundingItemLabel, fundingTrustOf } from "@/lib/solver/guided-trust-batch";
 import type { SolverMutation } from "@/lib/solver/types";
 import { GuidedTrustFundingStep } from "./guided-trust-funding-step";
-import { focusRing } from "./guided-trust-ui";
+import { focusRing, primaryButton } from "./guided-trust-ui";
 
 interface Props {
   trust: EntitySummary;
@@ -51,7 +51,7 @@ export function GuidedTrustFundingPane({ trust, tree, annualExclusionByYear, onC
           type="button"
           disabled={items.length === 0}
           onClick={add}
-          className={`rounded-[var(--radius-sm)] bg-accent px-3.5 py-1.5 font-medium text-accent-on hover:bg-accent-ink disabled:opacity-40 disabled:hover:bg-accent ${focusRing}`}
+          className={`${primaryButton} px-3.5 py-1.5`}
         >
           Add funding
         </button>

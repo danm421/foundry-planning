@@ -8,7 +8,12 @@
 
 import { useState } from "react";
 import type { Account, ClientData } from "@/engine/types";
-import { revocableEligibleAccounts, revocableTagOf, type RevocableTrustRow } from "@/lib/solver/revocable-trust-rows";
+import {
+  revocableEligibleAccounts,
+  revocableTagOf,
+  sameTrustName,
+  type RevocableTrustRow,
+} from "@/lib/solver/revocable-trust-rows";
 import { usd } from "@/lib/solver/technique-summaries";
 import { focusRing } from "./guided-trust-ui";
 
@@ -43,14 +48,12 @@ export function RevocableAccountChecklist({
             className={`accent-[var(--color-accent)] ${focusRing}`}
           />
           <span className="min-w-0 flex-1 truncate">{a.name}</span>
-          <span className="shrink-0 tabular-nums text-[12px] text-ink-3">{usd(a.value)}</span>
+          <span className="tabular shrink-0 text-[12px] text-ink-3">{usd(a.value)}</span>
         </label>
       ))}
     </div>
   );
 }
-
-const norm = (s: string | null | undefined) => (s ?? "").trim().toLowerCase();
 
 interface PaneProps {
   row: RevocableTrustRow;
@@ -82,7 +85,7 @@ export function SolverRevocableTrustPane({ row, tree, onSetMembership, onRename,
     }
     const taken = tree.accounts.some((a) => {
       const t = revocableTagOf(a);
-      return t !== null && t !== row.name && norm(t) === norm(name);
+      return t !== null && t !== row.name && sameTrustName(t, name);
     });
     const problem = !name ? "Name the trust." : taken ? "Another trust already uses that name." : null;
     if (problem) {
@@ -116,7 +119,7 @@ export function SolverRevocableTrustPane({ row, tree, onSetMembership, onRename,
               commit();
             }
           }}
-          className={`mt-1 block w-full max-w-sm rounded border border-ink-3 bg-card px-2 py-1 text-[13px] text-ink read-only:bg-card-2 read-only:text-ink-2 ${focusRing}`}
+          className={`mt-1 block w-full max-w-sm rounded border border-hair-2 bg-card px-2 py-1 text-[13px] text-ink read-only:bg-card-2 read-only:text-ink-2 ${focusRing}`}
         />
       </label>
       {row.isBase ? (

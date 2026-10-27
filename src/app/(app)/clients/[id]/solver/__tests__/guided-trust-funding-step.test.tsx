@@ -4,7 +4,7 @@
 // asserted is what the next render shows plus the last emitted items.
 import { describe, it, expect } from "vitest";
 import { useState } from "react";
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Account, ClientData } from "@/engine/types";
 import { guidedTrustContext, type FundingItem } from "@/lib/solver/guided-trust";
@@ -163,19 +163,37 @@ describe("GuidedTrustFundingStep", () => {
       expect(screen.getByRole("textbox", { name: "Percent of the account" })).toHaveValue("100");
     });
 
-    it("married: When defaults to Either way; Whoever dies second hides it and writes if_spouse_predeceased", async () => {
+    it("married: Whoever dies second is the default (no When); a will's When defaults to Either way", async () => {
       const user = userEvent.setup();
       let last: FundingItem[] = [];
       render(<Host onEmit={(i) => (last = i)} />);
       await openBequest(user);
+      expect(screen.getByRole("radio", { name: "Whoever dies second" })).toHaveAttribute("aria-checked", "true");
+      expect(screen.queryByRole("radiogroup", { name: "When" })).not.toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Add bequest" }));
+      expect(last[0]).toMatchObject({ from: "second_death", condition: "if_spouse_predeceased" });
+      await user.click(screen.getByRole("radio", { name: "Alex's will" }));
       expect(screen.getByRole("radio", { name: "Either way" })).toHaveAttribute("aria-checked", "true");
       await user.click(screen.getByRole("radio", { name: "Only if Jordan survives" }));
       await user.click(screen.getByRole("button", { name: "Add bequest" }));
-      expect(last[0]).toMatchObject({ from: "client", condition: "if_spouse_survives" });
-      await user.click(screen.getByRole("radio", { name: "Whoever dies second" }));
-      expect(screen.queryByRole("radiogroup", { name: "When" })).not.toBeInTheDocument();
-      await user.click(screen.getByRole("button", { name: "Add bequest" }));
-      expect(last[1]).toMatchObject({ from: "second_death", condition: "if_spouse_predeceased" });
+      expect(last[1]).toMatchObject({ from: "client", condition: "if_spouse_survives" });
+    });
+
+    it("One account offers only what the will can pass, and nothing already funding this trust", async () => {
+      const user = userEvent.setup();
+      render(<Host start={[{ kind: "policy", accountId: "a-pol" }]} />);
+      await openBequest(user);
+      await user.click(screen.getByRole("radio", { name: "One account" }));
+      const options = () =>
+        within(screen.getByRole("combobox", { name: "Account to leave" }))
+          .getAllByRole("option")
+          .map((o) => o.textContent);
+      expect(options()).toEqual(["Select an account…", "Joint Brokerage"]);
+      cleanup();
+      render(<Host start={[{ kind: "retitle", accountId: "a-brk" }]} />);
+      await openBequest(user);
+      await user.click(screen.getByRole("radio", { name: "One account" }));
+      expect(options()).toEqual(["Select an account…"]);
     });
 
     it("One account: clearing and retyping the % works, 0 and 101 block Add, business accounts aren't offered", async () => {

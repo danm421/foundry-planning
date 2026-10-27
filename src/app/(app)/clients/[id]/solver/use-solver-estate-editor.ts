@@ -219,8 +219,12 @@ export function useSolverEstateEditor({
     [baseClientData.accounts, clientData.accounts],
   );
 
+  /** An added trust with no accounts left no longer exists (it is only a tag),
+   *  so its pane gives way to the overview; a base trust lists with 0 accounts. */
   function setRevocableMembership(name: string, accountIds: ReadonlySet<string>) {
     for (const m of buildRevocableMembershipMutations(clientData.accounts, name, accountIds)) onChange(m);
+    const isBase = railRevocableTrusts.some((r) => r.name === name && r.isBase);
+    if (accountIds.size === 0 && !isBase) setSelection({ kind: "overview" });
   }
 
   /** The pane validates `to` (non-blank, not another trust's name) before calling. */

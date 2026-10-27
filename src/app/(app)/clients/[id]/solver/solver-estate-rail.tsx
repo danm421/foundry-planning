@@ -131,12 +131,12 @@ function RailRow({
         type="button"
         onClick={onClick}
         aria-current={active ? "true" : undefined}
+        title={typeof detail === "string" ? `${label} · ${detail}` : label}
         className={rowCls(active)}
       >
-        <span className="min-w-0 flex-1 truncate">
-          {label}
-          {detail ? <span className="ml-1.5 text-ink-4">· {detail}</span> : null}
-        </span>
+        <span className="min-w-0 truncate">{label}</span>
+        {detail ? <span className="shrink-0 text-ink-4">· {detail}</span> : null}
+        <span className="flex-1" />
         {badge}
       </button>
     </li>

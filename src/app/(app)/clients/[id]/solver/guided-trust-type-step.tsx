@@ -2,6 +2,8 @@
 
 // Wizard step 1: what kind of trust. Picking a row applies that kind's preset
 // (`applyKindPreset`), which fills in later answers the advisor can still change.
+// On a wide dialog the groups sit in two columns (probate and charitable on the
+// left, estate-removal on the right) so all seven fit without scrolling.
 
 import {
   applyKindPreset,
@@ -25,9 +27,10 @@ interface Row {
   marriedOnly?: boolean;
 }
 
-const GROUPS: { label: string; rows: Row[] }[] = [
+const GROUPS: { label: string; place: string; rows: Row[] }[] = [
   {
     label: "Avoid probate",
+    place: "lg:col-start-1 lg:row-start-1",
     rows: [
       {
         kind: "revocable",
@@ -39,6 +42,7 @@ const GROUPS: { label: string; rows: Row[] }[] = [
   },
   {
     label: "Move wealth out of the estate",
+    place: "lg:col-start-2 lg:row-start-1 lg:row-span-2",
     rows: [
       {
         kind: "irrevocable",
@@ -50,7 +54,7 @@ const GROUPS: { label: string; rows: Row[] }[] = [
         kind: "slat",
         name: "SLAT · spousal access",
         tag: "removes growth",
-        note: "Same, but the grantor's husband or wife can still take distributions, so the couple keeps indirect access.",
+        note: "Same, but with spousal access to distributions, so the couple keeps indirect access.",
         marriedOnly: true,
       },
       {
@@ -69,6 +73,7 @@ const GROUPS: { label: string; rows: Row[] }[] = [
   },
   {
     label: "Charitable",
+    place: "lg:col-start-1 lg:row-start-2",
     rows: [
       {
         kind: "crt",
@@ -97,9 +102,13 @@ export function GuidedTrustTypeStep({ answers, ctx, onChange }: Props) {
   return (
     <div>
       <StepHeader title="What kind of trust?" />
-      <div role="radiogroup" aria-label="What kind of trust?">
+      <div
+        role="radiogroup"
+        aria-label="What kind of trust?"
+        className="grid gap-x-3 lg:grid-cols-2 lg:grid-rows-[auto_1fr]"
+      >
         {GROUPS.map((g) => (
-          <div key={g.label}>
+          <div key={g.label} className={`min-w-0 ${g.place}`}>
             <GroupLabel>{g.label}</GroupLabel>
             {g.rows
               .filter((r) => !r.marriedOnly || ctx.isMarried)

@@ -9,7 +9,7 @@ import { useMemo, useState } from "react";
 import { roleFirstName } from "@/lib/solver/trust-labels";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import type { FundingItem } from "@/lib/solver/guided-trust";
-import { buildBequestMutations, willConflictNote } from "@/lib/solver/guided-trust-bequests";
+import { bequestableAccounts, buildBequestMutations, willConflictNote } from "@/lib/solver/guided-trust-bequests";
 import type { GuidedTrustContext } from "@/lib/solver/guided-trust";
 import { AddButton, Callout, focusRing } from "./guided-trust-ui";
 
@@ -22,6 +22,8 @@ interface Props {
   ctx: GuidedTrustContext;
   /** Bequest items already in the list. */
   existing: BequestItem[];
+  /** Accounts this trust is already being funded with (moved in, transferred, gifted). */
+  excludedAccountIds: ReadonlySet<string>;
   onAdd: (item: BequestItem) => void;
 }
 
@@ -61,18 +63,21 @@ function Pills<T extends string>({
   );
 }
 
-export function GuidedTrustBequestFields({ trust, ctx, existing, onAdd }: Props) {
+export function GuidedTrustBequestFields({ trust, ctx, existing, excludedAccountIds, onAdd }: Props) {
   const { tree, isMarried } = ctx;
   const spouseFirst = roleFirstName("spouse", tree);
 
-  const [from, setFrom] = useState<From>("client");
+  // A married couple's default is the survivor's will: a bequest at the first
+  // death gives up the marital deduction and takes what the survivor needs.
+  const [from, setFrom] = useState<From>(isMarried ? "second_death" : "client");
   const [mode, setMode] = useState<"all_assets" | "specific">("all_assets");
-  const [accountId, setAccountId] = useState("");
+  const [pickedId, setPickedId] = useState("");
   const [percentText, setPercentText] = useState("100");
   const [when, setWhen] = useState<Condition>("always");
 
-  // A business interest is ignored by a specific bequest, so it isn't offered.
-  const accounts = tree.accounts.filter((a) => a.category !== "business");
+  const accounts = bequestableAccounts(tree, from, excludedAccountIds);
+  // A pick the current will can't pass (after switching "From") is no pick.
+  const accountId = accounts.some((a) => a.id === pickedId) ? pickedId : "";
   const percentage = Number(percentText);
   const percentOk = percentText.trim() !== "" && Number.isFinite(percentage) && percentage >= 1 && percentage <= 100;
 
@@ -129,8 +134,8 @@ export function GuidedTrustBequestFields({ trust, ctx, existing, onAdd }: Props)
           <select
             aria-label="Account to leave"
             value={accountId}
-            onChange={(e) => setAccountId(e.target.value)}
-            className="block w-full max-w-[16rem] rounded border border-ink-3 bg-card px-2 py-1 text-[13px] text-ink"
+            onChange={(e) => setPickedId(e.target.value)}
+            className="block w-full max-w-[16rem] rounded border border-hair-2 bg-card px-2 py-1 text-[13px] text-ink"
           >
             <option value="">Select an account…</option>
             {accounts.map((a) => (
@@ -145,7 +150,7 @@ export function GuidedTrustBequestFields({ trust, ctx, existing, onAdd }: Props)
             aria-label="Percent of the account"
             value={percentText}
             onChange={(e) => setPercentText(e.target.value)}
-            className="block w-14 rounded border border-ink-3 bg-card px-2 py-1 text-right text-[13px] text-ink tabular"
+            className="block w-14 rounded border border-hair-2 bg-card px-2 py-1 text-right text-[13px] text-ink tabular"
           />
           <span aria-hidden className="text-[13px] text-ink-3">
             %

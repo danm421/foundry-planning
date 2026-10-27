@@ -16,6 +16,7 @@ const tree = {
     { id: "fm-c", role: "client", relationship: "other", firstName: "Alex", lastName: "Rivera" },
     { id: "fm-s", role: "spouse", relationship: "other", firstName: "Jordan", lastName: "Rivera" },
     { id: "fm-1", role: "child", relationship: "child", firstName: "Sam", lastName: "Rivera" },
+    { id: "fm-2", role: "child", relationship: "child", firstName: "Ava", lastName: "Rivera" },
   ],
   externalBeneficiaries: [],
 } as unknown as ClientData;
@@ -27,7 +28,7 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-function setup() {
+function setup(t: ClientData = tree) {
   const onAdd = vi.fn();
   const onCancel = vi.fn();
   render(
@@ -35,7 +36,8 @@ function setup() {
       clientId="c1"
       source="base"
       mutations={[]}
-      tree={tree}
+      tree={t}
+      revocableTrusts={[]}
       annualExclusionByYear={{ 2026: 19000 }}
       onAdd={onAdd}
       onCancel={onCancel}
@@ -149,6 +151,37 @@ describe("GuidedTrustWizard", () => {
     await click("Back to review");
     expect(screen.getByLabelText("Name")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add trust" })).toBeInTheDocument();
+  });
+
+  it("the default name follows the answers until the advisor types one", async () => {
+    setup();
+    await toReview();
+    const name = () => screen.getByLabelText("Name");
+    expect(name()).toHaveValue("Sam Rivera Irrevocable Trust");
+    const toggleAva = async () => {
+      await userEvent.click(screen.getByRole("button", { name: "Edit Gets what's left" }));
+      const left = screen.getByRole("group", { name: /gets what's left/i });
+      await userEvent.click(within(left).getByRole("button", { name: /Ava/ }));
+      await click("Back to review");
+    };
+    await toggleAva();
+    expect(name()).toHaveValue("Rivera Irrevocable Trust");
+    await userEvent.clear(name());
+    await userEvent.type(name(), "Legacy Trust");
+    await toggleAva();
+    expect(name()).toHaveValue("Legacy Trust");
+  });
+
+  it("numbers a default name another trust has, and blocks Add trust on a typed duplicate", async () => {
+    setup({ ...tree, entities: [{ id: "t-old", name: "Sam Rivera Irrevocable Trust" }] } as unknown as ClientData);
+    await toReview();
+    expect(screen.getByLabelText("Name")).toHaveValue("Sam Rivera Irrevocable Trust 2");
+    await userEvent.clear(screen.getByLabelText("Name"));
+    await userEvent.type(screen.getByLabelText("Name"), "sam rivera irrevocable trust");
+    expect(screen.getByRole("button", { name: "Add trust" })).toBeDisabled();
+    expect(
+      screen.getByText("A trust named sam rivera irrevocable trust already exists. Pick another name."),
+    ).toBeInTheDocument();
   });
 
   it("Add trust calls onAdd once with the entity first and the answers", async () => {

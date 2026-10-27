@@ -201,6 +201,7 @@ function EstateDetailPane({
         source={source}
         mutations={mutations}
         tree={editor.clientData}
+        revocableTrusts={editor.railRevocableTrusts}
         annualExclusionByYear={editor.annualExclusionByYear}
         onAdd={(batch, answers) => editor.addTrust(batch, fundingLabels(answers, editor.clientData))}
         onCancel={() => editor.setSelection({ kind: "overview" })}

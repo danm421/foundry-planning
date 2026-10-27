@@ -21,6 +21,7 @@ import {
   fundingTrustOf,
   type GuidedTrustBatch,
 } from "@/lib/solver/guided-trust-batch";
+import type { RevocableTrustRow } from "@/lib/solver/revocable-trust-rows";
 import type { SolverMutation, SolverSource } from "@/lib/solver/types";
 import { GuidedTrustAccountsStep } from "./guided-trust-accounts-step";
 import { GuidedTrustFundingStep } from "./guided-trust-funding-step";
@@ -29,7 +30,7 @@ import { GuidedTrustPowersStep } from "./guided-trust-powers-step";
 import { GuidedTrustReviewStep } from "./guided-trust-review-step";
 import { GuidedTrustSetupStep } from "./guided-trust-setup-step";
 import { GuidedTrustTypeStep } from "./guided-trust-type-step";
-import { StepBar, focusRing } from "./guided-trust-ui";
+import { StepBar, focusRing, primaryButton } from "./guided-trust-ui";
 import { useGuidedTrustImpact } from "./use-guided-trust-impact";
 
 const STEP_NAME: Record<GuidedStep, string> = {
@@ -47,6 +48,8 @@ interface Props {
   source: SolverSource;
   mutations: SolverMutation[];
   tree: ClientData;
+  /** Every revocable trust, base ones included: a new one may not reuse a name. */
+  revocableTrusts: readonly Pick<RevocableTrustRow, "name">[];
   annualExclusionByYear: Record<number, number>;
   onAdd: (batch: GuidedTrustBatch, answers: GuidedTrustAnswers) => void;
   onCancel: () => void;
@@ -57,6 +60,7 @@ export function GuidedTrustWizard({
   source,
   mutations,
   tree,
+  revocableTrusts,
   annualExclusionByYear,
   onAdd,
   onCancel,
@@ -66,8 +70,14 @@ export function GuidedTrustWizard({
   const [step, setStep] = useState<GuidedStep>("type");
   const [remainderTouched, setRemainderTouched] = useState(false);
   const [editingFromReview, setEditingFromReview] = useState(false);
+  // Until the advisor types a name, Review re-seeds the default each time it
+  // opens, so it follows answers changed by an Edit.
+  const [nameTouched, setNameTouched] = useState(false);
 
-  const ctx = useMemo(() => guidedTrustContext(tree, annualExclusionByYear), [tree, annualExclusionByYear]);
+  const ctx = useMemo(
+    () => guidedTrustContext(tree, annualExclusionByYear, revocableTrusts.map((r) => r.name)),
+    [tree, annualExclusionByYear, revocableTrusts],
+  );
   const fundingTrust = useMemo(
     () =>
       step === "funding"
@@ -117,12 +127,14 @@ export function GuidedTrustWizard({
       setRemainderTouched(false);
       setEditingFromReview(false);
     }
+    // The Accounts step writes the default in on a tick; only other text is typed.
+    if (next.name !== answers.name && next.name !== defaultTrustName(next, tree)) setNameTouched(true);
     setAnswers(next);
   }
 
   function goTo(target: GuidedStep) {
-    // A blank name gets its default as the Review step opens.
-    if (target === "review" && !answers.name.trim()) {
+    // An untyped (or blanked) name gets the current default as Review opens.
+    if (target === "review" && (!nameTouched || !answers.name.trim())) {
       setAnswers({ ...answers, name: defaultTrustName(answers, tree) });
     }
     setStep(target);
@@ -222,12 +234,16 @@ export function GuidedTrustWizard({
           </button>
         )}
         <div className="flex min-w-0 items-center gap-3">
-          {blocker ? <span className="min-w-0 truncate text-[12px] text-ink-3">{blocker}</span> : null}
+          {blocker ? (
+            <span title={blocker} className="min-w-0 truncate text-[12px] text-ink-3">
+              {blocker}
+            </span>
+          ) : null}
           <button
             type="button"
             disabled={blocker != null}
             onClick={isReview ? () => onAdd(buildBatch(answers), answers) : next}
-            className={`shrink-0 rounded-[var(--radius-sm)] bg-accent px-3.5 py-1.5 font-medium text-accent-on disabled:opacity-40 ${focusRing}`}
+            className={`${primaryButton} shrink-0 px-3.5 py-1.5`}
           >
             {primaryLabel}
           </button>
