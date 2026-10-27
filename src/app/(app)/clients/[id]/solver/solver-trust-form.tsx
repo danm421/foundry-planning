@@ -12,17 +12,11 @@ import {
   isRetitleFundingEligible,
 } from "@/lib/solver/trust-levers";
 import type { SolverTrustDraft } from "@/lib/solver/guided-trust";
-import { SolverSplitInterestForm } from "./solver-split-interest-form";
 
-/** 3a subtypes plus the 3b split-interest subtypes the picker can now create. */
-type SolverTrustSubType = SolverTrustSubType3a | "crt" | "clt";
-
-const SUBTYPE_LABELS: Record<SolverTrustSubType, string> = {
+const SUBTYPE_LABELS: Record<SolverTrustSubType3a, string> = {
   ilit: "ILIT (life-insurance trust)",
   idgt: "IDGT (intentionally defective grantor trust)",
   irrevocable: "Irrevocable (generic)",
-  crt: "CRT (charitable remainder trust)",
-  clt: "CLT (charitable lead trust)",
 };
 
 interface Props {
@@ -38,11 +32,10 @@ interface Props {
 export function SolverTrustForm({
   clientData,
   isMarried,
-  onCreateCharity,
   onApply,
   onClose,
 }: Props) {
-  const [subType, setSubType] = useState<SolverTrustSubType>("ilit");
+  const [subType, setSubType] = useState<SolverTrustSubType3a>("ilit");
   const [name, setName] = useState("New Trust");
   const [grantor, setGrantor] = useState<"client" | "spouse">("client");
   const [policyId, setPolicyId] = useState<string>("");
@@ -68,7 +61,6 @@ export function SolverTrustForm({
 
   function apply() {
     if (!name.trim()) return;
-    if (subType === "crt" || subType === "clt") return; // handled by the sub-form
     const entityId = crypto.randomUUID();
     const entity = buildTrustEntity({ id: entityId, name: name.trim(), subType, grantor });
     const mutations: SolverMutation[] = [{ kind: "entity-upsert", id: entityId, value: entity }];
@@ -110,7 +102,7 @@ export function SolverTrustForm({
         Type
         <select
           value={subType}
-          onChange={(e) => setSubType(e.target.value as SolverTrustSubType)}
+          onChange={(e) => setSubType(e.target.value as SolverTrustSubType3a)}
           className="mt-1 h-9 w-full rounded-md border border-hair-2 bg-card px-2.5 text-[14px] text-ink focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
         >
           {SOLVER_TRUST_SUBTYPES_3A.map((s) => (
@@ -118,37 +110,24 @@ export function SolverTrustForm({
               {SUBTYPE_LABELS[s]}
             </option>
           ))}
-          <option value="crt">{SUBTYPE_LABELS.crt}</option>
-          <option value="clt">{SUBTYPE_LABELS.clt}</option>
         </select>
       </label>
 
-      {subType === "crt" || subType === "clt" ? (
-        <SolverSplitInterestForm
-          clientData={clientData}
-          subType={subType}
-          isMarried={isMarried}
-          onCreateCharity={onCreateCharity}
-          onApply={onApply}
-          onClose={onClose}
-        />
-      ) : (
-        <SolverTrustForm3aBody
-          isMarried={isMarried}
-          name={name}
-          setName={setName}
-          grantor={grantor}
-          setGrantor={setGrantor}
-          subType={subType}
-          policies={policies}
-          policyId={policyId}
-          setPolicyId={setPolicyId}
-          retitleEligible={retitleEligible}
-          retitleIds={retitleIds}
-          toggleRetitle={toggleRetitle}
-          apply={apply}
-        />
-      )}
+      <SolverTrustForm3aBody
+        isMarried={isMarried}
+        name={name}
+        setName={setName}
+        grantor={grantor}
+        setGrantor={setGrantor}
+        subType={subType}
+        policies={policies}
+        policyId={policyId}
+        setPolicyId={setPolicyId}
+        retitleEligible={retitleEligible}
+        retitleIds={retitleIds}
+        toggleRetitle={toggleRetitle}
+        apply={apply}
+      />
     </div>
   );
 }
