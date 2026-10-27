@@ -63,9 +63,12 @@ function splitGrantor(grantor: "client" | "spouse" | "joint", amount: number): S
   return [{ grantor, amount }];
 }
 
+/** Resolved per split grantor: the donor is never a Crummey holder for their own half. */
 function resolveEntity(
   recipientEntityId: string | null,
   byId: Map<string, EntitySummary>,
+  donor: "client" | "spouse",
+  charityIds: ReadonlySet<string>,
 ): { entity: CanonicalGift["entity"]; crummeyBeneficiaryCount: number } {
   if (!recipientEntityId) return { entity: null, crummeyBeneficiaryCount: 0 };
   const e = byId.get(recipientEntityId);
@@ -75,7 +78,7 @@ function resolveEntity(
       isIrrevocable: e.isIrrevocable ?? false,
       entityType: (e.entityType ?? "trust") as EntityType,
     },
-    crummeyBeneficiaryCount: crummeyBeneficiaryCount(e),
+    crummeyBeneficiaryCount: crummeyBeneficiaryCount(e, { donor, charityIds }),
   };
 }
 
@@ -87,6 +90,9 @@ export function toCanonicalGifts(
   const entitiesById = new Map(ctx.entities.map((e) => [e.id, e]));
   const externalById = new Map(
     (ctx.externalBeneficiaries ?? []).map((x) => [x.id, x.kind] as const),
+  );
+  const charityIds = new Set(
+    (ctx.externalBeneficiaries ?? []).filter((x) => x.kind === "charity").map((x) => x.id),
   );
   const out: CanonicalGift[] = [];
 
@@ -105,10 +111,6 @@ export function toCanonicalGifts(
     fullValue: number,
     discount: number | null | undefined,
   ) => {
-    const { entity, crummeyBeneficiaryCount: count } = resolveEntity(
-      base.recipientEntityId,
-      entitiesById,
-    );
     const external = base.recipientExternalBeneficiaryId
       ? { kind: externalById.get(base.recipientExternalBeneficiaryId) ?? ("individual" as const) }
       : null;
@@ -124,6 +126,12 @@ export function toCanonicalGifts(
     // inconsistent while both still looked plausible.
     const fullSplits = splitGrantor(grantor, fullValue);
     for (const [i, s] of splitGrantor(grantor, taxValue).entries()) {
+      const { entity, crummeyBeneficiaryCount: count } = resolveEntity(
+        base.recipientEntityId,
+        entitiesById,
+        s.grantor,
+        charityIds,
+      );
       out.push({
         ...base,
         grantor: s.grantor,
