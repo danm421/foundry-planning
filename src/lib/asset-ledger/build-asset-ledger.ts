@@ -20,15 +20,17 @@ const REALIZED_PARTS = [
 
 /** A taxable account's growth entry carries the basis its realized share
  *  (taxed this year, so it raises cost basis) adds. Split that onto its own
- *  basis-only row so the ledger shows where the basis came from. Cash is left
- *  whole: its basis tracks value, so the extra row would say nothing. */
+ *  basis-only row so the ledger shows where the basis came from; the parts it
+ *  sums go in the row's tooltip. Cash is left whole: its basis tracks value, so
+ *  the extra row would say nothing. */
 function realizedBasisRow(row: AssetRow, ledger: AccountLedger, category: string | undefined): AssetRow | null {
   const detail = ledger.growthDetail;
   if (row.category !== "growth" || row.basis <= 0 || !detail || category !== "taxable") return null;
   const parts = REALIZED_PARTS.filter(([key]) => detail[key] > 0).map(([, name]) => name);
   return {
     category: "growth",
-    label: `Realized this year, added to basis${parts.length > 0 ? ` (${parts.join(", ")})` : ""}`,
+    label: "Realized this year, added to basis",
+    detail: parts.length > 0 ? `Includes ${new Intl.ListFormat("en").format(parts)}.` : undefined,
     amount: 0,
     basis: row.basis,
     basisOnly: true,

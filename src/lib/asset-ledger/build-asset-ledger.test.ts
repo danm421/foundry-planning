@@ -429,8 +429,11 @@ describe("buildAssetLedger — files by the engine's per-year entity ownership",
     const entryRows = acct.rows.filter((r) => !r.bookend);
     expect(entryRows.map((r) => [r.label, r.amount, r.basis])).toEqual([
       ["Growth (6.50%)", 266_500, 0],
-      ["Realized this year, added to basis (ordinary income, qualified dividends, short-term gains, long-term gains from turnover)", 0, 145_277.5],
+      ["Realized this year, added to basis", 0, 145_277.5],
     ]);
+    expect(entryRows[1].detail).toBe(
+      "Includes ordinary income, qualified dividends, short-term gains, and long-term gains from turnover.",
+    );
     expect(entryRows[1].basisOnly).toBe(true);
     expect(acct.reconciles).toBe(true);
   });

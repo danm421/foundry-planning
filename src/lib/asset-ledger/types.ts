@@ -8,6 +8,8 @@ export interface AssetRow {
   category: FlowCategory | "bookend";
   /** entry.label, e.g. "Growth", "RMD", "Supplemental withdrawal". */
   label: string;
+  /** Tooltip copy beside the label, for a row that sums several parts. */
+  detail?: string;
   /** Signed: + inflow, − outflow. */
   amount: number;
   /** Signed basis delta (0 when the engine left it undefined). */

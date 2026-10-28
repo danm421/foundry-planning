@@ -1,6 +1,7 @@
 // src/components/asset-ledger/asset-ledger-table.tsx
 "use client";
 
+import { FieldTooltip } from "@/components/forms/field-tooltip";
 import MoneyText from "@/components/money-text";
 import type {
   AssetAccountBlock,
@@ -92,7 +93,10 @@ function AccountBlock({
         >
           {/* Detail label indented so it reads as subordinate to the account header above. */}
           <td className="border-b border-hair bg-card py-1.5 pl-7 pr-3 text-ink">
-            {r.label}
+            <span className="inline-flex items-center gap-1.5">
+              {r.label}
+              {r.detail && <FieldTooltip text={r.detail} />}
+            </span>
             {!r.bookend && r.internal && (
               <span className="ml-2 rounded bg-card-2 px-1 py-0.5 text-[10px] uppercase tracking-wide text-ink-3">
                 internal

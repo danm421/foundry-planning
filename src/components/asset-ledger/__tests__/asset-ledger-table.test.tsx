@@ -117,15 +117,22 @@ describe("AssetLedgerTable", () => {
           ...account,
           rows: [
             ...account.rows.slice(0, 2),
-            { category: "growth", label: "Realized this year, added to basis", amount: 0, basis: 9_000, basisOnly: true, internal: false },
+            {
+              category: "growth", label: "Realized this year, added to basis", detail: "Includes ordinary income.",
+              amount: 0, basis: 9_000, basisOnly: true, internal: false,
+            },
             ...account.rows.slice(2),
           ],
         }],
       }],
     };
     render(<AssetLedgerTable ledger={withRealized} filter={{ hideZero: true }} />);
-    const row = screen.getByText("Realized this year, added to basis").closest("tr")!;
+    // The parts list rides in the tooltip, not on the row's label.
+    const tip = screen.getByRole("tooltip");
+    expect(tip.textContent).toBe("Includes ordinary income.");
+    const row = tip.closest("tr")!;
     const cells = row.querySelectorAll("td");
+    expect(cells[0].textContent).toContain("Realized this year, added to basis");
     expect(cells[2].textContent).toBe("—");
     expect(cells[3].textContent).toBe("$9,000");
   });
