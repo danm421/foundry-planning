@@ -620,6 +620,9 @@ export default function WillsPanel(props: WillsPanelProps) {
         const grantorHints = sameAccountHints.filter((x) => x.grantor === g);
         const heading = grantorFullName(g, primary) || (g === "client" ? "Client" : CO_CLIENT_LABEL);
         const bequests = will?.bequests ?? [];
+        // Debts sit outside the payment order, so only gifts get a number.
+        let paid = 0;
+        const payNumbers = bequests.map((b) => (b.kind === "liability" ? null : ++paid));
         const alreadyBequeathedLiabilityIds = bequests.flatMap((b) =>
           b.kind === "liability" && b.liabilityId ? [b.liabilityId] : [],
         );
@@ -787,12 +790,16 @@ export default function WillsPanel(props: WillsPanelProps) {
                           key={b.id ?? `${b.kind}-${idx}`}
                           className="grid grid-cols-[2.25rem_minmax(0,1fr)] items-start gap-3 bg-card px-3 py-2.5 transition-colors hover:bg-card-hover md:grid-cols-[2.25rem_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1.4fr)_auto] md:items-center"
                         >
-                          <span
-                            aria-hidden
-                            className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-hair bg-card-2 text-xs font-semibold tabular-nums text-ink-3"
-                          >
-                            {idx + 1}
-                          </span>
+                          {payNumbers[idx] === null ? (
+                            <span aria-hidden />
+                          ) : (
+                            <span
+                              aria-hidden
+                              className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-hair bg-card-2 text-xs font-semibold tabular-nums text-ink-3"
+                            >
+                              {payNumbers[idx]}
+                            </span>
+                          )}
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
                               <span

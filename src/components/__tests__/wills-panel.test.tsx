@@ -519,14 +519,15 @@ describe("WillsPanel — dollar gifts in the list", () => {
     expect(screen.getByText("$20,000 each · account removed — paid from cash & brokerage")).toBeDefined();
   });
 
-  it("numbers the rows in payment order and explains the order", () => {
+  it("numbers the gifts in payment order and explains the order; a debt isn't paid in that order, so it has no number", () => {
     render(
       <WillsPanel
         {...dollarProps}
         initialWills={willWith([
           pctGift("b1", 0, u("a1")),
-          dollarGift({ sortOrder: 1 }),
-          dollarGift({ id: u("d2"), sortOrder: 2 }),
+          { ...liabilityBequestFull, sortOrder: 1 },
+          dollarGift({ sortOrder: 2 }),
+          dollarGift({ id: u("d2"), sortOrder: 3 }),
         ])}
       />,
     );
@@ -534,12 +535,12 @@ describe("WillsPanel — dollar gifts in the list", () => {
       screen.getByText("Gifts are paid top to bottom; the remainder estate gets what's left."),
     ).toBeDefined();
     const rows = giftRows();
-    expect(rows).toHaveLength(3);
-    rows.forEach((row, i) => {
-      expect(within(row).getByText(String(i + 1))).toBeDefined();
-    });
+    expect(rows).toHaveLength(4);
+    const numberOf = (row: HTMLElement) => within(row).queryByText(/^\d+$/)?.textContent ?? null;
+    expect(rows.map(numberOf)).toEqual(["1", null, "2", "3"]);
     expect(within(rows[0]).getByText("60% gift b1")).toBeDefined();
-    expect(within(rows[1]).getByText("Cash gift")).toBeDefined();
+    expect(within(rows[1]).getByText("Visa Card")).toBeDefined();
+    expect(within(rows[2]).getByText("Cash gift")).toBeDefined();
   });
 
   it("labels an all-assets gift with the estate-wide label", () => {
