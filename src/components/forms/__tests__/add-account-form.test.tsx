@@ -1691,12 +1691,12 @@ describe("AddAccountForm — Realization tab", () => {
     expect(oi.value).toBe("30");
     expect(screen.getByText("These add to 90.00%. They should total 100%.")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Reset ordinary income to the portfolio's figure" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset ordinary income to the default figure" }));
     expect(oi.value).toBe("");
     expect(screen.queryByText(/They should total 100%/)).toBeNull();
   });
 
-  it("explains a flat-rate account has no yearly split instead of showing the table", () => {
+  it("lets a flat-rate account override its split, defaulting to all long-term gains", () => {
     render(
       <AddAccountForm
         clientId="client-123"
@@ -1720,9 +1720,37 @@ describe("AddAccountForm — Realization tab", () => {
         initialTab="realization"
       />,
     );
-    expect(screen.getByText(/grows at a flat rate/)).toBeInTheDocument();
-    expect(screen.queryByLabelText("Ordinary income")).toBeNull();
-    // The stored override rides along hidden, so a save does not wipe it.
-    expect((document.querySelector('input[name="overridePctOi"]') as HTMLInputElement).value).toBe("10.00");
+    expect(screen.getByText("the flat growth rate")).toBeInTheDocument();
+    expect((screen.getByLabelText("Ordinary income") as HTMLInputElement).value).toBe("10.00");
+    expect(screen.getByLabelText("Long-term capital gains")).toHaveAttribute("placeholder", "100.00");
+  });
+
+  it("still edits the split when the screen has no portfolio data to show a default", () => {
+    render(
+      <AddAccountForm
+        clientId="client-123"
+        category="taxable"
+        mode="edit"
+        initial={{
+          id: "acct-mp",
+          name: "Brokerage",
+          category: "taxable",
+          subType: "brokerage",
+          owner: "client",
+          value: "100000",
+          basis: "100000",
+          growthRate: null,
+          growthSource: "model_portfolio",
+          modelPortfolioId: "mp-1",
+          overridePctQdiv: "0.25",
+        }}
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+        initialTab="realization"
+      />,
+    );
+    expect(screen.getByText("this account's growth setting")).toBeInTheDocument();
+    expect((screen.getByLabelText("Qualified dividends") as HTMLInputElement).value).toBe("25.00");
+    expect(screen.queryByText("Total")).toBeNull();
   });
 });

@@ -803,3 +803,50 @@ describe("resolveAccountFromRaw — Plan default realization overrides", () => {
     expect(acct.realization?.turnoverPct).toBeCloseTo(0.1, 10);
   });
 });
+
+describe("resolveAccountFromRaw — flat-rate realization", () => {
+  const flatBrokerage = {
+    ...baseRawAccount,
+    id: "a-flat",
+    name: "Brokerage",
+    category: "taxable" as const,
+    subType: "brokerage",
+    value: "100000",
+    basis: "100000",
+    growthSource: "custom",
+    growthRate: "0.05",
+  };
+
+  it("realizes flat growth as long-term gains on sale when nothing is overridden", () => {
+    const acct = resolveAccountFromRaw(flatBrokerage, makeCtx());
+    expect(acct.realization).toEqual({
+      pctOrdinaryIncome: 0,
+      pctQualifiedDividends: 0,
+      pctLtCapitalGains: 1,
+      pctTaxExempt: 0,
+      turnoverPct: 0,
+    });
+  });
+
+  it("applies the account's overrides and turnover to a custom rate", () => {
+    const acct = resolveAccountFromRaw(
+      { ...flatBrokerage, overridePctOi: "0.1", overridePctLtCg: "0.9", turnoverPct: "0.2" },
+      makeCtx(),
+    );
+    expect(acct.realization?.pctOrdinaryIncome).toBeCloseTo(0.1, 10);
+    expect(acct.realization?.pctLtCapitalGains).toBeCloseTo(0.9, 10);
+    expect(acct.realization?.pctQualifiedDividends).toBe(0);
+    expect(acct.realization?.turnoverPct).toBeCloseTo(0.2, 10);
+  });
+
+  it("applies the account's overrides to an inflation rate and a flat Plan default", () => {
+    for (const growthSource of ["inflation", "default"]) {
+      const acct = resolveAccountFromRaw(
+        { ...flatBrokerage, growthSource, growthRate: null, overridePctQdiv: "0.3", overridePctLtCg: "0.7" },
+        makeCtx(),
+      );
+      expect(acct.realization?.pctQualifiedDividends).toBeCloseTo(0.3, 10);
+      expect(acct.realization?.pctLtCapitalGains).toBeCloseTo(0.7, 10);
+    }
+  });
+});

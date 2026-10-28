@@ -20,9 +20,9 @@ const pct = (fraction: number) => (fraction * 100).toFixed(2);
 
 interface RealizationTabProps {
   /** What the account's growth source realizes before any override, and what
-   *  to call that source. Null when the account grows at a flat rate (custom
-   *  or inflation): the projection realizes nothing from that growth yearly,
-   *  so overrides and turnover have nothing to apply to. */
+   *  to call that source (a flat rate realizes all long-term gains). Null when
+   *  the screen lacks the portfolio data to tell: the boxes still edit, with no
+   *  default beside them. */
   source: { label: string; mix: RealizationMix } | null;
   /** Percent strings per row; "" follows the source. */
   overrides: RealizationOverrides;
@@ -38,38 +38,21 @@ export function RealizationTab({
   turnoverPct,
   onTurnoverChange,
 }: RealizationTabProps) {
-  if (!source) {
-    return (
-      <>
-        <p className="text-[13px] text-ink-2">
-          This account grows at a flat rate, so its growth is taxed only when it is sold. To
-          model yearly income and dividends, choose a portfolio or asset mix for its growth on
-          the Account Details tab.
-        </p>
-        {/* Keep stored settings through a save — they apply again once a
-            portfolio drives the account. */}
-        {ROWS.map((r) => (
-          <input key={r.name} type="hidden" name={r.name} value={overrides[r.key]} />
-        ))}
-        <input type="hidden" name="turnoverPct" value={turnoverPct} />
-      </>
-    );
-  }
-
   const anyOverride = ROWS.some((r) => overrides[r.key] !== "");
-  const sourceTotal = ROWS.reduce((sum, r) => sum + source.mix[r.key], 0);
-  const accountTotal = ROWS.reduce(
-    (sum, r) => sum + (overrides[r.key] !== "" ? Number(overrides[r.key]) / 100 : source.mix[r.key]),
-    0,
-  );
-  const totalOff = anyOverride && Math.abs(accountTotal - 1) > 0.00005;
+  const mix = source?.mix;
+  const sourceTotal = mix ? ROWS.reduce((sum, r) => sum + mix[r.key], 0) : 0;
+  const accountTotal = mix
+    ? ROWS.reduce((sum, r) => sum + (overrides[r.key] !== "" ? Number(overrides[r.key]) / 100 : mix[r.key]), 0)
+    : 0;
+  const totalOff = mix != null && anyOverride && Math.abs(accountTotal - 1) > 0.00005;
   const headClassName = "text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3";
 
   return (
     <div className="space-y-5">
       <p className="text-[13px] text-ink-2">
-        Blank boxes follow <span className="font-medium text-ink">{source.label}</span>. Enter a
-        figure to override it for this account.
+        Blank boxes follow{" "}
+        <span className="font-medium text-ink">{source?.label ?? "this account's growth setting"}</span>.
+        Enter a figure to override it for this account.
       </p>
 
       <div className="grid grid-cols-[minmax(0,1fr)_5.5rem_7.5rem_3rem] items-center gap-x-3 gap-y-2">
@@ -80,7 +63,7 @@ export function RealizationTab({
             text="How each year's growth is taxed. Ordinary income and qualified dividends are taxed as they're earned; long-term gains wait until the shares are sold."
           />
         </span>
-        <span className={`text-right ${headClassName}`}>Portfolio</span>
+        <span className={`text-right ${headClassName}`}>Default</span>
         <span className={headClassName}>This account</span>
         <span />
 
@@ -91,21 +74,21 @@ export function RealizationTab({
               <label htmlFor={`realization-${r.key}`} className={fieldLabelBaseClassName}>
                 {r.label}
               </label>
-              <span className="tabular text-right text-[13px] text-ink-2">{pct(source.mix[r.key])}%</span>
+              <span className="tabular text-right text-[13px] text-ink-2">{mix ? `${pct(mix[r.key])}%` : "—"}</span>
               <PercentInput
                 id={`realization-${r.key}`}
                 name={r.name}
                 compact
                 value={overrides[r.key]}
                 onChange={(raw) => onOverrideChange(r.key, raw)}
-                placeholder={pct(source.mix[r.key])}
+                placeholder={mix ? pct(mix[r.key]) : undefined}
                 className="tabular"
               />
               {overridden ? (
                 <button
                   type="button"
                   onClick={() => onOverrideChange(r.key, "")}
-                  aria-label={`Reset ${r.label.toLowerCase()} to the portfolio's figure`}
+                  aria-label={`Reset ${r.label.toLowerCase()} to the default figure`}
                   className="text-xs text-ink-3 hover:text-ink focus:text-ink focus:outline-none"
                 >
                   Reset
@@ -117,13 +100,17 @@ export function RealizationTab({
           );
         })}
 
-        <div className="col-span-4 border-t border-hair" />
-        <span className={fieldLabelBaseClassName}>Total</span>
-        <span className="tabular text-right text-[13px] text-ink-2">{pct(sourceTotal)}%</span>
-        <span className={`tabular pl-3 text-[13px] ${totalOff ? "text-warn" : "text-ink-2"}`}>
-          {pct(accountTotal)}%
-        </span>
-        <span />
+        {mix && (
+          <>
+            <div className="col-span-4 border-t border-hair" />
+            <span className={fieldLabelBaseClassName}>Total</span>
+            <span className="tabular text-right text-[13px] text-ink-2">{pct(sourceTotal)}%</span>
+            <span className={`tabular pl-3 text-[13px] ${totalOff ? "text-warn" : "text-ink-2"}`}>
+              {pct(accountTotal)}%
+            </span>
+            <span />
+          </>
+        )}
       </div>
 
       {totalOff && (

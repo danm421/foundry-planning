@@ -6,6 +6,15 @@ export interface RealizationMix {
   pctTaxExempt: number;
 }
 
+/** What a flat growth rate realizes: all long-term gains, taxed only on sale —
+ *  the split `resolveAccountFromRaw` lays a taxable account's overrides over. */
+export const FLAT_GROWTH_REALIZATION: RealizationMix = {
+  pctOrdinaryIncome: 0,
+  pctQualifiedDividends: 0,
+  pctLtCapitalGains: 1,
+  pctTaxExempt: 0,
+};
+
 /** Weight-blended realization mix of an allocation — the same sum the
  *  projection takes (`resolve-growth-source.ts`), so the account form can show
  *  what a portfolio realizes. Weight on an asset class not in the list, and any

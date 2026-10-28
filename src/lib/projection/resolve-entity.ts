@@ -220,6 +220,14 @@ export function resolveAccountFromRaw(
     });
   }
 
+  // A flat rate (custom, inflation, or a flat Plan default) supplies no split:
+  // its growth is all long-term gains, taxed only on sale. The account's own
+  // overrides and turnover still apply, so a taxable account can always model
+  // yearly income and dividends.
+  if (!realization && raw.category === "taxable") {
+    realization = withOverrides({ pctOi: 0, pctLtcg: 1, pctQdiv: 0, pctTaxEx: 0 });
+  }
+
   if (raw.category === "cash") {
     realization = {
       pctOrdinaryIncome: 1,

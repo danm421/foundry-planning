@@ -141,7 +141,14 @@ describe("applyScenarioChangesWithRefs — an account edit of a growth input re-
     const { effectiveTree } = applyScenarioChangesWithRefs(tree(), [clearBrokerageGrowth], {}, [], makeCtx());
     const brk = account(effectiveTree, "brk");
     expect(brk.growthRate).toBeCloseTo(0.07);
-    expect(brk.realization).toEqual(makeCtx().resolver.resolveCategoryDefault("taxable").realization);
+    // The category default here is a flat 7%: all long-term gains.
+    expect(brk.realization).toEqual({
+      pctOrdinaryIncome: 0,
+      pctQualifiedDividends: 0,
+      pctLtCapitalGains: 1,
+      pctTaxExempt: 0,
+      turnoverPct: 0,
+    });
   });
 
   it("a switch to a model portfolio takes the portfolio's rate and realization", () => {

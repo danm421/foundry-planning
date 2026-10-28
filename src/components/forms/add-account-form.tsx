@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { AssetMixTab, type AssetClassOption } from "./asset-mix-tab";
 import { RealizationTab } from "./realization-tab";
-import { blendRealization } from "@/lib/investments/realization-mix";
+import { blendRealization, FLAT_GROWTH_REALIZATION } from "@/lib/investments/realization-mix";
 import { BasePlanOnly } from "@/components/base-plan-only";
 import { scenarioAccountEditFields } from "@/lib/accounts/scenario-account-fields";
 import { HoldingsTab } from "./holdings-tab";
@@ -1092,10 +1092,13 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   const catDefaultSource = categoryDefaultSources?.[growthCategory];
 
   // The mix the Realization tab's blank boxes follow — the same source
-  // `resolveAccountFromRaw` reads. Null for a flat custom or inflation rate,
-  // which the projection never splits into income and gains.
+  // `resolveAccountFromRaw` reads. Null when this screen wasn't handed the
+  // portfolio data to tell.
   const realizationSource = useMemo(() => {
-    if (!assetClasses || growthSource === "inflation" || growthSource === "custom") return null;
+    if (growthSource === "inflation" || growthSource === "custom") {
+      return { label: "the flat growth rate", mix: FLAT_GROWTH_REALIZATION };
+    }
+    if (!assetClasses) return null;
     const blend = (allocs: readonly { assetClassId: string; weight: number }[] | undefined) =>
       blendRealization(allocs ?? [], assetClasses);
     if (growthSource === "asset_mix" || (growthSource === "default" && catDefaultSource?.source === "asset_mix")) {
@@ -1116,7 +1119,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
         mix: blend(portfolioAllocationsMap?.[catDefaultSource.portfolioId]),
       };
     }
-    return null;
+    return catDefaultSource ? { label: "the plan's default growth rate", mix: FLAT_GROWTH_REALIZATION } : null;
   }, [assetClasses, growthSource, catDefaultSource, customAllocations, modelPortfolioId, modelPortfolios, portfolioAllocationsMap, tickerPortfolioId, fundPortfolios]);
 
   useEffect(() => {
