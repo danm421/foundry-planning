@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import BequestDialog, { type BequestDraft } from "@/components/bequest-dialog";
+import { formatCurrency } from "@/components/bequest-dialog/dollar-bequest-fields";
 import DialogShell from "@/components/dialog-shell";
 import WillResiduarySection from "@/components/forms/will-residuary-section";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
@@ -65,7 +66,36 @@ export interface WillsPanelLiabilityBequest {
   recipients: WillsPanelRecipient[];
 }
 
-export type WillsPanelBequest = WillsPanelAssetBequest | WillsPanelLiabilityBequest;
+export interface WillsPanelDollarRecipient {
+  id?: string;
+  recipientKind: WillRecipientKind;
+  recipientId: string | null;
+  /** 0 (or null off the API) and unused; `amount` carries the gift. */
+  percentage?: number | null;
+  /** Nominal dollars. */
+  amount: number;
+  sortOrder: number;
+}
+
+/** "$X to each of these people", paid from the estate's cash and brokerage or
+ *  from one named account. Paid in list order with the other gifts. */
+export interface WillsPanelDollarBequest {
+  kind: "dollar";
+  id?: string;
+  name: string;
+  dollarSource: "estate" | "account";
+  /** Null with `dollarSource: "account"` means the named account was deleted. */
+  accountId: string | null;
+  fallbackToEstate: boolean;
+  condition: WillCondition;
+  sortOrder: number;
+  recipients: WillsPanelDollarRecipient[];
+}
+
+export type WillsPanelBequest =
+  | WillsPanelAssetBequest
+  | WillsPanelLiabilityBequest
+  | WillsPanelDollarBequest;
 
 export interface WillsPanelWill {
   id: string;
@@ -171,7 +201,7 @@ function grantorFullName(grantor: WillGrantor, p: WillsPanelPrimary): string {
 }
 
 function recipientLabel(
-  r: WillsPanelRecipient,
+  r: Pick<WillsPanelRecipient, "recipientKind" | "recipientId">,
   fams: WillsPanelFamilyMember[],
   exts: WillsPanelExternal[],
   ents: WillsPanelEntity[],
@@ -196,6 +226,23 @@ function recipientLabel(
 }
 
 function bequestToDraft(b: WillsPanelBequest): BequestDraft {
+  if (b.kind === "dollar") {
+    return {
+      kind: "dollar",
+      name: b.name,
+      dollarSource: b.dollarSource,
+      accountId: b.accountId,
+      fallbackToEstate: b.fallbackToEstate,
+      condition: b.condition,
+      sortOrder: b.sortOrder,
+      recipients: b.recipients.map((r, i) => ({
+        recipientKind: r.recipientKind,
+        recipientId: r.recipientId,
+        amount: r.amount,
+        sortOrder: i,
+      })),
+    };
+  }
   if (b.kind === "asset") {
     return {
       kind: "asset",
@@ -231,6 +278,18 @@ function bequestToDraft(b: WillsPanelBequest): BequestDraft {
 }
 
 function draftToBequest(draft: BequestDraft): WillsPanelBequest {
+  if (draft.kind === "dollar") {
+    return {
+      kind: "dollar",
+      name: draft.name,
+      dollarSource: draft.dollarSource,
+      accountId: draft.accountId,
+      fallbackToEstate: draft.fallbackToEstate,
+      condition: draft.condition,
+      sortOrder: draft.sortOrder,
+      recipients: draft.recipients.map((r) => ({ ...r, percentage: 0 })),
+    };
+  }
   if (draft.kind === "asset") {
     return {
       kind: "asset",
@@ -345,9 +404,12 @@ export default function WillsPanel(props: WillsPanelProps) {
 
   async function saveWillFull(
     g: WillGrantor,
-    nextBequests: WillsPanelBequest[],
+    unnumberedBequests: WillsPanelBequest[],
     nextResiduary: WillsPanelRecipient[],
   ) {
+    // Gifts are paid in list order, so every save sends a contiguous 0..n-1
+    // whatever the stored orders were (a delete elsewhere can leave 0, 2).
+    const nextBequests = unnumberedBequests.map((b, i) => ({ ...b, sortOrder: i }));
     setSaving(true);
     setError(null);
     try {
@@ -504,23 +566,22 @@ export default function WillsPanel(props: WillsPanelProps) {
     }
   }
 
-  const warnings: { grantor: WillGrantor; text: string }[] = [];
+  // An account named by 2+ percentage gifts on one will: each later gift takes
+  // its percentage of what's left, not of the original balance.
+  const sameAccountHints: { grantor: WillGrantor; text: string }[] = [];
   for (const w of wills) {
-    const byKey = new Map<string, number>();
+    const counts = new Map<string, number>();
     for (const b of w.bequests) {
       if (b.kind !== "asset" || b.assetMode !== "specific" || !b.accountId) continue;
-      const key = `${b.accountId}|${b.condition}`;
-      byKey.set(key, (byKey.get(key) ?? 0) + b.percentage);
+      counts.set(b.accountId, (counts.get(b.accountId) ?? 0) + 1);
     }
-    for (const [key, sum] of byKey.entries()) {
-      if (sum > 100.01) {
-        const [accountId, condition] = key.split("|");
-        const acct = accounts.find((a) => a.id === accountId)?.name ?? accountId;
-        warnings.push({
-          grantor: w.grantor,
-          text: `${acct}: over-allocated at "${condition}" (${sum.toFixed(2)}%)`,
-        });
-      }
+    for (const [accountId, n] of counts) {
+      if (n < 2) continue;
+      const acct = accounts.find((a) => a.id === accountId)?.name ?? accountId;
+      sameAccountHints.push({
+        grantor: w.grantor,
+        text: `${acct} appears in more than one gift. Each later gift takes its percentage of what's left — to split it, use one gift with several recipients.`,
+      });
     }
   }
 
@@ -545,7 +606,7 @@ export default function WillsPanel(props: WillsPanelProps) {
       {grantors.map((g) => {
         if (g === "spouse" && !primary.spouseName) return null;
         const will = wills.find((w) => w.grantor === g);
-        const grantorWarnings = warnings.filter((x) => x.grantor === g);
+        const grantorHints = sameAccountHints.filter((x) => x.grantor === g);
         const heading = grantorFullName(g, primary) || (g === "client" ? "Client" : CO_CLIENT_LABEL);
         const bequests = will?.bequests ?? [];
         const alreadyBequeathedLiabilityIds = bequests.flatMap((b) =>
@@ -590,19 +651,19 @@ export default function WillsPanel(props: WillsPanelProps) {
                 </div>
               )}
             </header>
-            {grantorWarnings.length > 0 && (
-              <div className="mb-3 rounded-md border border-amber-700 bg-amber-900/20 p-3 text-xs text-amber-300">
-                <p className="mb-1 font-semibold">Allocation warnings</p>
-                <ul className="list-disc pl-4">
-                  {grantorWarnings.map((x, i) => (
-                    <li key={i}>{x.text}</li>
-                  ))}
-                </ul>
-              </div>
+            {grantorHints.length > 0 && (
+              <ul className="mb-3 space-y-1 rounded-md border border-hair bg-card p-3 text-xs text-ink-3">
+                {grantorHints.map((x, i) => (
+                  <li key={i}>{x.text}</li>
+                ))}
+              </ul>
             )}
 
             <div className="mb-4">
-              <h3 className="mb-2 text-sm font-medium text-ink-3">Bequests</h3>
+              <h3 className="mb-1 text-sm font-medium text-ink-3">Bequests</h3>
+              <p className="mb-2 text-xs text-ink-3">
+                Gifts are paid top to bottom; the remainder estate gets what&apos;s left.
+              </p>
               {bequests.length === 0 ? (
                 <p className="text-sm text-ink-3">No bequests yet.</p>
               ) : (
@@ -620,26 +681,21 @@ export default function WillsPanel(props: WillsPanelProps) {
                   <ol className="divide-y divide-hair">
                     {bequests.map((b, idx) => {
                       const isAsset = b.kind === "asset";
-                      const tagLabel = isAsset ? "Asset" : "Debt";
-                      const tagClass = isAsset
-                        ? "border-emerald-800 bg-emerald-900/30 text-emerald-300"
-                        : "border-amber-800 bg-amber-900/30 text-amber-300";
+                      const tagLabel = b.kind === "asset" ? "Asset" : b.kind === "dollar" ? "Cash" : "Debt";
+                      const tagClass =
+                        b.kind === "asset"
+                          ? "border-emerald-800 bg-emerald-900/30 text-emerald-300"
+                          : b.kind === "dollar"
+                            ? "border-sky-800 bg-sky-900/30 text-sky-300"
+                            : "border-amber-800 bg-amber-900/30 text-amber-300";
 
                       let detailNode: React.ReactNode = null;
                       let conditionNode: React.ReactNode = null;
+                      let recipientsText: string;
+                      let isPartialDebt = false;
+                      let remainder = 0;
 
-                      if (isAsset) {
-                        const assetLabel =
-                          b.assetMode === "all_assets"
-                            ? "Remaining Estate Value"
-                            : b.entityId
-                              ? (entities.find((e) => e.id === b.entityId)?.name ?? "(unknown entity)")
-                              : (accounts.find((a) => a.id === b.accountId)?.name ?? "(unknown account)");
-                        detailNode = (
-                          <span className="text-sm text-ink-2">
-                            {b.percentage}% of {assetLabel}
-                          </span>
-                        );
+                      if (b.kind !== "liability") {
                         conditionNode = (
                           <span
                             title={CONDITION_LABEL[b.condition]}
@@ -648,26 +704,72 @@ export default function WillsPanel(props: WillsPanelProps) {
                             {CONDITION_LABEL[b.condition]}
                           </span>
                         );
-                      } else {
-                        const liab = liabilities.find((l) => l.id === b.liabilityId);
-                        detailNode = liab ? (
-                          <span className="text-sm text-ink-2">
-                            ${liab.balance.toLocaleString()}
-                          </span>
-                        ) : (
-                          <span className="text-sm text-ink-4">—</span>
-                        );
                       }
 
-                      const recipientSum = b.recipients.reduce((s, r) => s + r.percentage, 0);
-                      const remainder = Math.round((100 - recipientSum) * 100) / 100;
-                      const isPartialDebt = !isAsset && remainder > 0.009;
-                      const recipientsText = b.recipients
-                        .map(
-                          (r) =>
-                            `${recipientLabel(r, familyMembers, externalBeneficiaries, entities, primary, g)} (${r.percentage}%)`,
-                        )
-                        .join(", ");
+                      if (b.kind === "dollar") {
+                        const amounts = b.recipients.map((r) => r.amount);
+                        const total = amounts.reduce((sum, n) => sum + n, 0);
+                        const lead = amounts.every((n) => n === amounts[0])
+                          ? `${formatCurrency(amounts[0] ?? 0)} each`
+                          : `${formatCurrency(total)} total`;
+                        const removed = b.dollarSource === "account" && b.accountId == null;
+                        let source: string;
+                        if (removed) {
+                          source = b.fallbackToEstate
+                            ? "account removed — paid from cash & brokerage"
+                            : "account removed — pays nothing until you pick a source";
+                        } else if (b.dollarSource === "estate") {
+                          source = "from cash & brokerage";
+                        } else {
+                          const name = accounts.find((a) => a.id === b.accountId)?.name ?? "(unknown account)";
+                          source = `from ${name}${b.fallbackToEstate ? " (then any cash)" : ""}`;
+                        }
+                        detailNode = (
+                          <span
+                            className={`text-sm ${removed && !b.fallbackToEstate ? "text-amber-300" : "text-ink-2"}`}
+                          >
+                            {`${lead} · ${source}`}
+                          </span>
+                        );
+                        recipientsText = b.recipients
+                          .map(
+                            (r) =>
+                              `${recipientLabel(r, familyMembers, externalBeneficiaries, entities, primary, g)} (${formatCurrency(r.amount)})`,
+                          )
+                          .join(", ");
+                      } else {
+                        if (b.kind === "asset") {
+                          const assetLabel =
+                            b.assetMode === "all_assets"
+                              ? "Estate (what's left at this point)"
+                              : b.entityId
+                                ? (entities.find((e) => e.id === b.entityId)?.name ?? "(unknown entity)")
+                                : (accounts.find((a) => a.id === b.accountId)?.name ?? "(unknown account)");
+                          detailNode = (
+                            <span className="text-sm text-ink-2">
+                              {b.percentage}% of {assetLabel}
+                            </span>
+                          );
+                        } else {
+                          const liab = liabilities.find((l) => l.id === b.liabilityId);
+                          detailNode = liab ? (
+                            <span className="text-sm text-ink-2">
+                              ${liab.balance.toLocaleString()}
+                            </span>
+                          ) : (
+                            <span className="text-sm text-ink-4">—</span>
+                          );
+                        }
+                        const recipientSum = b.recipients.reduce((s, r) => s + r.percentage, 0);
+                        remainder = Math.round((100 - recipientSum) * 100) / 100;
+                        isPartialDebt = !isAsset && remainder > 0.009;
+                        recipientsText = b.recipients
+                          .map(
+                            (r) =>
+                              `${recipientLabel(r, familyMembers, externalBeneficiaries, entities, primary, g)} (${r.percentage}%)`,
+                          )
+                          .join(", ");
+                      }
 
                       return (
                         <li
@@ -810,6 +912,11 @@ export default function WillsPanel(props: WillsPanelProps) {
                 businessEntities={businessEntities}
                 editing={dialogEditing}
                 saving={saving}
+                onGoToRemainder={() =>
+                  document
+                    .getElementById(`will-remainder-${g}`)
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                }
                 onSave={async (draft) => {
                   const existing = bequests;
                   const built = draftToBequest(draft);

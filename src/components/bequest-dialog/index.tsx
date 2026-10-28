@@ -8,6 +8,7 @@ import {
   fieldLabelClassName,
 } from "@/components/forms/input-styles";
 import BequestRecipientList from "@/components/forms/bequest-recipient-list";
+import DollarBequestFields, { formatCurrency } from "./dollar-bequest-fields";
 import type {
   WillCondition,
   WillGrantor,
@@ -50,7 +51,34 @@ export interface LiabilityBequestDraft {
   recipients: BequestRecipientDraft[];
 }
 
-export type BequestDraft = AssetBequestDraft | LiabilityBequestDraft;
+export interface DollarBequestDraft {
+  kind: "dollar";
+  name: string;
+  dollarSource: "estate" | "account";
+  accountId: string | null;
+  fallbackToEstate: boolean;
+  condition: WillCondition;
+  sortOrder: number;
+  recipients: {
+    recipientKind: WillRecipientKind;
+    recipientId: string | null;
+    /** NaN while the field is blank or not a number; Save stays off until it is > 0. */
+    amount: number;
+    sortOrder: number;
+  }[];
+}
+
+export type BequestDraft = AssetBequestDraft | LiabilityBequestDraft | DollarBequestDraft;
+
+type Tab = "percentage" | "dollar" | "remainder";
+const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
+  { id: "percentage", label: "Percentage" },
+  { id: "dollar", label: "Dollar amount" },
+  { id: "remainder", label: "Remaining estate" },
+];
+
+/** What the estate-wide ("everything left at this point") gift is called. */
+const ESTATE_LABEL = "Estate (what's left at this point)";
 
 interface BequestDialogProps {
   open: boolean;
@@ -69,6 +97,8 @@ interface BequestDialogProps {
   editing?: BequestDraft;
   saving?: boolean;
   onSave: (draft: BequestDraft) => void;
+  /** The Remaining estate tab's button: the host takes the advisor to the will's remainder section. */
+  onGoToRemainder?: () => void;
 }
 
 const FORM_ID = "bequest-dialog-form";
@@ -92,6 +122,17 @@ const emptyAssetDraft = (hasSpouse: boolean): AssetBequestDraft => ({
   ],
 });
 
+const emptyDollarDraft = (condition: WillCondition): DollarBequestDraft => ({
+  kind: "dollar",
+  name: "",
+  dollarSource: "estate",
+  accountId: null,
+  fallbackToEstate: false,
+  condition,
+  sortOrder: 0,
+  recipients: [{ recipientKind: "family_member", recipientId: null, amount: NaN, sortOrder: 0 }],
+});
+
 const CONDITION_OPTIONS: ReadonlyArray<{ value: WillCondition; label: string }> = [
   { value: "always", label: "Always" },
   { value: "if_spouse_survives", label: "If Co-client survives" },
@@ -103,15 +144,7 @@ const ASSET_PREFIX = "asset:";
 const ENTITY_PREFIX = "entity:";
 const DEBT_PREFIX = "debt:";
 
-function formatCurrency(n: number): string {
-  return n.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  });
-}
-
-function selectorValue(draft: BequestDraft): string {
+function selectorValue(draft: AssetBequestDraft | LiabilityBequestDraft): string {
   if (draft.kind === "liability") {
     return draft.liabilityId ? `${DEBT_PREFIX}${draft.liabilityId}` : "";
   }
@@ -126,11 +159,12 @@ function deriveBequestName(
   liabilities: WillsPanelLiability[],
   businessEntities: WillsPanelEntity[],
 ): string {
+  if (draft.kind === "dollar") return "Cash gift";
   if (draft.kind === "liability") {
     const l = liabilities.find((x) => x.id === draft.liabilityId);
     return l?.name?.trim() || "(unnamed liability)";
   }
-  if (draft.assetMode === "all_assets") return "Remaining Estate Value";
+  if (draft.assetMode === "all_assets") return ESTATE_LABEL;
   if (draft.entityId) {
     const ent = businessEntities.find((e) => e.id === draft.entityId);
     return ent?.name?.trim() || "Business interest bequest";
@@ -154,9 +188,14 @@ export default function BequestDialog({
   editing,
   saving = false,
   onSave,
+  onGoToRemainder,
 }: BequestDialogProps) {
   const hasSpouse = primary.spouseName != null;
   const [draft, setDraft] = useState<BequestDraft>(editing ?? emptyAssetDraft(hasSpouse));
+  const [tab, setTab] = useState<Tab>(editing?.kind === "dollar" ? "dollar" : "percentage");
+  // Bumped on every re-sync so the dollar fields (which hold the text being
+  // typed) start over with the new draft.
+  const [syncKey, setSyncKey] = useState(0);
   // Re-sync draft when the dialog opens or the editing target changes between opens.
   const [prevOpen, setPrevOpen] = useState(open);
   const [prevEditing, setPrevEditing] = useState(editing);
@@ -165,6 +204,8 @@ export default function BequestDialog({
     setPrevEditing(editing);
     if (open) {
       setDraft(editing ?? emptyAssetDraft(hasSpouse));
+      setTab(editing?.kind === "dollar" ? "dollar" : "percentage");
+      setSyncKey((k) => k + 1);
     }
   }
 
@@ -172,29 +213,39 @@ export default function BequestDialog({
     (l) => l.linkedPropertyId == null && l.ownerEntityId == null,
   );
 
-  const recipientSum = draft.recipients.reduce((s, x) => s + x.percentage, 0);
   const recipientsHaveIds = draft.recipients.every(
     (r) => takesNoRecipientId(r.recipientKind) || r.recipientId != null,
   );
 
-  // Asset: recipients must sum exactly to 100. Debt: 0 < sum ≤ 100, remainder
-  // falls to estate creditor-payoff.
-  const recipientSumOk =
-    draft.kind === "liability"
-      ? recipientSum > 0 && recipientSum <= 100.01
-      : Math.abs(recipientSum - 100) < 0.01;
-
-  const targetSelected =
-    draft.kind === "liability"
-      ? draft.liabilityId != null
-      : draft.assetMode === "all_assets" || draft.accountId != null || draft.entityId != null;
-
-  const canSave = recipientSumOk && targetSelected && recipientsHaveIds && !saving;
-
-  const debtRemainder =
-    draft.kind === "liability"
-      ? Math.round((100 - recipientSum) * 100) / 100
-      : 0;
+  let canSave: boolean;
+  let recipientSum = 0;
+  let recipientSumOk = false;
+  let debtRemainder = 0;
+  if (tab === "remainder") {
+    canSave = false;
+  } else if (draft.kind === "dollar") {
+    canSave =
+      draft.recipients.length > 0 &&
+      recipientsHaveIds &&
+      draft.recipients.every((r) => Number.isFinite(r.amount) && r.amount > 0) &&
+      (draft.dollarSource === "estate" || draft.accountId != null) &&
+      !saving;
+  } else {
+    recipientSum = draft.recipients.reduce((s, x) => s + x.percentage, 0);
+    // Asset: recipients must sum exactly to 100. Debt: 0 < sum ≤ 100, remainder
+    // falls to estate creditor-payoff.
+    recipientSumOk =
+      draft.kind === "liability"
+        ? recipientSum > 0 && recipientSum <= 100.01
+        : Math.abs(recipientSum - 100) < 0.01;
+    const targetSelected =
+      draft.kind === "liability"
+        ? draft.liabilityId != null
+        : draft.assetMode === "all_assets" || draft.accountId != null || draft.entityId != null;
+    canSave = recipientSumOk && targetSelected && recipientsHaveIds && !saving;
+    debtRemainder =
+      draft.kind === "liability" ? Math.round((100 - recipientSum) * 100) / 100 : 0;
+  }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -202,7 +253,23 @@ export default function BequestDialog({
     onSave({ ...draft, name: deriveBequestName(draft, accounts, liabilities, businessEntities) });
   }
 
+  function switchTab(next: Tab) {
+    if (next === tab) return;
+    setTab(next);
+    if (next === "remainder") return;
+    // The other kind's fields never carry over — only the condition does.
+    const condition = draft.kind === "liability" ? "always" : draft.condition;
+    const sortOrder = draft.sortOrder;
+    setDraft(
+      next === "dollar"
+        ? { ...emptyDollarDraft(condition), sortOrder }
+        : { ...emptyAssetDraft(hasSpouse), condition, sortOrder },
+    );
+    setSyncKey((k) => k + 1);
+  }
+
   function handleSelectorChange(value: string) {
+    if (draft.kind === "dollar") return;
     if (value === RESIDUAL_VALUE) {
       setDraft({
         kind: "asset",
@@ -303,6 +370,28 @@ export default function BequestDialog({
     }
   }
 
+  const conditionButtons = draft.kind !== "liability" && hasSpouse && (
+    <div>
+      <label className={fieldLabelClassName}>Condition</label>
+      <div className="flex gap-1">
+        {CONDITION_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => setDraft({ ...draft, condition: opt.value })}
+            className={`rounded-md border px-3 py-1.5 text-xs font-medium ${
+              draft.condition === opt.value
+                ? "border-accent bg-accent/15 text-accent"
+                : "border-hair bg-card-2 text-ink-2 hover:bg-card-hover"
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
   return (
     <DialogShell
       open={open}
@@ -317,133 +406,174 @@ export default function BequestDialog({
       }}
     >
       <form id={FORM_ID} onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid grid-cols-3 gap-4">
-          <div className={draft.kind === "liability" ? "col-span-3" : "col-span-2"}>
-            <label className={fieldLabelClassName}>Asset or debt</label>
-            <select
-              aria-label="Asset or debt"
-              value={selectorValue(draft)}
-              onChange={(e) => handleSelectorChange(e.target.value)}
-              className={selectClassName}
+        <div className="flex gap-1 border-b border-hair pb-3">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              aria-pressed={tab === t.id}
+              onClick={() => switchTab(t.id)}
+              className={`rounded-md border px-3 py-1.5 text-xs font-medium ${
+                tab === t.id
+                  ? "border-accent bg-accent/15 text-accent"
+                  : "border-hair bg-card-2 text-ink-2 hover:bg-card-hover"
+              }`}
             >
-              <option value={RESIDUAL_VALUE}>Remaining Estate Value</option>
-              {(() => {
-                const selectedAccountId =
-                  draft.kind === "asset" && draft.assetMode === "specific"
-                    ? draft.accountId
-                    : null;
-                // Hide entity-owned accounts (bequeathed via the entity) and
-                // retirement / life-insurance accounts (transfer by beneficiary
-                // designation, not the will). Keep the currently-selected one
-                // visible so existing bequests remain editable.
-                const visibleAccounts = accounts.filter((a) => {
-                  if (a.id === selectedAccountId) return true;
-                  if (a.ownerEntityId != null) return false;
-                  if (a.category === "retirement" || a.category === "life_insurance") return false;
-                  return true;
-                });
-                if (visibleAccounts.length === 0) return null;
-                return (
-                  <optgroup label="Assets">
-                    {visibleAccounts.map((a) => (
-                      <option key={a.id} value={`${ASSET_PREFIX}${a.id}`}>
-                        {a.name}
-                        {a.value != null ? ` — ${formatCurrency(a.value)}` : ""}
-                      </option>
-                    ))}
-                  </optgroup>
-                );
-              })()}
-              {businessEntities.length > 0 && (
-                <optgroup label="Business interests">
-                  {businessEntities.map((e) => (
-                    <option key={e.id} value={`${ENTITY_PREFIX}${e.id}`}>
-                      {e.name}
-                      {e.value != null ? ` — ${formatCurrency(e.value)}` : ""}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              {eligibleLiabilities.length > 0 && (
-                <optgroup label="Debts">
-                  {eligibleLiabilities.map((l) => {
-                    const disabled =
-                      alreadyBequeathedLiabilityIds.includes(l.id) &&
-                      !(draft.kind === "liability" && draft.liabilityId === l.id);
-                    return (
-                      <option
-                        key={l.id}
-                        value={`${DEBT_PREFIX}${l.id}`}
-                        disabled={disabled}
-                        aria-disabled={disabled}
-                      >
-                        {l.name}
-                        {disabled ? " (already bequeathed)" : ""}
-                      </option>
-                    );
-                  })}
-                </optgroup>
-              )}
-            </select>
-          </div>
-
-          {draft.kind === "asset" && (
-            <div>
-              <label className={fieldLabelClassName}>Percentage</label>
-              <input
-                type="number"
-                aria-label="Percentage"
-                min={0.01}
-                max={100}
-                step={0.01}
-                value={draft.percentage}
-                onChange={(e) =>
-                  setDraft({ ...draft, percentage: parseFloat(e.target.value) || 0 })
-                }
-                className={inputClassName}
-              />
-            </div>
-          )}
+              {t.label}
+            </button>
+          ))}
         </div>
 
-        {draft.kind === "asset" && hasSpouse && (
-          <div>
-            <label className={fieldLabelClassName}>Condition</label>
-            <div className="flex gap-1">
-              {CONDITION_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setDraft({ ...draft, condition: opt.value })}
-                  className={`rounded-md border px-3 py-1.5 text-xs font-medium ${
-                    draft.condition === opt.value
-                      ? "border-accent bg-accent/15 text-accent"
-                      : "border-hair bg-card-2 text-ink-2 hover:bg-card-hover"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
+        {tab === "remainder" && (
+          <div className="space-y-3">
+            <p className="text-sm text-ink-2">
+              The remainder estate gets whatever is left after every gift on this list. Set it in
+              the Remainder estate section of the will.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                onGoToRemainder?.();
+                onOpenChange(false);
+              }}
+              className="rounded-md border border-hair-3 bg-card-2 px-3 py-1.5 text-sm text-ink hover:bg-card-hover"
+            >
+              Go to Remainder estate
+            </button>
           </div>
         )}
 
-        <BequestRecipientList
-          mode={draft.kind === "liability" ? "debt" : "asset"}
-          grantor={grantor}
-          rows={draft.recipients}
-          onChange={(recipients) => setDraft({ ...draft, recipients })}
-          primary={primary}
-          familyMembers={familyMembers}
-          externalBeneficiaries={externalBeneficiaries}
-          entities={entities}
-        />
+        {tab === "dollar" && draft.kind === "dollar" && (
+          <>
+            <DollarBequestFields
+              key={syncKey}
+              draft={draft}
+              onChange={setDraft}
+              grantor={grantor}
+              primary={primary}
+              accounts={accounts}
+              familyMembers={familyMembers}
+              externalBeneficiaries={externalBeneficiaries}
+              entities={entities}
+            />
+            {conditionButtons}
+          </>
+        )}
 
-        {draft.kind === "liability" && recipientSumOk && debtRemainder > 0.009 && (
-          <p className="text-xs text-ink-3">
-            Recipients sum to {recipientSum.toFixed(2)}% — remainder ({debtRemainder.toFixed(2)}%)
-            falls to estate creditor-payoff
-          </p>
+        {tab === "percentage" && draft.kind !== "dollar" && (
+          <>
+          <div className="grid grid-cols-3 gap-4">
+            <div className={draft.kind === "liability" ? "col-span-3" : "col-span-2"}>
+              <label className={fieldLabelClassName}>Asset or debt</label>
+              <select
+                aria-label="Asset or debt"
+                value={selectorValue(draft)}
+                onChange={(e) => handleSelectorChange(e.target.value)}
+                className={selectClassName}
+              >
+                <option value={RESIDUAL_VALUE}>{ESTATE_LABEL}</option>
+                {(() => {
+                  const selectedAccountId =
+                    draft.kind === "asset" && draft.assetMode === "specific"
+                      ? draft.accountId
+                      : null;
+                  // Hide entity-owned accounts (bequeathed via the entity) and
+                  // retirement / life-insurance accounts (transfer by beneficiary
+                  // designation, not the will). Keep the currently-selected one
+                  // visible so existing bequests remain editable.
+                  const visibleAccounts = accounts.filter((a) => {
+                    if (a.id === selectedAccountId) return true;
+                    if (a.ownerEntityId != null) return false;
+                    if (a.category === "retirement" || a.category === "life_insurance") return false;
+                    return true;
+                  });
+                  if (visibleAccounts.length === 0) return null;
+                  return (
+                    <optgroup label="Assets">
+                      {visibleAccounts.map((a) => (
+                        <option key={a.id} value={`${ASSET_PREFIX}${a.id}`}>
+                          {a.name}
+                          {a.value != null ? ` — ${formatCurrency(a.value)}` : ""}
+                        </option>
+                      ))}
+                    </optgroup>
+                  );
+                })()}
+                {businessEntities.length > 0 && (
+                  <optgroup label="Business interests">
+                    {businessEntities.map((e) => (
+                      <option key={e.id} value={`${ENTITY_PREFIX}${e.id}`}>
+                        {e.name}
+                        {e.value != null ? ` — ${formatCurrency(e.value)}` : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {eligibleLiabilities.length > 0 && (
+                  <optgroup label="Debts">
+                    {eligibleLiabilities.map((l) => {
+                      const disabled =
+                        alreadyBequeathedLiabilityIds.includes(l.id) &&
+                        !(draft.kind === "liability" && draft.liabilityId === l.id);
+                      return (
+                        <option
+                          key={l.id}
+                          value={`${DEBT_PREFIX}${l.id}`}
+                          disabled={disabled}
+                          aria-disabled={disabled}
+                        >
+                          {l.name}
+                          {disabled ? " (already bequeathed)" : ""}
+                        </option>
+                      );
+                    })}
+                  </optgroup>
+                )}
+              </select>
+            </div>
+
+            {draft.kind === "asset" && (
+              <div>
+                <label className={fieldLabelClassName}>Percentage</label>
+                <input
+                  type="number"
+                  aria-label="Percentage"
+                  min={0.01}
+                  max={100}
+                  step={0.01}
+                  value={draft.percentage}
+                  onChange={(e) =>
+                    setDraft({ ...draft, percentage: parseFloat(e.target.value) || 0 })
+                  }
+                  className={inputClassName}
+                />
+                <p className="mt-1 text-xs text-ink-3">
+                  Of whatever is left after the gifts above this one.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {conditionButtons}
+
+          <BequestRecipientList
+            mode={draft.kind === "liability" ? "debt" : "asset"}
+            grantor={grantor}
+            rows={draft.recipients}
+            onChange={(recipients) => setDraft({ ...draft, recipients })}
+            primary={primary}
+            familyMembers={familyMembers}
+            externalBeneficiaries={externalBeneficiaries}
+            entities={entities}
+          />
+
+          {draft.kind === "liability" && recipientSumOk && debtRemainder > 0.009 && (
+            <p className="text-xs text-ink-3">
+              Recipients sum to {recipientSum.toFixed(2)}% — remainder ({debtRemainder.toFixed(2)}%)
+              falls to estate creditor-payoff
+            </p>
+          )}
+          </>
         )}
       </form>
     </DialogShell>

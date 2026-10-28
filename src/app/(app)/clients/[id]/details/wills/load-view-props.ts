@@ -18,6 +18,7 @@ import type {
   WillsPanelPrimary,
   WillsPanelAssetBequest,
   WillsPanelLiabilityBequest,
+  WillsPanelDollarBequest,
   WillsPanelProps,
 } from "@/components/wills-panel";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
@@ -82,7 +83,29 @@ export async function loadWillsViewProps(
     .map((w) => ({
       id: w.id,
       grantor: w.grantor,
-      bequests: w.bequests.map((b): WillsPanelAssetBequest | WillsPanelLiabilityBequest => {
+      bequests: w.bequests
+        .slice()
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((b): WillsPanelAssetBequest | WillsPanelLiabilityBequest | WillsPanelDollarBequest => {
+        if (b.kind === "dollar") {
+          return {
+            kind: "dollar",
+            id: b.id,
+            name: b.name,
+            dollarSource: b.dollarSource ?? "estate",
+            accountId: b.accountId,
+            fallbackToEstate: b.fallbackToEstate ?? false,
+            condition: b.condition,
+            sortOrder: b.sortOrder,
+            recipients: b.recipients.map((r) => ({
+              recipientKind: r.recipientKind,
+              recipientId: r.recipientId,
+              percentage: 0,
+              amount: r.amount ?? 0,
+              sortOrder: r.sortOrder,
+            })),
+          };
+        }
         const recipients = b.recipients.map((r) => ({
           recipientKind: r.recipientKind,
           recipientId: r.recipientId,
