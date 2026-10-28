@@ -253,6 +253,25 @@ describe("allocateWillGifts", () => {
     expect(shares.every((s) => Number.isFinite(s.fraction) && s.fraction > 0)).toBe(true);
   });
 
+  // The Solver and scenario-change payloads reach the engine unvalidated.
+  it("reads a string amount as a number", () => {
+    const asText = (r: WillBequestRecipient) => ({ ...r, amount: String(r.amount) as unknown as number });
+    const shares = allocate(inOrder(dollarGift([asText(amt("k1", 20_000)), asText(amt("k2", 20_000))])), {
+      pool: [POOL[0]],
+    });
+    expect(share(shares, "A", "k1")).toBeCloseTo(0.2, 10);
+    expect(share(shares, "A", "k2")).toBeCloseTo(0.2, 10);
+  });
+
+  it("pays a negative amount nothing and never over-draws the others", () => {
+    const shares = allocate(inOrder(dollarGift([amt("k1", 150_000), amt("k2", -30_000)])), {
+      pool: [POOL[0]],
+    });
+    expect(share(shares, "A", "k1")).toBeCloseTo(1, 10); // all $100k, not $125k
+    expect(shares.some(to("k2"))).toBe(false);
+    expect(sum(shares)).toBeLessThanOrEqual(1 + 1e-12);
+  });
+
   it("ignores liability gifts and gifts of accounts outside the pool", () => {
     const liability: WillBequest = {
       ...BASE, kind: "liability", assetMode: null, accountId: null, liabilityId: "L",

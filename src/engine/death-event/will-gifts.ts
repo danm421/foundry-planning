@@ -26,6 +26,11 @@ const ELIGIBLE = new Set<Account["category"]>(["cash", "taxable"]);
  *  `undisposed > 1e-9` gate, so float residue never becomes a later gift. */
 const SPENT = 1e-9;
 
+/** A recipient's dollar amount as a number, never below zero: the Solver and
+ *  scenario-change payloads reach the engine unvalidated, so it can arrive as
+ *  a string or a negative. */
+const amountOf = (r: WillBequestRecipient): number => Math.max(0, Number(r.amount) || 0);
+
 /** Pay the will's asset and dollar gifts top to bottom in `sortOrder`, each
  *  taking from whatever is left at its turn. Liability gifts run upstream.
  *
@@ -80,7 +85,7 @@ export function allocateWillGifts(
       continue;
     }
 
-    const want = live.reduce((s, r) => s + (r.amount ?? 0), 0);
+    const want = live.reduce((s, r) => s + amountOf(r), 0);
     if (!(want > 0)) continue;
 
     const namedEntry = b.dollarSource === "account" && b.accountId != null ? byId.get(b.accountId) : undefined;
@@ -107,7 +112,7 @@ export function allocateWillGifts(
 
     for (const [e, d] of draws) {
       const fraction = d / e.value;
-      for (const r of live) take(e.accountId, fraction * ((r.amount ?? 0) / want), r);
+      for (const r of live) take(e.accountId, fraction * (amountOf(r) / want), r);
     }
   }
 
