@@ -18,6 +18,42 @@ const ROWS: { key: keyof RealizationMix; name: string; label: string }[] = [
 
 const pct = (fraction: number) => (fraction * 100).toFixed(2);
 
+const helpTermClassName = "font-medium text-ink";
+
+// Mirrors the engine's turnover step (projection.ts, the realization block):
+// realized LTCG = turnover × (value − basis before growth); STCG = turnover ×
+// the LTCG share of this year's growth. Both raise basis; value is unchanged.
+const TURNOVER_HELP = (
+  <span className="block space-y-2">
+    <span className="block">
+      The share of the account sold and rebought each year. Each year&apos;s sale realizes two gains:
+    </span>
+    <span className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+      <span className={helpTermClassName}>Long-term</span>
+      <span>turnover × (value − cost basis), measured before this year&apos;s growth</span>
+      <span className={helpTermClassName}>Short-term</span>
+      <span>turnover × this year&apos;s price growth (the long-term gains share above)</span>
+    </span>
+    <span className="block">
+      The rest of the growth stays unrealized. The proceeds are reinvested, so the value doesn&apos;t change
+      and cost basis rises by both gains.
+    </span>
+    <span className="block border-t border-hair pt-2">
+      A <span className="tabular">$1,000,000</span> account with <span className="tabular">$600,000</span> of
+      basis grows <span className="tabular">$60,000</span>, all long-term gains. At{" "}
+      <span className="tabular">10%</span> turnover:
+    </span>
+    <span className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+      <span className={helpTermClassName}>Long-term</span>
+      <span className="tabular">10% × $400,000 = $40,000</span>
+      <span className={helpTermClassName}>Short-term</span>
+      <span className="tabular">10% × $60,000 = $6,000</span>
+      <span className={helpTermClassName}>Basis</span>
+      <span className="tabular">$600,000 → $646,000</span>
+    </span>
+  </span>
+);
+
 interface RealizationTabProps {
   /** What the account's growth source realizes before any override, and what
    *  to call that source (a flat rate realizes all long-term gains). Null when
@@ -120,7 +156,7 @@ export function RealizationTab({
       <div className="max-w-[12rem]">
         <label htmlFor="realization-turnover" className={`mb-1.5 flex items-center gap-1.5 ${fieldLabelBaseClassName}`}>
           Turnover
-          <FieldTooltip text="The share of the account sold and rebought each year. The sale realizes that share of the account's existing gain as long-term, and that share of this year's price growth as short-term." />
+          <FieldTooltip wide text={TURNOVER_HELP} />
         </label>
         <PercentInput
           id="realization-turnover"
