@@ -77,6 +77,37 @@ describe("loadWillsViewProps", () => {
     ]);
   });
 
+  it("marks the accounts a dollar gift may name with the will routes' own rule", async () => {
+    const acct = (id: string, category: string, owners: unknown[]) => ({ id, name: id, category, value: 1000, owners });
+    const client = { kind: "family_member", familyMemberId: "fm-client", percent: 1 };
+    const trust = (entityId: string, percent: number) => ({ kind: "entity", entityId, percent });
+    vi.mocked(loadEffectiveTree).mockResolvedValueOnce({
+      effectiveTree: {
+        accounts: [
+          acct("a-cash", "cash", [client]),
+          acct("a-half-trust", "taxable", [trust("t-1", 0.5), { ...client, percent: 0.5 }]),
+          acct("a-two-trusts", "taxable", [trust("t-1", 0.5), trust("t-2", 0.5)]),
+          acct("a-home", "real_estate", [client]),
+        ],
+        liabilities: [],
+        wills: [],
+        familyMembers: [],
+        entities: [],
+        externalBeneficiaries: [],
+      },
+      warnings: [],
+      resolutionContext: {},
+    } as never);
+    const result = await loadWillsViewProps(CLIENT_ID, "base");
+    if (result.status !== "ok") throw new Error("expected ok");
+    expect(Object.fromEntries(result.props.accounts.map((a) => [a.id, a.canPayDollarGift]))).toEqual({
+      "a-cash": true,
+      "a-half-trust": true, // the household's half passes under the will
+      "a-two-trusts": false, // wholly trust-owned, though no single trust controls it
+      "a-home": false,
+    });
+  });
+
   it("still offers the scenario's wills as they are", async () => {
     const result = await loadWillsViewProps(CLIENT_ID, "scn-9");
     if (result.status !== "ok") throw new Error("expected ok");

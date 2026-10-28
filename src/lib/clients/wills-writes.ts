@@ -25,7 +25,9 @@ import {
   willResiduaryRecipients,
   wills,
 } from "@/db/schema";
+import type { AccountOwner } from "@/engine/ownership";
 import { recordAudit } from "@/lib/audit";
+import { dollarSourceRefusal } from "@/lib/estate/dollar-gift-source";
 import { handleOf, inTransaction, type DbOrTx, type Tx, type WriteOptions } from "@/lib/db-tx";
 import { formatZodIssues } from "@/lib/schemas/common";
 import {
@@ -41,7 +43,7 @@ import { writeError, type EntityWriteResult } from "./entity-write-result";
 
 type CrossRefCheck = {
   accountIds: string[];
-  /** Accounts a dollar gift is paid from: cash or brokerage, and not entity-owned. */
+  /** Accounts a new or changed dollar gift is paid from: held to `dollarSourceRefusal`. */
   dollarAccountIds: string[];
   familyMemberIds: string[];
   externalIds: string[];
@@ -51,9 +53,28 @@ type CrossRefCheck = {
 
 export type CrossRefError = { code: string; detail?: string };
 
+/** A dollar gift's source, as a re-save is matched against the will's stored gifts. */
+const dollarSourceKey = (b: { dollarSource: string | null; accountId: string | null }) => `${b.dollarSource}:${b.accountId}`;
+
+/**
+ * The sources the will's stored dollar gifts already name. A re-saved gift on
+ * one of these skips the source rule: its account may since have moved into a
+ * trust or changed category, and refusing it would leave the whole will
+ * unsavable. The engine pays such a gift nothing, or spills it per its box.
+ */
+async function storedDollarSources(willId: string, handle: DbOrTx): Promise<Set<string>> {
+  const rows = await handle
+    .select({ dollarSource: willBequests.dollarSource, accountId: willBequests.accountId })
+    .from(willBequests)
+    .where(and(eq(willBequests.willId, willId), eq(willBequests.kind, "dollar")));
+  return new Set(rows.map(dollarSourceKey));
+}
+
+/** `stored`: the will's stored dollar sources — a gift on one isn't checked against the source rule. */
 export function gatherCrossRefs(
   bequests: WillBequestInput[],
   residuary: WillResiduaryRecipientInput[] = [],
+  stored: ReadonlySet<string> = new Set(),
 ): CrossRefCheck {
   const check: CrossRefCheck = {
     accountIds: [],
@@ -67,7 +88,7 @@ export function gatherCrossRefs(
     if (b.kind === "asset" && b.accountId) check.accountIds.push(b.accountId);
     if (b.kind === "dollar" && b.accountId) {
       check.accountIds.push(b.accountId);
-      check.dollarAccountIds.push(b.accountId);
+      if (!stored.has(dollarSourceKey(b))) check.dollarAccountIds.push(b.accountId);
     }
     if (b.kind === "asset" && b.entityId) check.entityIds.push(b.entityId);
     if (b.kind === "liability") check.liabilityIds.push(b.liabilityId);
@@ -85,6 +106,14 @@ export function gatherCrossRefs(
     else if (r.recipientKind === "entity") check.entityIds.push(r.recipientId);
   }
   return check;
+}
+
+/** An account_owners row as the engine reads it (each row names exactly one owner). */
+function ownerOf(o: { familyMemberId: string | null; entityId: string | null; externalBeneficiaryId: string | null; percent: string }): AccountOwner {
+  const percent = Number(o.percent);
+  if (o.entityId) return { kind: "entity", entityId: o.entityId, percent };
+  if (o.familyMemberId) return { kind: "family_member", familyMemberId: o.familyMemberId, percent };
+  return { kind: "external_beneficiary", externalBeneficiaryId: String(o.externalBeneficiaryId), percent };
 }
 
 export async function verifyCrossRefs(
@@ -140,22 +169,27 @@ export async function verifyCrossRefs(
     }
   }
 
-  // A dollar gift is paid only from cash or brokerage held by the client (or
-  // co-client) — never from an entity-owned account.
+  // A new or changed dollar gift's account: the shared rule the will dialog's
+  // picker applies too (dollar-gift-source.ts).
   if (check.dollarAccountIds.length > 0) {
     const categories = await handle
       .select({ id: accounts.id, category: accounts.category })
       .from(accounts)
       .where(and(eq(accounts.clientId, clientId), inArray(accounts.id, check.dollarAccountIds)));
-    const notCash = categories.find((a) => a.category !== "cash" && a.category !== "taxable");
-    if (notCash) return { code: "dollar_bequest_source_not_cash", detail: notCash.id };
-
     const owners = await handle
-      .select({ accountId: accountOwners.accountId, entityId: accountOwners.entityId })
+      .select({
+        accountId: accountOwners.accountId,
+        familyMemberId: accountOwners.familyMemberId,
+        entityId: accountOwners.entityId,
+        externalBeneficiaryId: accountOwners.externalBeneficiaryId,
+        percent: accountOwners.percent,
+      })
       .from(accountOwners)
       .where(inArray(accountOwners.accountId, check.dollarAccountIds));
-    const entityOwned = owners.find((o) => o.entityId != null);
-    if (entityOwned) return { code: "dollar_bequest_source_entity_owned", detail: entityOwned.accountId };
+    for (const a of categories) {
+      const refusal = dollarSourceRefusal({ category: a.category, owners: owners.filter((o) => o.accountId === a.id).map(ownerOf) });
+      if (refusal) return { code: refusal, detail: a.id };
+    }
   }
 
   // Liability-bequest cross-ref: batch-fetch all referenced liabilities in one
@@ -375,7 +409,7 @@ export async function updateWillForClient(args: RouteArgs & { willId: string }):
 
   const crossRefError = await verifyCrossRefs(
     id,
-    gatherCrossRefs(bequests, residuaryRecipients),
+    gatherCrossRefs(bequests, residuaryRecipients, await storedDollarSources(willId, handle)),
     bequests,
     handle,
   );
@@ -519,7 +553,12 @@ export async function updateWillBequestForClient(args: SaveArgs & { bequestId: s
   });
   if (!parsed.success) return invalidBody(parsed.error);
   const bequest = parsed.data;
-  const crossRefError = await verifyCrossRefs(args.clientId, gatherCrossRefs([bequest]), [bequest], handle);
+  const crossRefError = await verifyCrossRefs(
+    args.clientId,
+    gatherCrossRefs([bequest], [], await storedDollarSources(args.willId, handle)),
+    [bequest],
+    handle,
+  );
   if (crossRefError) return crossRefRefusal(crossRefError);
 
   try {

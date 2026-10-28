@@ -12,6 +12,7 @@ import { CO_CLIENT_LABEL } from "@/lib/owner-labels";
 import { OTHER_HEIRS_LABEL } from "@/engine/other-heirs";
 import { isEditFocus, type EditorFocus } from "@/lib/scenario/change-editor-target";
 import { useFocusDelete } from "@/hooks/use-focus-delete";
+import { DOLLAR_SOURCE_REFUSAL_TEXT, type DollarSourceRefusal } from "@/lib/estate/dollar-gift-source";
 // Local copy — `BUSINESS_ENTITY_TYPES` was removed from `in-estate-weights.ts`
 // in the business-as-asset migration. This UI is being phased out separately;
 // keep the gate inline until then.
@@ -120,6 +121,9 @@ export interface WillsPanelAccount {
    *  bequeathed as a whole (its cash/assets ride along), and trust assets
    *  aren't part of the grantor's bequeathable estate. */
   ownerEntityId?: string | null;
+  /** A dollar gift may name it ("Paid from"): `dollarSourceRefusal` in
+   *  `@/lib/estate/dollar-gift-source`, the rule the will routes enforce too. */
+  canPayDollarGift?: boolean;
   /** Current market value. Shown alongside the name in the bequest picker. */
   value?: number;
 }
@@ -343,6 +347,13 @@ function findFocusWill(
   return { grantor: will.grantor, deleteWillId: will.id };
 }
 
+/** A will route's refusal as the advisor reads it: plain words for a dollar-gift source code, else as sent. */
+function refusalText(body: { error?: string }, status: number): string {
+  const code = body.error;
+  if (code && Object.hasOwn(DOLLAR_SOURCE_REFUSAL_TEXT, code)) return DOLLAR_SOURCE_REFUSAL_TEXT[code as DollarSourceRefusal];
+  return code ?? `HTTP ${status}`;
+}
+
 export default function WillsPanel(props: WillsPanelProps) {
   const { permission } = useClientAccess();
   const canEdit = permission === "edit";
@@ -489,7 +500,7 @@ export default function WillsPanel(props: WillsPanelProps) {
         );
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
-          throw new Error(body.error ?? `HTTP ${res.status}`);
+          throw new Error(refusalText(body, res.status));
         }
         const out = (await res.json()) as { id: string };
         willId = out.id;
@@ -504,7 +515,7 @@ export default function WillsPanel(props: WillsPanelProps) {
         );
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
-          throw new Error(body.error ?? `HTTP ${res.status}`);
+          throw new Error(refusalText(body, res.status));
         }
         willId = existing.id;
       }

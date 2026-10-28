@@ -38,11 +38,6 @@ function parseAmount(text: string): number {
 
 const amountText = (n: number) => (Number.isFinite(n) ? String(n) : "");
 
-/** Accounts a dollar gift can name: cash and brokerage the person owns outright. */
-export function isCashLike(a: WillsPanelAccount): boolean {
-  return (a.category === "cash" || a.category === "taxable") && a.ownerEntityId == null;
-}
-
 interface DollarBequestFieldsProps {
   draft: DollarBequestDraft;
   onChange: (draft: DollarBequestDraft) => void;
@@ -90,8 +85,9 @@ export default function DollarBequestFields({
     : draft.dollarSource === "estate"
       ? ESTATE_VALUE
       : `${ACCOUNT_PREFIX}${draft.accountId}`;
-  // The account already on the gift stays pickable even if it is no longer cash-like.
-  const pickable = accounts.filter((a) => isCashLike(a) || a.id === draft.accountId);
+  // `canPayDollarGift` is the will routes' own source rule. The account already
+  // on the gift stays pickable even if it no longer passes: a re-save keeps it.
+  const pickable = accounts.filter((a) => a.canPayDollarGift || a.id === draft.accountId);
 
   function changeSource(value: string) {
     if (value === ESTATE_VALUE) {

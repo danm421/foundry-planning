@@ -12,7 +12,7 @@ import type {
   WillsPanelPrimary,
 } from "@/components/wills-panel";
 
-const acct: WillsPanelAccount = { id: "a1", name: "Brokerage A", category: "taxable" };
+const acct: WillsPanelAccount = { id: "a1", name: "Brokerage A", category: "taxable", canPayDollarGift: true };
 const fm: WillsPanelFamilyMember = { id: "f1", firstName: "Tom", lastName: "Jr" };
 const ext: WillsPanelExternal = { id: "e1", name: "Red Cross" };
 const ent: WillsPanelEntity = { id: "t1", name: "Family ILIT" };
@@ -464,13 +464,14 @@ describe("BequestDialog — Other Heirs", () => {
 });
 
 describe("BequestDialog — Dollar amount tab", () => {
-  const cashAcct: WillsPanelAccount = { id: "a2", name: "Chase Savings", category: "cash", value: 50000 };
+  const cashAcct: WillsPanelAccount = { id: "a2", name: "Chase Savings", category: "cash", value: 50000, canPayDollarGift: true };
   const ira: WillsPanelAccount = { id: "a3", name: "Roth IRA", category: "retirement" };
   const trustAcct: WillsPanelAccount = {
     id: "a4",
     name: "ILIT Brokerage",
     category: "taxable",
     ownerEntityId: "t1",
+    canPayDollarGift: false,
   };
   const kids: WillsPanelFamilyMember[] = [
     { id: "k1", firstName: "Emma", lastName: null },
@@ -530,7 +531,7 @@ describe("BequestDialog — Dollar amount tab", () => {
     expect(saved.recipients.map((r: { sortOrder: number }) => r.sortOrder)).toEqual([0, 1, 2, 3]);
   });
 
-  it("offers only cash and brokerage accounts with no entity owner, after the estate option", async () => {
+  it("offers only the accounts the will can pay a dollar gift from, after the estate option", async () => {
     const user = userEvent.setup();
     renderDialog();
     await user.click(screen.getByRole("button", { name: "Dollar amount" }));

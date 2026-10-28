@@ -30,7 +30,7 @@ type DbState = {
   clients: Array<{ id: string; firmId: string }>;
   wills: Array<{ id: string; clientId: string; grantor: string; updatedAt?: Date }>;
   accounts: Array<{ id: string; clientId: string; category?: string }>;
-  accountOwners: Array<{ accountId: string; entityId: string | null }>;
+  accountOwners: Array<{ accountId: string; entityId: string | null; familyMemberId?: string | null; percent?: string }>;
   familyMembers: Array<{ id: string; clientId: string }>;
   liabilities: Array<{
     id: string;
@@ -87,6 +87,7 @@ const ACCT_B_ID = "10000000-0000-0000-0000-000000000022";
 const FM_A_ID = "10000000-0000-0000-0000-000000000031";
 // FM_B_ID not currently used in test assertions but kept as a reference constant.
 const WILL_EXISTING_ID = "10000000-0000-0000-0000-000000000041";
+const TRUST_ID = "10000000-0000-0000-0000-000000000098";
 
 const defaultAccounts: DbState["accounts"] = [
   { id: ACCT_A_ID, clientId: CLIENT_A_ID },
@@ -1067,11 +1068,87 @@ describe("dollar bequests — POST / GET / PATCH", () => {
     resetState({
       wills: [{ id: WILL_EXISTING_ID, clientId: CLIENT_A_ID, grantor: "client" }],
       accounts: [{ id: ACCT_A_ID, clientId: CLIENT_A_ID, category: "cash" }],
-      accountOwners: [{ accountId: ACCT_A_ID, entityId: "10000000-0000-0000-0000-000000000098" }],
+      accountOwners: [{ accountId: ACCT_A_ID, entityId: TRUST_ID, percent: "1.0000" }],
     });
     const res = await call("PATCH", { bequests: [dollarGift(ACCT_A_ID)] });
     expect(res.status).toBe(400);
     expect((await res.json()).error).toBe("dollar_bequest_source_entity_owned");
+  });
+
+  it("PATCH accepts a part-trust-owned account: the engine pays from the household's share", async () => {
+    resetState({
+      wills: [{ id: WILL_EXISTING_ID, clientId: CLIENT_A_ID, grantor: "client" }],
+      accounts: [{ id: ACCT_A_ID, clientId: CLIENT_A_ID, category: "taxable" }],
+      accountOwners: [
+        { accountId: ACCT_A_ID, entityId: TRUST_ID, percent: "0.5000" },
+        { accountId: ACCT_A_ID, entityId: null, familyMemberId: FM_A_ID, percent: "0.5000" },
+      ],
+    });
+    const res = await call("PATCH", { bequests: [dollarGift(ACCT_A_ID)] });
+    expect(res.status).toBe(200);
+  });
+
+  describe("a stored gift's source is kept on re-save", () => {
+    /** The will already holds "$20,000 to Charlie from ACCT_A". */
+    const storedGift = (accountId: string | null, source: "estate" | "account" = "account") => ({
+      id: "10000000-0000-0000-0000-000000000051",
+      willId: WILL_EXISTING_ID,
+      kind: "dollar",
+      name: "$20,000 to Charlie",
+      assetMode: null,
+      accountId,
+      entityId: null,
+      liabilityId: null,
+      dollarSource: source,
+      fallbackToEstate: source === "account",
+      percentage: "100",
+      condition: "always",
+      sortOrder: 3,
+    });
+
+    it("re-saves an unchanged gift whose account has since moved into a trust", async () => {
+      resetState({
+        wills: [{ id: WILL_EXISTING_ID, clientId: CLIENT_A_ID, grantor: "client" }],
+        accounts: [{ id: ACCT_A_ID, clientId: CLIENT_A_ID, category: "taxable" }],
+        accountOwners: [{ accountId: ACCT_A_ID, entityId: TRUST_ID, percent: "1.0000" }],
+        willBequests: [storedGift(ACCT_A_ID)],
+      });
+      const res = await call("PATCH", { bequests: [dollarGift(ACCT_A_ID)] });
+      expect(res.status).toBe(200);
+    });
+
+    it("re-saves an unchanged gift whose account is no longer cash or brokerage", async () => {
+      resetState({
+        wills: [{ id: WILL_EXISTING_ID, clientId: CLIENT_A_ID, grantor: "client" }],
+        accounts: [{ id: ACCT_A_ID, clientId: CLIENT_A_ID, category: "real_estate" }],
+        willBequests: [storedGift(ACCT_A_ID)],
+      });
+      const res = await call("PATCH", { bequests: [dollarGift(ACCT_A_ID)] });
+      expect(res.status).toBe(200);
+    });
+
+    it("refuses changing a gift's source to a trust-owned account", async () => {
+      resetState({
+        wills: [{ id: WILL_EXISTING_ID, clientId: CLIENT_A_ID, grantor: "client" }],
+        accounts: [{ id: ACCT_A_ID, clientId: CLIENT_A_ID, category: "taxable" }],
+        accountOwners: [{ accountId: ACCT_A_ID, entityId: TRUST_ID, percent: "1.0000" }],
+        willBequests: [storedGift(null, "estate")],
+      });
+      const res = await call("PATCH", { bequests: [dollarGift(ACCT_A_ID)] });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe("dollar_bequest_source_entity_owned");
+    });
+
+    it("refuses changing a gift's source to an account that isn't cash or brokerage", async () => {
+      resetState({
+        wills: [{ id: WILL_EXISTING_ID, clientId: CLIENT_A_ID, grantor: "client" }],
+        accounts: [{ id: ACCT_A_ID, clientId: CLIENT_A_ID, category: "real_estate" }],
+        willBequests: [storedGift(null, "estate")],
+      });
+      const res = await call("PATCH", { bequests: [dollarGift(ACCT_A_ID)] });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe("dollar_bequest_source_not_cash");
+    });
   });
 
   it("PATCH returns no warnings", async () => {

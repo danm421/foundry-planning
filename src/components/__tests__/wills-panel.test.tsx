@@ -627,6 +627,23 @@ describe("WillsPanel — saving with dollar gifts", () => {
     expect(body.bequests[1]).toMatchObject({ kind: "asset", sortOrder: 1 });
   });
 
+  it("says a refused dollar-gift source in plain words, not its code", async () => {
+    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) =>
+      init?.method === "PATCH"
+        ? { ok: false, status: 400, json: async () => ({ error: "dollar_bequest_source_entity_owned", detail: u("a1") }) }
+        : { ok: false, status: 404, json: async () => ({}) },
+    );
+    const user = userEvent.setup();
+    render(<WillsPanel {...dollarProps} initialWills={willWith([pctGift("b1", 0, u("a1")), dollarGift({ sortOrder: 1 })])} />);
+    await user.click(within(giftRows()[0]).getByRole("button", { name: "Move down" }));
+    expect(
+      await screen.findByText(
+        "A trust or business owns that account, so the will can't pay a gift from it. Pick a cash or brokerage account owned by the client.",
+      ),
+    ).toBeDefined();
+    expect(screen.queryByText(/dollar_bequest_source/)).toBeNull();
+  });
+
   it("renumbers a gappy list to 0..n-1 when a gift is added", async () => {
     const user = userEvent.setup();
     render(
