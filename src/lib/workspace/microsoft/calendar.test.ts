@@ -87,8 +87,8 @@ describe("listEvents", () => {
     const sent = call(0);
     const url = new URL(sent.url);
     expect(url.pathname).toBe("/v1.0/me/calendarView");
-    expect(url.searchParams.get("startDateTime")).toBe("2026-10-26T00:00:00");
-    expect(url.searchParams.get("endDateTime")).toBe("2026-11-02T00:00:00");
+    expect(url.searchParams.get("startDateTime")).toBe("2026-10-25T00:00:00");
+    expect(url.searchParams.get("endDateTime")).toBe("2026-11-03T00:00:00");
     expect(url.searchParams.get("$top")).toBe("250");
     expect(url.searchParams.get("$select")).toContain("onlineMeeting");
     expect(sent.headers.get("prefer")).toBe('outlook.timezone="Eastern Standard Time"');
@@ -102,7 +102,7 @@ describe("listEvents", () => {
       }),
       json({ value: [graphEvent({ id: "b" })] }),
     );
-    const events = await listEvents(ctx, { startDate: "2026-10-26", days: 7, timeZone: "UTC" });
+    const events = await listEvents(ctx, { startDate: "2026-11-02", days: 1, timeZone: "UTC" });
 
     expect(events.map((e) => e.id)).toEqual(["a", "b"]);
     expect(call(1).url).toBe("https://graph.microsoft.com/v1.0/me/calendarView?$skip=1");
@@ -143,6 +143,29 @@ describe("listEvents", () => {
     expect(e.subject).toBe("");
     expect(e.teamsUrl).toBeNull();
     expect(e.attendees).toEqual([{ email: "n@x.test", name: null }]);
+  });
+
+  it("keeps only events overlapping the local week (calendarView bounds are read as UTC)", async () => {
+    const at = (id: string, start: string, end: string, extra = {}) =>
+      graphEvent({
+        id,
+        start: { dateTime: `${start}:00.0000000` },
+        end: { dateTime: `${end}:00.0000000` },
+        ...extra,
+      });
+    const { ctx } = setup(
+      json({
+        value: [
+          at("before", "2026-10-25T21:00", "2026-10-25T22:00"),
+          at("after", "2026-11-02T08:00", "2026-11-02T09:00"),
+          at("lastEvening", "2026-11-01T22:00", "2026-11-01T23:00"),
+          at("crossesIn", "2026-10-25T23:00", "2026-10-26T01:00"),
+          at("allDay", "2026-11-01T00:00", "2026-11-02T00:00", { isAllDay: true }),
+        ],
+      }),
+    );
+    const events = await listEvents(ctx, { startDate: "2026-10-26", days: 7, timeZone: "Eastern Standard Time" });
+    expect(events.map((e) => e.id)).toEqual(["lastEvening", "crossesIn", "allDay"]);
   });
 
   it("omits cancelled events", async () => {

@@ -63,19 +63,26 @@ export async function getMailboxTimeZone(ctx: GraphContext): Promise<string> {
   return res.value;
 }
 
-/** Non-cancelled events in `[startDate, startDate + days)`, as wall-clock times in `timeZone`. */
+/** Non-cancelled events overlapping `[startDate, startDate + days)` local days, as wall-clock times in `timeZone`. */
 export async function listEvents(
   ctx: GraphContext,
   opts: { startDate: string; days: number; timeZone: string },
 ): Promise<WorkspaceEvent[]> {
   const query = new URLSearchParams({
-    startDateTime: `${opts.startDate}T00:00:00`,
-    endDateTime: `${addDays(opts.startDate, opts.days)}T00:00:00`,
+    startDateTime: `${addDays(opts.startDate, -1)}T00:00:00`,
+    endDateTime: `${addDays(opts.startDate, opts.days + 1)}T00:00:00`,
     $top: "250",
     $select: EVENT_FIELDS,
   });
   const events = await graphPages<GraphEvent>(ctx, `/me/calendarView?${query}`, { timeZone: opts.timeZone });
-  return events.filter((e) => !e.isCancelled).map(toWorkspaceEvent);
+  // calendarView reads offset-less bounds as UTC, so the request is widened a day each side
+  // and the events are trimmed to the mailbox's local window here.
+  const lo = `${opts.startDate}T00:00`;
+  const hi = `${addDays(opts.startDate, opts.days)}T00:00`;
+  return events
+    .filter((e) => !e.isCancelled)
+    .map(toWorkspaceEvent)
+    .filter((e) => e.start < hi && e.end > lo);
 }
 
 /** Only an organizer can change a live event. */
