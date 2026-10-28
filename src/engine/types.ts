@@ -88,18 +88,29 @@ export interface WillBequestRecipient {
   /** "spouse" and "other_heirs" carry a null recipientId. */
   recipientKind: "family_member" | "external_beneficiary" | "entity" | "spouse" | "other_heirs";
   recipientId: string | null;
+  /** 0 and unused on a dollar gift's recipients (`amount` carries the split). */
   percentage: number;
+  /** Nominal dollars. Set on dollar-gift recipients only. */
+  amount?: number;
   sortOrder: number;
 }
 
 export interface WillBequest {
   id: string;
   name: string;
-  kind: "asset" | "liability";
+  kind: "asset" | "liability" | "dollar";
   /** Non-null iff kind === "asset". */
   assetMode: "specific" | "all_assets" | null;
-  /** Non-null iff kind === "asset" AND assetMode === "specific". */
+  /** Set on a kind === "asset" AND assetMode === "specific" bequest, and on a
+   *  kind === "dollar" bequest whose dollarSource === "account" (null there
+   *  once the named account is deleted). Null otherwise. */
   accountId: string | null;
+  /** Dollar gifts only: draw from the estate's cash and brokerage, or from
+   *  `accountId` first. */
+  dollarSource?: "estate" | "account" | null;
+  /** Dollar gifts from a named account only: when the account runs short or
+   *  is deleted, pay the rest from the estate's cash and brokerage. */
+  fallbackToEstate?: boolean;
   /** Non-null iff kind === "asset" AND assetMode === "specific" AND the
    *  bequest names a business entity rather than an account. Exactly one of
    *  accountId / entityId is set on a specific asset bequest. Resolves only
@@ -107,7 +118,8 @@ export interface WillBequest {
   entityId: string | null;
   /** Non-null iff kind === "liability". */
   liabilityId: string | null;
-  /** Unused for liability bequests (recipients carry the split). */
+  /** Unused for liability bequests (recipients carry the split) and dollar
+   *  bequests (a 100 placeholder; recipients' `amount` carries the gift). */
   percentage: number;
   /** Always "always" for liability bequests. */
   condition: "if_spouse_survives" | "if_spouse_predeceased" | "always";

@@ -994,7 +994,7 @@ export function firesAtDeath(b: WillBequest, deathOrder: 1 | 2): boolean {
  *  but no spouse survives the grantor — at final death there's no household
  *  "other principal" left to receive. Lapsed shares aren't claimed, so the
  *  unclaimed fraction falls through to the next step (residuary → fallback). */
-function recipientHasLapsed(
+export function recipientHasLapsed(
   r: { recipientKind: WillBequest["recipients"][number]["recipientKind"] },
   survivorFmId: string | null,
 ): boolean {
