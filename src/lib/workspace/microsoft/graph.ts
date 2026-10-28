@@ -81,6 +81,30 @@ export async function graphJson<T>(
   return (await res.json()) as T;
 }
 
+/**
+ * Every item of a paged Graph collection. Follows `@odata.nextLink`, which is
+ * an absolute URL: it is turned back into a path, and anything outside
+ * Graph v1.0 is refused so the bearer token never goes elsewhere.
+ */
+export async function graphPages<T>(
+  ctx: GraphContext,
+  path: string,
+  init?: RequestInit & { timeZone?: string },
+): Promise<T[]> {
+  const items: T[] = [];
+  let next: string | undefined = path;
+  while (next) {
+    const page: { value: T[]; "@odata.nextLink"?: string } = await graphJson(ctx, next, init);
+    items.push(...page.value);
+    const link: string | undefined = page["@odata.nextLink"];
+    if (link !== undefined && !link.startsWith(`${GRAPH_BASE}/`)) {
+      throw new Error("Refusing to follow a nextLink outside Microsoft Graph");
+    }
+    next = link?.slice(GRAPH_BASE.length);
+  }
+  return items;
+}
+
 /** `Retry-After` in seconds; 0 is valid. Missing or unparseable → the default. */
 function retryAfterMs(header: string | null): number {
   const sec = header === null || header.trim() === "" ? NaN : Number(header);

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { WorkspaceConnection } from "../connections";
 import type { MicrosoftTokenSet } from "../types";
 import { GraphRequestError, GraphThrottledError, WorkspaceReconnectRequiredError } from "../errors";
-import { graphFetch, graphJson, type GraphContext } from "./graph";
+import { graphFetch, graphJson, graphPages, type GraphContext } from "./graph";
 import { MicrosoftAuthError, refreshTokens } from "./oauth";
 import { markNeedsReconnect, storeRefreshedTokens } from "../connections";
 
@@ -286,5 +286,32 @@ describe("graphJson", () => {
     const { ctx } = context(connection(), fetchImpl);
 
     await expect(graphJson(ctx, "/me/events/abc", { method: "DELETE" })).resolves.toBeUndefined();
+  });
+});
+
+describe("graphPages", () => {
+  afterEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("follows an absolute nextLink as a path and joins the pages", async () => {
+    const { fetchImpl, call } = stubFetch(
+      respond(200, { value: [1], "@odata.nextLink": "https://graph.microsoft.com/v1.0/me/x?$skip=1" }),
+      respond(200, { value: [2] }),
+    );
+    const { ctx } = context(connection(), fetchImpl);
+
+    await expect(graphPages<number>(ctx, "/me/x")).resolves.toEqual([1, 2]);
+    expect(call(1).url).toBe("https://graph.microsoft.com/v1.0/me/x?$skip=1");
+  });
+
+  it("refuses a nextLink outside Graph v1.0 without fetching it", async () => {
+    const { fetchImpl, mock } = stubFetch(
+      respond(200, { value: [1], "@odata.nextLink": "https://evil.test/v1.0/me/x" }),
+    );
+    const { ctx } = context(connection(), fetchImpl);
+
+    await expect(graphPages<number>(ctx, "/me/x")).rejects.toThrow(/nextLink/);
+    expect(mock).toHaveBeenCalledTimes(1);
   });
 });

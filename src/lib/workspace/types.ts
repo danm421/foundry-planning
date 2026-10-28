@@ -28,3 +28,31 @@ export type CalendarPaneState =
   | "connect"
   | "needs_reconnect"
   | "ready";
+
+/** `"YYYY-MM-DDTHH:mm"` in the mailbox time zone, no offset. */
+export type WallClock = string;
+
+/** One calendar event as the Calendar pane renders it. */
+export type WorkspaceEvent = {
+  id: string;
+  subject: string;
+  start: WallClock;
+  end: WallClock;
+  isAllDay: boolean;
+  isOrganizer: boolean;
+  isCancelled: boolean;
+  type: "singleInstance" | "occurrence" | "exception";
+  attendees: { email: string; name: string | null }[];
+  teamsUrl: string | null;
+  webLink: string;
+};
+
+/** One open Microsoft To Do task. `dueDate` is `YYYY-MM-DD`. */
+export type WorkspaceTodo = {
+  source: "outlook";
+  id: string;
+  listId: string;
+  title: string;
+  dueDate: string | null;
+  notes: string;
+};
