@@ -11,7 +11,7 @@ type Growth = NonNullable<Ledger["growthDetail"]>;
 const ledger = (over: Partial<Ledger> = {}): Ledger =>
   ({ beginningValue: 0, growth: 0, contributions: 0, distributions: 0, internalContributions: 0, internalDistributions: 0, rmdAmount: 0, fees: 0, endingValue: 0, entries: [], ...over });
 const growth = (over: Partial<Growth> = {}): Growth =>
-  ({ ordinaryIncome: 0, qualifiedDividends: 0, stCapitalGains: 0, ltCapitalGains: 0, taxExempt: 0, basisIncrease: 0, ...over });
+  ({ ordinaryIncome: 0, qualifiedDividends: 0, stCapitalGains: 0, ltCapitalGains: 0, realizedLtCapitalGains: 0, taxExempt: 0, basisIncrease: 0, ...over });
 
 const plan = () => planFixture({ accounts: [
   { id: "ira", name: "Rollover IRA", category: "retirement", subType: "traditional_ira" },

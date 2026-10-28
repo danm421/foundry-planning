@@ -4,6 +4,7 @@ const COMPOUND_KIND_LABEL: Record<string, string> = {
   oi: "OI",
   qdiv: "Qual Div",
   stcg: "ST CG",
+  ltcg: "LT CG (turnover)",
   rmd: "RMD",
 };
 

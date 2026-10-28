@@ -120,7 +120,7 @@ export function RealizationTab({
       <div className="max-w-[12rem]">
         <label htmlFor="realization-turnover" className={`mb-1.5 flex items-center gap-1.5 ${fieldLabelBaseClassName}`}>
           Turnover
-          <FieldTooltip text="The share of long-term gains realized as short-term gains each year, from trading inside the account." />
+          <FieldTooltip text="The share of the account sold and rebought each year. The sale realizes that share of the account's existing gain as long-term, and that share of this year's price growth as short-term." />
         </label>
         <PercentInput
           id="realization-turnover"

@@ -412,30 +412,31 @@ describe("buildAssetLedger — files by the engine's per-year entity ownership",
 
   it("moves a taxable account's realized growth onto its own basis row", () => {
     // Joint Schwab brokerage, 6.5% growth on $4.1M: 15% ordinary, 15% qualified,
-    // 70% gains at 5% turnover → $89,278 taxed this year and added to basis.
+    // 70% gains at 5% turnover → $145,278 taxed this year and added to basis,
+    // $56,000 of it the long-term gain turnover sold out of the $1.12M gain.
     const ledger = buildAssetLedger(mkYear({
       brokerage: mkLedger({
         beginningValue: 4_100_000, endingValue: 4_366_500, growth: 266_500,
-        basisBoY: 2_980_000, basisEoY: 3_069_277.5,
+        basisBoY: 2_980_000, basisEoY: 3_125_277.5,
         growthDetail: {
           ordinaryIncome: 39_975, qualifiedDividends: 39_975, stCapitalGains: 9_327.5,
-          ltCapitalGains: 177_222.5, taxExempt: 0, basisIncrease: 89_277.5,
+          ltCapitalGains: 177_222.5, realizedLtCapitalGains: 56_000, taxExempt: 0, basisIncrease: 145_277.5,
         },
-        entries: [{ category: "growth", label: "Growth (6.50%)", amount: 266_500, basis: 89_277.5 }],
+        entries: [{ category: "growth", label: "Growth (6.50%)", amount: 266_500, basis: 145_277.5 }],
       }),
     }), ctx);
     const acct = ledger.sections[0].accounts[0];
     const entryRows = acct.rows.filter((r) => !r.bookend);
     expect(entryRows.map((r) => [r.label, r.amount, r.basis])).toEqual([
       ["Growth (6.50%)", 266_500, 0],
-      ["Realized this year, added to basis (ordinary income, qualified dividends, short-term gains)", 0, 89_277.5],
+      ["Realized this year, added to basis (ordinary income, qualified dividends, short-term gains, long-term gains from turnover)", 0, 145_277.5],
     ]);
     expect(entryRows[1].basisOnly).toBe(true);
     expect(acct.reconciles).toBe(true);
   });
 
   it("leaves cash growth and growth with no realized share as one row", () => {
-    const detail = { ordinaryIncome: 2_000, qualifiedDividends: 0, stCapitalGains: 0, ltCapitalGains: 0, taxExempt: 0, basisIncrease: 2_000 };
+    const detail = { ordinaryIncome: 2_000, qualifiedDividends: 0, stCapitalGains: 0, ltCapitalGains: 0, realizedLtCapitalGains: 0, taxExempt: 0, basisIncrease: 2_000 };
     const ledger = buildAssetLedger(mkYear({
       // Cash: basis tracks value, so a separate row would say nothing new.
       cash: mkLedger({

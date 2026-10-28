@@ -2467,6 +2467,10 @@ export interface AccountLedger {
     qualifiedDividends: number;
     stCapitalGains: number;
     ltCapitalGains: number;
+    /** Long-term gain turnover realized on the account's existing gain
+     *  (turnover × (value − basis) before this year's growth). Signed — an
+     *  underwater account realizes a loss. Taxable accounts only. */
+    realizedLtCapitalGains: number;
     taxExempt: number;
     basisIncrease: number;
   };

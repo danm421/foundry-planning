@@ -26,6 +26,10 @@ describe("parseHouseholdSource", () => {
     const r = parseHouseholdSource("brk:stcg:ent1", { type: "stcg", amount: 100 }, ctx);
     expect(r).toMatchObject({ account: "Joint Brokerage", character: "short_term_gain" });
   });
+  it("names the long-term gain turnover realized", () => {
+    const r = parseHouseholdSource("brk:ltcg", { type: "capital_gains", amount: 56000 }, ctx);
+    expect(r).toMatchObject({ type: "Investment Income", description: "Long-term gain from turnover", account: "Joint Brokerage" });
+  });
   it("parses a Roth conversion with name", () => {
     const r = parseHouseholdSource("roth_conversion:rc1", { type: "ordinary_income", amount: 40000 }, ctx);
     expect(r).toMatchObject({ type: "Roth Conversion", description: "2030 Conversion", account: null });

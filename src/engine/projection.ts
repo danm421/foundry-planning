@@ -2110,11 +2110,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // 4. Grow every account (post-BoY: sold accounts are gone, newly-bought
     // accounts are included). When the account has a realization model, split
     // growth into tax buckets: OI, QDiv, STCG, LTCG, Tax-Exempt. Turnover %
-    // determines the ST/LT CG split. Taxable amounts are added to the year's
-    // tax detail; basis is increased for everything except LTCG.
+    // determines the ST/LT CG split (and realizes existing gain, below).
+    // Taxable amounts are added to the year's tax detail; basis is increased
+    // for everything except the unrealized LTCG.
     let realizationOI = 0;
     let realizationQDiv = 0;
     let realizationSTCG = 0;
+    let realizationLTCG = 0;
     const realizationBySource: Record<string, { type: string; amount: number }> = {};
     // Per-account realization entries for the trust-tax pass. Populated for
     // non-grantor trust accounts only; the orchestrator aggregates by ownerEntityId.
@@ -2185,9 +2187,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (growth === 0) continue;
 
       let growthDetail: AccountLedger["growthDetail"];
-      // Cost-basis delta this growth entry adds to basisMap — equals the
-      // recognized in-year basisIncrease, but ONLY where the gate below
-      // actually applies it (taxable/cash). Stays 0 on retirement accounts.
+      // Cost-basis delta this growth entry adds to basisMap — the recognized
+      // in-year basisIncrease plus turnover's realized LTCG, but ONLY where
+      // each actually applies (taxable/cash). Stays 0 on retirement accounts.
       let growthBasisDelta = 0;
 
       if (acct.realization) {
@@ -2198,10 +2200,30 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         const stcg = rawLtcg * r.turnoverPct;
         const ltcg = rawLtcg - stcg;
         const taxExempt = growth * r.pctTaxExempt;
-        // Basis increases for everything EXCEPT LTCG (unrealized appreciation)
+        // This year's growth raises basis for everything EXCEPT its LTCG
+        // (unrealized appreciation); this part also feeds freshBasisMap.
         const basisIncrease = oi + qdiv + stcg + taxExempt;
+        // Turnover also sells that share of the gain the account already
+        // carried (value − basis before this year's growth): held long-term,
+        // so a long-term gain. The proceeds are rebought in the account, so
+        // value is unchanged and basis steps up by the gain — the same
+        // mechanics as a taxed portfolio switch (applyReinvestments). Signed:
+        // an underwater account realizes a loss. Only taxable accounts — cash
+        // basis tracks value, and retirement accounts defer all tax.
+        const realizedLtcg = acct.category === "taxable"
+          ? (growthBase - (basisMap[acct.id] ?? 0)) * r.turnoverPct
+          : 0;
+        if (realizedLtcg !== 0) {
+          // Not fresh basis: the rebought lots sit inside the pro-rata ratio
+          // later draws use, so they don't jump the high-basis-first queue.
+          basisMap[acct.id] = (basisMap[acct.id] ?? 0) + realizedLtcg;
+          growthBasisDelta += realizedLtcg;
+        }
 
-        growthDetail = { ordinaryIncome: oi, qualifiedDividends: qdiv, stCapitalGains: stcg, ltCapitalGains: ltcg, taxExempt, basisIncrease };
+        growthDetail = {
+          ordinaryIncome: oi, qualifiedDividends: qdiv, stCapitalGains: stcg, ltCapitalGains: ltcg,
+          realizedLtCapitalGains: realizedLtcg, taxExempt, basisIncrease: basisIncrease + realizedLtcg,
+        };
 
         // Recognized in-year growth bumps cost basis on taxable & cash accounts —
         // those dollars were already taxed in-year via taxDetail, so on later sale
@@ -2211,7 +2233,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if ((acct.category === "taxable" || acct.category === "cash") && basisIncrease > 0) {
           basisMap[acct.id] = (basisMap[acct.id] ?? 0) + basisIncrease;
           freshBasisMap[acct.id] = (freshBasisMap[acct.id] ?? 0) + basisIncrease;
-          growthBasisDelta = basisIncrease;
+          growthBasisDelta += basisIncrease;
         }
 
         // Only taxable accounts generate current-year tax from realization.
@@ -2233,12 +2255,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             const oiHH = oi * householdLikeShare;
             const qdivHH = qdiv * householdLikeShare;
             const stcgHH = stcg * householdLikeShare;
+            const ltcgHH = realizedLtcg * householdLikeShare;
             realizationOI += oiHH;
             realizationQDiv += qdivHH;
             realizationSTCG += stcgHH;
+            realizationLTCG += ltcgHH;
             if (oiHH > 0) realizationBySource[`${acct.id}:oi`] = { type: "ordinary_income", amount: oiHH };
             if (qdivHH > 0) realizationBySource[`${acct.id}:qdiv`] = { type: "dividends", amount: qdivHH };
             if (stcgHH > 0) realizationBySource[`${acct.id}:stcg`] = { type: "stcg", amount: stcgHH };
+            if (ltcgHH !== 0) realizationBySource[`${acct.id}:ltcg`] = { type: "capital_gains", amount: ltcgHH };
           }
 
           // Per grantor-entity owner: track its share for pct_income distribution.
@@ -2276,18 +2301,21 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
                 ordinary: oi * owner.percent,
                 dividends: qdiv * owner.percent,
                 taxExempt: taxExempt * owner.percent,
-                capGains: stcg * owner.percent, // ambient — collect-trust-income ignores this per convention
+                capGains: (stcg + realizedLtcg) * owner.percent, // ambient — collect-trust-income ignores this per convention
               });
             } else {
               const oiE = oi * owner.percent;
               const qdivE = qdiv * owner.percent;
               const stcgE = stcg * owner.percent;
+              const ltcgE = realizedLtcg * owner.percent;
               realizationOI += oiE;
               realizationQDiv += qdivE;
               realizationSTCG += stcgE;
+              realizationLTCG += ltcgE;
               if (oiE > 0) realizationBySource[`${acct.id}:oi:${owner.entityId}`] = { type: "ordinary_income", amount: oiE };
               if (qdivE > 0) realizationBySource[`${acct.id}:qdiv:${owner.entityId}`] = { type: "dividends", amount: qdivE };
               if (stcgE > 0) realizationBySource[`${acct.id}:stcg:${owner.entityId}`] = { type: "stcg", amount: stcgE };
+              if (ltcgE !== 0) realizationBySource[`${acct.id}:ltcg:${owner.entityId}`] = { type: "capital_gains", amount: ltcgE };
             }
           }
         }
@@ -2987,6 +3015,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         marginSaleGainTotal +
         businessSaleResult.capitalGains +
         equityCapitalGains +
+        realizationLTCG +
         taxAdj.capitalGainsLt,
       shortTerm: realizationSTCG + equityStCapitalGains + taxAdj.capitalGainsSt,
     };
@@ -3008,6 +3037,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       realizationOI +
       realizationQDiv +
       realizationSTCG +
+      realizationLTCG +
       transferResult.taxableOrdinaryIncome +
       transferResult.capitalGains +
       reinvestmentResult.capitalGains +
@@ -3029,9 +3059,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       ficaExemptEarnedIncome: equityFicaExemptIncome,
       ordinaryIncome: realizationOI,
       dividends: realizationQDiv,
-      // Equity capital gains booked on sale by the equity module. Asset-sale
-      // and entity gains still add via taxDetail.capitalGains += ... later.
-      capitalGains: equityCapitalGains,
+      // Equity capital gains booked on sale by the equity module, plus the
+      // long-term gain turnover realized. Asset-sale and entity gains still
+      // add via taxDetail.capitalGains += ... later.
+      capitalGains: equityCapitalGains + realizationLTCG,
       stCapitalGains: realizationSTCG + equityStCapitalGains,
       qbi: 0,
       taxExempt: 0,

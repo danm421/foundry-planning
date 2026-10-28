@@ -132,7 +132,7 @@ export function parseHouseholdSource(
     return { type: "Tax Adjustment", description: name ?? "Income already received", character, account: null, amount, taxable };
   }
 
-  // Portfolio realization & RMD: <acctId>:oi|qdiv|stcg|rmd  (also 3-segment <acctId>:<kind>:<entityId>)
+  // Portfolio realization & RMD: <acctId>:oi|qdiv|stcg|ltcg|rmd  (also 3-segment <acctId>:<kind>:<entityId>)
   if (key.includes(":")) {
     const segs = key.split(":");
     const acctId = segs[0];
@@ -142,6 +142,7 @@ export function parseHouseholdSource(
       kind === "rmd" ? "Required minimum distribution" :
       kind === "qdiv" ? "Qualified dividends" :
       kind === "stcg" ? "Short-term gain" :
+      kind === "ltcg" ? "Long-term gain from turnover" :
       kind === "oi" ? "Ordinary investment income" : kind.toUpperCase();
     return { type, description, character, account: ctx.accountNames[acctId] ?? acctId, amount, taxable };
   }

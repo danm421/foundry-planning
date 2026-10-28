@@ -511,8 +511,10 @@ describe("runProjection", () => {
     expect(ledger.growthDetail!.ltCapitalGains).toBeCloseTo(6300, 0);
     // TaxExempt: 10000 * 0.05 = 500
     expect(ledger.growthDetail!.taxExempt).toBeCloseTo(500, 0);
-    // Basis increase: OI + QDiv + STCG + TaxExempt = 1000 + 1500 + 700 + 500 = 3700
-    expect(ledger.growthDetail!.basisIncrease).toBeCloseTo(3700, 0);
+    // Turnover sells 10% of the existing gain: (100000 - 80000) * 0.10 = 2000
+    expect(ledger.growthDetail!.realizedLtCapitalGains).toBeCloseTo(2000, 0);
+    // Basis increase: OI + QDiv + STCG + TaxExempt + turnover LTCG = 1000 + 1500 + 700 + 500 + 2000 = 5700
+    expect(ledger.growthDetail!.basisIncrease).toBeCloseTo(5700, 0);
   });
 
   it("does not add realization detail for accounts without realization data", () => {

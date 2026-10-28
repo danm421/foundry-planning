@@ -14,6 +14,7 @@ const REALIZED_PARTS = [
   ["ordinaryIncome", "ordinary income"],
   ["qualifiedDividends", "qualified dividends"],
   ["stCapitalGains", "short-term gains"],
+  ["realizedLtCapitalGains", "long-term gains from turnover"],
   ["taxExempt", "tax-exempt income"],
 ] as const;
 

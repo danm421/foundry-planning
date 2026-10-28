@@ -2578,6 +2578,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                       { label: "Ordinary Income", amount: ledgerModal.ledger.growthDetail.ordinaryIncome, note: "taxed, +basis" },
                       { label: "Qualified Dividends", amount: ledgerModal.ledger.growthDetail.qualifiedDividends, note: "taxed, +basis" },
                       { label: "ST Capital Gains", amount: ledgerModal.ledger.growthDetail.stCapitalGains, note: "taxed, +basis" },
+                      { label: "LT Capital Gains (turnover)", amount: ledgerModal.ledger.growthDetail.realizedLtCapitalGains, note: "taxed, +basis" },
                       { label: "LT Capital Gains", amount: ledgerModal.ledger.growthDetail.ltCapitalGains, note: "embedded, +value only" },
                       { label: "Tax-Exempt", amount: ledgerModal.ledger.growthDetail.taxExempt, note: "+basis" },
                     ].filter((r) => r.amount > 0).map((r) => (
