@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { findSection } from "../../../schema";
 import type { FFRow } from "../../../types";
 import { bookWith, contextOf, hendricksBook, linkedTo, recordOf, rowOf, stateWith } from "../../__tests__/fixtures";
+import { willBequestRecord } from "../../../records/book";
 import { diffDrafts } from "../../diff";
 import { NO_CO_CLIENT_REASON } from "../../refs";
 import type { BookRecord, RecordBook, TargetDraft } from "../../types";
@@ -510,6 +511,37 @@ describe("BEQUESTS_MAP", () => {
     ]);
     // The remaining estate's line says it replaces the set on record.
     expect(diffDrafts(drafts, book)[2].warnings).toEqual(["These recipients replace the ones on record."]);
+  });
+
+  describe("a dollar gift on record", () => {
+    const now = new Date("2026-10-28T00:00:00Z");
+    /** "$20,000 to Emma, from Schwab Brokerage (then any cash)", as the record book reads it off the will. */
+    const dollarGift = () =>
+      willBequestRecord(
+        {
+          id: "bq-cash", willId: "w-1", name: "Cash gift", kind: "dollar", assetMode: null, accountId: "a-1", entityId: null, liabilityId: null,
+          dollarSource: "account", fallbackToEstate: true, percentage: "100", condition: "always", sortOrder: 0, createdAt: now, updatedAt: now,
+        },
+        [{ id: "r-1", bequestId: "bq-cash", recipientKind: "family_member", recipientId: "fm-emma", percentage: null, amount: "20000.00", sortOrder: 0, createdAt: now, updatedAt: now }],
+        "client",
+        { account: (id) => ({ ref: "record", target: "account", id }), recipient: (_kind, id) => ({ ref: "record", target: "family_member", id: String(id) }) },
+      );
+
+    it("a row giving the account it is paid from makes a new provision — the dollar gift is never matched, so never rewritten", () => {
+      const book = hendricksBook({
+        ...kids,
+        account: [recordOf("a-1", "Schwab Brokerage", { name: "Schwab Brokerage" }, { category: "taxable" })],
+        will: [recordOf("w-1", "Mark's will", { grantor: "client" }, { grantor: "client" })],
+        will_bequest: [dollarGift()],
+      });
+      const row = rowOf("b1", { willOf: "Client", gift: "Specific asset", asset: "Schwab Brokerage", recipients: "Emma" });
+      const { drafts } = place(BEQUESTS_MAP, [row], book);
+      expect(drafts.map((d) => [d.lineId, d.recordId])).toEqual([["b1/will_bequest", null]]);
+    });
+
+    it("reads its recipients' amounts, not a 0% share", () => {
+      expect(dollarGift().values.recipients).toEqual([{ who: emma, amount: 20000 }]);
+    });
   });
 
   describe("two provisions on record give one asset", () => {

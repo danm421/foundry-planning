@@ -91,6 +91,58 @@ function engineOwner(o: OwnerRow): AccountOwner {
   return { kind: "external_beneficiary", externalBeneficiaryId: String(o.externalBeneficiaryId), percent };
 }
 
+/** How a will provision's record names an account and a recipient — the book's own refs. */
+export interface WillBequestRefs {
+  account: (id: string) => RecordRef;
+  recipient: (kind: string, id: string | null, grantor: Role) => RecordRef;
+}
+
+/**
+ * One will provision as the fact finder reads it; `recipients` are its own
+ * (Other Heirs is left out here). A dollar gift's recipients carry their
+ * amounts, not a share, and it has no asset key: the fact finder has no dollar
+ * gift, so no row is one, and a row giving the account it is paid from must
+ * never match it (the save would rewrite it as a percentage gift).
+ */
+export function willBequestRecord(
+  b: typeof willBequests.$inferSelect,
+  recipients: ReadonlyArray<typeof willBequestRecipients.$inferSelect>,
+  grantor: Role,
+  refs: WillBequestRefs,
+): BookRecord {
+  return {
+    id: b.id,
+    label: b.name,
+    values: {
+      kind: b.kind,
+      accountId: b.accountId ? refs.account(b.accountId) : null,
+      liabilityId: b.liabilityId ? record("liability", b.liabilityId) : null,
+      percentage: Number(b.percentage),
+      recipients: recipients
+        .filter((r) => r.recipientKind !== "other_heirs")
+        .map((r) => {
+          const who = refs.recipient(r.recipientKind, r.recipientId, grantor);
+          return b.kind === "dollar" ? { who, amount: Number(r.amount) } : { who, percentage: Number(r.percentage) };
+        }),
+      condition: b.condition,
+    },
+    facts: {
+      willId: b.willId,
+      grantor,
+      assetKey:
+        b.kind === "dollar"
+          ? null
+          : b.accountId
+            ? `account:${b.accountId}`
+            : b.liabilityId
+              ? `liability:${b.liabilityId}`
+              : b.entityId
+                ? `entity:${b.entityId}`
+                : null,
+    },
+  };
+}
+
 /** Accounts that are their own target rather than `account`. */
 const ACCOUNT_TARGET: Readonly<Record<string, TargetKind>> = {
   business: "business_account",
@@ -475,34 +527,14 @@ export async function loadRecordBook(clientId: string, firmId: string, scenarioI
     })),
     revocable_trust: revocables.map((t) => ({ id: t.id, label: t.name, values: { name: t.name } })),
     will: willRows.map((w) => ({ id: w.id, label: willLabel(names[w.grantor], w.grantor), values: { grantor: w.grantor }, facts: { grantor: w.grantor } })),
-    will_bequest: bequests.map((b) => {
-      const grantor = willOf.get(b.willId)?.grantor ?? "client";
-      return {
-        id: b.id,
-        label: b.name,
-        values: {
-          kind: b.kind,
-          accountId: b.accountId ? accountRef(b.accountId) : null,
-          liabilityId: b.liabilityId ? record("liability", b.liabilityId) : null,
-          percentage: Number(b.percentage),
-          recipients: bequestRecipients
-            .filter((r) => r.bequestId === b.id && r.recipientKind !== "other_heirs")
-            .map((r) => ({ who: recipient(r.recipientKind, r.recipientId, grantor), percentage: Number(r.percentage) })),
-          condition: b.condition,
-        },
-        facts: {
-          willId: b.willId,
-          grantor,
-          assetKey: b.accountId
-            ? `account:${b.accountId}`
-            : b.liabilityId
-              ? `liability:${b.liabilityId}`
-              : b.entityId
-                ? `entity:${b.entityId}`
-                : null,
-        },
-      };
-    }),
+    will_bequest: bequests.map((b) =>
+      willBequestRecord(
+        b,
+        bequestRecipients.filter((r) => r.bequestId === b.id),
+        willOf.get(b.willId)?.grantor ?? "client",
+        { account: accountRef, recipient },
+      ),
+    ),
     // One set per will, empty when it names nobody.
     will_residuary_recipient: willRows.map((w) => ({
       id: w.id,
