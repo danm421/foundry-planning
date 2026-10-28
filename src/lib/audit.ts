@@ -454,6 +454,16 @@ export type AuditAction =
   | "integration.account.connect" // an advisor fed an existing plan account from a provider account
   | "integration.account.add" // an advisor added a provider account to the plan as a new account
   | "integration.account.disconnect" // an advisor stopped a provider feeding a plan account
+  // Workspace (Microsoft 365 calendar & to-dos)
+  | "workspace.firm_approve"
+  | "workspace.firm_disconnect"
+  | "workspace.member_access"
+  | "workspace.connect"
+  | "workspace.event_create"
+  | "workspace.event_move"
+  | "workspace.event_cancel"
+  | "workspace.todo_create"
+  | "workspace.todo_update"
   // Client portal
   | "portal.invite.sent"
   | "portal.invite.revoked"

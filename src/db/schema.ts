@@ -6515,6 +6515,94 @@ export const integrationSyncRuns = pgTable("integration_sync_runs", {
   finishedAt: timestamp("finished_at", { withTimezone: true }),
 });
 
+// ---------------------------------------------------------------------------
+// Workspace (calendar & to-dos)
+// ---------------------------------------------------------------------------
+
+export const workspaceProviderEnum = pgEnum("workspace_provider", ["microsoft"]);
+export const workspaceConnectionStatusEnum = pgEnum("workspace_connection_status", [
+  "connected",
+  "needs_reconnect",
+]);
+export const workspaceOauthStateKindEnum = pgEnum("workspace_oauth_state_kind", [
+  "admin_consent",
+  "user_connect",
+]);
+
+export const workspaceFirmApprovals = pgTable(
+  "workspace_firm_approvals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    firmId: text("firm_id").notNull(),
+    provider: workspaceProviderEnum("provider").notNull(),
+    tenantId: text("tenant_id").notNull(),
+    // Space-joined scopes the tenant admin approved.
+    approvedScopes: text("approved_scopes").notNull(),
+    // The Foundry admin who started the consent flow.
+    approvedByUserId: text("approved_by_user_id").notNull(),
+    approvedAt: timestamp("approved_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    firmProviderUnique: uniqueIndex("ws_firm_approval_uq").on(t.firmId, t.provider),
+  }),
+);
+
+export const workspaceMemberAccess = pgTable(
+  "workspace_member_access",
+  {
+    firmId: text("firm_id").notNull(),
+    userId: text("user_id").notNull(),
+    provider: workspaceProviderEnum("provider").notNull(),
+    enabled: boolean("enabled").notNull().default(false),
+    updatedByUserId: text("updated_by_user_id").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.firmId, t.userId, t.provider] }),
+  }),
+);
+
+export const workspaceConnections = pgTable(
+  "workspace_connections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    firmId: text("firm_id").notNull(),
+    userId: text("user_id").notNull(),
+    provider: workspaceProviderEnum("provider").notNull(),
+    tenantId: text("tenant_id").notNull(),
+    // Microsoft `oid`.
+    externalUserId: text("external_user_id").notNull(),
+    externalEmail: text("external_email").notNull(),
+    // Non-null: offline_access is always requested, so a refresh token always comes back.
+    accessTokenEnc: text("access_token_enc").notNull(),
+    refreshTokenEnc: text("refresh_token_enc").notNull(),
+    tokenExpiresAt: timestamp("token_expires_at", { withTimezone: true }).notNull(),
+    scope: text("scope").notNull(),
+    status: workspaceConnectionStatusEnum("status").notNull().default("connected"),
+    lastError: text("last_error"),
+    connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userUnique: uniqueIndex("ws_conn_user_uq").on(t.firmId, t.userId, t.provider),
+    // One Microsoft account <-> one Foundry user within a firm.
+    accountUnique: uniqueIndex("ws_conn_account_uq").on(t.firmId, t.provider, t.externalUserId),
+  }),
+);
+
+export const workspaceOauthStates = pgTable("workspace_oauth_states", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  firmId: text("firm_id").notNull(),
+  provider: workspaceProviderEnum("provider").notNull(),
+  kind: workspaceOauthStateKindEnum("kind").notNull(),
+  userId: text("user_id").notNull(),
+  state: text("state").notNull().unique(),
+  // Null for admin consent (no PKCE).
+  codeVerifier: text("code_verifier"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});
+
 // ── Intake Forms ──────────────────────────────────────────────────────────────
 
 export const intakeForms = pgTable("intake_forms", {
