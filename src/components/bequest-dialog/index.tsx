@@ -78,7 +78,7 @@ const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
 ];
 
 /** What the estate-wide ("everything left at this point") gift is called. */
-const ESTATE_LABEL = "Estate (what's left at this point)";
+export const ESTATE_LABEL = "Estate (what's left at this point)";
 
 interface BequestDialogProps {
   open: boolean;

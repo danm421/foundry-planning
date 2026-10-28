@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import BequestDialog, { type BequestDraft } from "@/components/bequest-dialog";
+import BequestDialog, { ESTATE_LABEL, type BequestDraft } from "@/components/bequest-dialog";
 import { formatCurrency } from "@/components/bequest-dialog/dollar-bequest-fields";
 import DialogShell from "@/components/dialog-shell";
 import WillResiduarySection from "@/components/forms/will-residuary-section";
@@ -741,7 +741,7 @@ export default function WillsPanel(props: WillsPanelProps) {
                         if (b.kind === "asset") {
                           const assetLabel =
                             b.assetMode === "all_assets"
-                              ? "Estate (what's left at this point)"
+                              ? ESTATE_LABEL
                               : b.entityId
                                 ? (entities.find((e) => e.id === b.entityId)?.name ?? "(unknown entity)")
                                 : (accounts.find((a) => a.id === b.accountId)?.name ?? "(unknown account)");

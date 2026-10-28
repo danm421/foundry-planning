@@ -406,7 +406,7 @@ export function CanvasDndProvider({
       return;
     }
     const bequest = target?.kind === "asset" ? target : undefined;
-    if (!will || !bequest || bequest.kind !== "asset") return;
+    if (!will || !bequest) return;
     setEditing({
       willId,
       bequestId,

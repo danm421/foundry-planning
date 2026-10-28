@@ -37,6 +37,7 @@ import {
   giftScenarioAdd,
 } from "@/lib/gifts/gift-write";
 import { currentPlanningYear } from "@/lib/plan-year";
+import { nextBequestSortOrder } from "@/lib/estate/build-will-updates";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 
 export type Recipient =
@@ -255,10 +256,7 @@ export async function saveBequest(args: SaveBequestArgs): Promise<void> {
         percentage: args.percentage,
         condition: args.condition,
         sortOrder: existing
-          ? Math.max(
-              -1,
-              ...existing.bequests.map((b) => (b as { sortOrder: number }).sortOrder),
-            ) + 1
+          ? nextBequestSortOrder(existing.bequests as Array<{ sortOrder: number }>)
           : 0,
         recipients: [
           {
