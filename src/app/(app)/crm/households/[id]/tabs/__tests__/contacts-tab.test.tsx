@@ -72,6 +72,7 @@ describe("ContactsTab family count", () => {
     expect(screen.getByRole("heading", { name: "Family (2)" })).toBeInTheDocument();
     expect(screen.getByText("Dan Cooper")).toBeInTheDocument();
     expect(screen.getByText("Kim Cooper")).toBeInTheDocument();
+    expect(within(cardFor("Kim Cooper")).getByText("Co-client")).toBeInTheDocument();
     expect(screen.queryByText(/No family members yet/i)).not.toBeInTheDocument();
   });
 
@@ -164,6 +165,45 @@ describe("ContactsTab client contact details", () => {
 
     expect(within(card).queryByText("Email")).not.toBeInTheDocument();
     expect(within(card).queryByText("Phone")).not.toBeInTheDocument();
+  });
+});
+
+const withEverything = {
+  id: "hh1",
+  contacts: [
+    { id: "p1", role: "primary", firstName: "Dan", lastName: "Cooper", familyMemberId: null,
+      relationshipLabel: null, preferredName: null, dateOfBirth: "1965-03-07",
+      email: "dan@example.com", phone: "(555) 010-1234", mobile: "555-010-9999",
+      addressLine1: "12 Elm St", addressLine2: "Apt 4", city: "Springfield", state: "IL",
+      postalCode: "62701", country: "US", ssnLast4: null, notes: null },
+  ],
+  planningClient: null,
+} as never;
+
+describe("ContactsTab DOB format and copy buttons", () => {
+  it("shows the DOB as MM/DD/YYYY", () => {
+    render(<ContactsTab household={withEverything} relationships={[]} />);
+    expect(within(cardFor("Dan Cooper")).getByText(/^03\/07\/1965 · \d+$/)).toBeInTheDocument();
+  });
+
+  it("copies each value to the clipboard", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+
+    render(<ContactsTab household={withEverything} relationships={[]} />);
+    const card = cardFor("Dan Cooper");
+    const copy = async (name: string, expected: string) => {
+      fireEvent.click(within(card).getByRole("button", { name }));
+      await waitFor(() => expect(writeText).toHaveBeenLastCalledWith(expected));
+    };
+
+    // The date alone — not the trailing age.
+    await copy("Copy date of birth", "03/07/1965");
+    await copy("Copy email", "dan@example.com");
+    // Each number gets its own button, and copies as typed.
+    await copy("Copy (555) 010-1234", "(555) 010-1234");
+    await copy("Copy 555-010-9999", "555-010-9999");
+    await copy("Copy address", "12 Elm St, Apt 4, Springfield, IL 62701, US");
   });
 });
 

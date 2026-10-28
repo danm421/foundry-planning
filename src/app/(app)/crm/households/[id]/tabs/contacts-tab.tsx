@@ -23,6 +23,7 @@ import type { HouseholdRelationshipView } from "@/lib/crm/household-relationship
 import { deriveContactSections } from "@/lib/crm/contact-sections";
 import { ageOnDate } from "@/lib/age-year";
 import { TrashIcon } from "@/components/icons";
+import { CopyButton } from "@/components/copy-button";
 import {
   EmptyState,
   SectionLabel,
@@ -41,7 +42,7 @@ type FamilyMember = NonNullable<Household["planningClient"]>["familyMembers"][nu
 // their planning relationship and role `other` shows its free-text label.
 const ROLE_LABELS: Record<string, string> = {
   primary: "Primary",
-  spouse: "Spouse",
+  spouse: "Co-client",
 };
 
 /** Accent-bordered pill — identity roles (primary / spouse) only. Descriptive
@@ -50,23 +51,30 @@ const roleBadgeClass = chipAccentClass;
 
 const addPrimaryClass = `${primaryButtonClass} px-3 py-1.5 text-[12px]`;
 
+/** "2015-04-02" → "04/02/2015". Sliced from the string, so no timezone shift. */
 function fmtDob(iso: string | null | undefined): string {
   if (!iso) return "";
   const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!m) return iso;
-  const date = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
-  return date.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
+  return `${m[2]}/${m[3]}/${m[1]}`;
 }
 
 const relationshipLabel = (value: string) =>
   RELATIONSHIP_OPTIONS.find((o) => o.value === value)?.label ?? "Family";
 
-/** "Apr 2, 2015 · 11" — DOB with the current age trailing it. */
+/** A row value with its copy button trailing it — the text truncates, the
+ *  button never does. */
+function withCopy(content: ReactNode, text: string, label: string): ReactNode {
+  return (
+    <span className="flex min-w-0 items-center gap-1">
+      <span className="min-w-0 truncate">{content}</span>
+      <CopyButton value={text} label={label} />
+    </span>
+  );
+}
+
+/** "04/02/2015 · 11" — DOB with the current age trailing it. Copy takes the
+ *  date alone. */
 function dobRow(iso: string | null | undefined): ReactNode | null {
   if (!iso) return null;
   const formatted = fmtDob(iso);
@@ -74,21 +82,35 @@ function dobRow(iso: string | null | undefined): ReactNode | null {
   // Calendar-precise and TZ-safe: ageOnDate slices the ISO string rather than
   // Date.parse-ing it, which is what keeps Jan-1 DOBs from reading a year young.
   const years = ageOnDate(iso, new Date());
-  return (
+  return withCopy(
     <span className="tabular">
       {years === null ? formatted : `${formatted} · ${years}`}
-    </span>
+    </span>,
+    formatted,
+    "date of birth",
   );
 }
 
-function addressLine(c: Contact): string {
-  const parts = [
+function addressRow(c: Contact): ReactNode | null {
+  const display = [
     [c.addressLine1, c.addressLine2].filter(Boolean).join(" "),
     [c.city, c.state].filter(Boolean).join(", "),
     c.postalCode,
     c.country,
-  ].filter((v) => v && String(v).trim().length > 0);
-  return parts.join(" · ");
+  ]
+    .filter((v) => v && String(v).trim().length > 0)
+    .join(" · ");
+  if (!display) return null;
+  // Mailing order for the clipboard, so it pastes cleanly into a form or letter:
+  // "12 Elm St, Apt 4, Springfield, IL 62701, US".
+  const cityLine = [c.city, [c.state, c.postalCode].filter(Boolean).join(" ")]
+    .filter(Boolean)
+    .join(", ");
+  const mailing = [c.addressLine1, c.addressLine2, cityLine, c.country]
+    .map((v) => v?.trim())
+    .filter(Boolean)
+    .join(", ");
+  return withCopy(display, mailing, "address");
 }
 
 /** Placeholder for a contact detail the advisor hasn't captured yet. Only the
@@ -111,10 +133,12 @@ function telHref(value: string): string {
 function emailLink(email: string | null | undefined): ReactNode | null {
   const value = email?.trim();
   if (!value) return null;
-  return (
+  return withCopy(
     <a href={`mailto:${value}`} className={contactLinkClass}>
       {value}
-    </a>
+    </a>,
+    value,
+    "email",
   );
 }
 
@@ -122,17 +146,20 @@ function phoneLinks(c: { phone: string | null; mobile: string | null }): ReactNo
   // Dedupe: the same number in both slots would otherwise render "x · x".
   const numbers = [...new Set([c.phone, c.mobile].map((n) => n?.trim()).filter(Boolean))] as string[];
   if (numbers.length === 0) return null;
+  // Each number gets its own copy button, labelled by the number so two
+  // buttons on one row stay distinguishable to a screen reader.
   return (
-    <>
+    <span className="flex min-w-0 flex-wrap items-center gap-x-1">
       {numbers.map((n, i) => (
         <Fragment key={n}>
-          {i > 0 ? " · " : null}
+          {i > 0 ? <span className="px-0.5">·</span> : null}
           <a href={`tel:${telHref(n)}`} className={contactLinkClass}>
             {n}
           </a>
+          <CopyButton value={n} label={n} />
         </Fragment>
       ))}
-    </>
+    </span>
   );
 }
 
@@ -469,7 +496,7 @@ export function ContactsTab({
                         value: <span className="tabular">***-**-{c.ssnLast4}</span>,
                       }
                     : null,
-                  { label: "Address", value: addressLine(c) },
+                  { label: "Address", value: addressRow(c) },
                 )}
                 onEdit={() => openContactEdit(c)}
                 onDelete={() => deleteContact(c)}

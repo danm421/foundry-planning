@@ -34,7 +34,7 @@ export type CrmContactFormInitial = {
 
 const ROLE_OPTIONS: { value: ContactRole; label: string }[] = [
   { value: "primary", label: "Primary" },
-  { value: "spouse", label: "Spouse" },
+  { value: "spouse", label: "Co-client" },
   { value: "dependent", label: "Dependent" },
   { value: "other", label: "Other" },
 ];
