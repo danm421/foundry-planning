@@ -471,6 +471,9 @@ export default function BequestDialog({
                 onChange={(e) => handleSelectorChange(e.target.value)}
                 className={selectClassName}
               >
+                <option value="" disabled>
+                  Choose an asset or debt…
+                </option>
                 <option value={RESIDUAL_VALUE}>{ESTATE_LABEL}</option>
                 {(() => {
                   const selectedAccountId =

@@ -54,6 +54,25 @@ describe("BequestDialog", () => {
     expect(screen.getByRole("dialog", { name: /new bequest/i })).toBeInTheDocument();
   });
 
+  it("a new gift's Asset or debt shows nothing picked, not the estate option", () => {
+    render(
+      <BequestDialog
+        open
+        onOpenChange={() => {}}
+        grantor="client"
+        primary={primary}
+        accounts={[acct]}
+        familyMembers={[fm]}
+        externalBeneficiaries={[ext]}
+        entities={[ent]}
+        onSave={vi.fn()}
+      />,
+    );
+    const select = screen.getByLabelText("Asset or debt") as HTMLSelectElement;
+    expect(select.selectedOptions[0]?.textContent).toBe("Choose an asset or debt…");
+    expect(select.selectedOptions[0]).toBeDisabled();
+  });
+
   it("renders 'Edit bequest' when editing prop is passed", () => {
     render(
       <BequestDialog
