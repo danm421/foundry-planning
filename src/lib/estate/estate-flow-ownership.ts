@@ -96,7 +96,9 @@ export interface OwnershipColumnOptions {
  * Note: we check all wills, not just the owner's will, because jointly held
  * accounts may be covered by either grantor's will.
  */
-function hasWillProvision(accountId: string, wills: Will[]): boolean {
+function hasWillProvision(account: Account, wills: Will[]): boolean {
+  const accountId = account.id;
+  const cashLike = account.category === "cash" || account.category === "taxable";
   for (const will of wills) {
     // (b) Non-empty residuary clause covers all residual assets.
     if (will.residuaryRecipients && will.residuaryRecipients.length > 0) {
@@ -111,6 +113,12 @@ function hasWillProvision(accountId: string, wills: Will[]): boolean {
         if (bequest.assetMode === "specific" && bequest.accountId === accountId) {
           return true;
         }
+      } else if (bequest.kind === "dollar") {
+        // A named account covers itself; the estate's cash and brokerage pool
+        // (the default source, or a named account's fallback) covers any
+        // cash-like account.
+        if (bequest.dollarSource === "account" && bequest.accountId === accountId) return true;
+        if (cashLike && (bequest.dollarSource !== "account" || bequest.fallbackToEstate)) return true;
       }
     }
   }
@@ -344,7 +352,7 @@ export function buildOwnershipColumn(
 
     const accountId = account.id;
     const hasBeneficiaries = (account.beneficiaries ?? []).length > 0;
-    const willProvision = hasWillProvision(accountId, wills);
+    const willProvision = hasWillProvision(account, wills);
     const hasConflict = !hasBeneficiaries && !willProvision;
 
     // Top-level business accounts display their CONSOLIDATED value: own

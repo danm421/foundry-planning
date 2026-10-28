@@ -1,5 +1,6 @@
 import type { ClientData, EntitySummary, Will, WillBequest } from "@/engine/types";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
+import { formatCurrency } from "@/lib/cell-drill/format";
 import { fundingItemLabel } from "./guided-trust-batch";
 import { bequestWhen, pct, roleFirstName } from "./trust-labels";
 
@@ -18,6 +19,14 @@ function bequestThing(b: WillBequest, share: number, tree: ClientData): string {
   return `${pct((b.percentage * share) / 100)} of ${name}`;
 }
 
+function dollarThing(b: WillBequest, amount: number, tree: ClientData): string {
+  const from =
+    b.dollarSource === "account" && b.accountId
+      ? tree.accounts.find((a) => a.id === b.accountId)?.name?.trim() || "an account"
+      : "cash & brokerage";
+  return `${formatCurrency(amount)} from ${from}`;
+}
+
 /**
  * Every will clause that sends something to the trust. A pair of matching
  * "if the other has died" clauses in both wills is how the wizard writes a
@@ -28,10 +37,11 @@ function bequestLines(entity: EntitySummary, tree: ClientData): string[] {
   const residues: string[] = [];
   for (const will of tree.wills ?? []) {
     for (const b of will.bequests) {
-      if (b.kind !== "asset") continue;
+      if (b.kind === "liability") continue;
       for (const r of b.recipients) {
         if (r.recipientKind !== "entity" || r.recipientId !== entity.id) continue;
-        clauses.push({ grantor: will.grantor, condition: b.condition, thing: bequestThing(b, r.percentage, tree) });
+        const thing = b.kind === "dollar" ? dollarThing(b, r.amount ?? 0, tree) : bequestThing(b, r.percentage, tree);
+        clauses.push({ grantor: will.grantor, condition: b.condition, thing });
       }
     }
     for (const r of will.residuaryRecipients ?? []) {

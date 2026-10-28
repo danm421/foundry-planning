@@ -53,3 +53,25 @@ describe("will describer — Other Heirs", () => {
     expect(joined).not.toContain("a recipient");
   });
 });
+
+describe("will describer — dollar gifts", () => {
+  const dollarRow = (recipients: { id: string; amount: number }[], over: Record<string, unknown> = {}) => describeChange({
+    id: "c", scenarioId: "s", opType: "edit", targetKind: "will", targetId: "w1",
+    toggleGroupId: null, orderIndex: 0,
+    payload: { bequests: { from: [], to: [
+      { id: "d1", kind: "dollar", assetMode: null, accountId: null, dollarSource: "estate", percentage: 100, condition: "always",
+        recipients: recipients.map((r) => ({ recipientKind: "family_member", recipientId: r.id, percentage: 0, amount: r.amount })),
+        ...over },
+    ] } },
+  }, ctx);
+
+  it("renders a dollar gift", () => {
+    expect(dollarRow([{ id: "f1", amount: 20_000 }, { id: "f2", amount: 20_000 }]).detail.join(" | "))
+      .toContain("$20,000 each from cash & brokerage");
+    const unequal = dollarRow([{ id: "f1", amount: 10_000 }, { id: "f2", amount: 5_000 }]).detail.join(" | ");
+    expect(unequal).toContain("$15,000 total from cash & brokerage");
+    expect(unequal).not.toMatch(/NaN|100%/);
+    expect(dollarRow([{ id: "f1", amount: 20_000 }], { dollarSource: "account", accountId: "roth" }).detail.join(" | "))
+      .toContain("$20,000 from Roth 401(k)");
+  });
+});
