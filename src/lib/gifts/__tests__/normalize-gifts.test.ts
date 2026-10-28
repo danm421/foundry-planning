@@ -100,6 +100,31 @@ describe("treatCanonicalGift", () => {
   });
 });
 
+describe("Crummey count reads the trust's lifetime beneficiaries", () => {
+  it("a Crummey cash gift to a trust whose only lifetime beneficiary is a child gets one annual exclusion", () => {
+    const gifts: Gift[] = [
+      { id: "g1", year: 2030, amount: 100_000, grantor: "client", recipientEntityId: "t1", useCrummeyPowers: true },
+    ];
+    const [cg] = toCanonicalGifts(gifts, [], ctx([
+      trust({ beneficiaries: undefined, incomeBeneficiaries: [{ familyMemberId: "kid", percentage: 100 }] }),
+    ]));
+    expect(treatCanonicalGift(cg, 19_000).lifetimeUsed).toBe(81_000);
+  });
+
+  it("a joint gift to a SLAT: the client's half has the spouse as holder, the spouse's half has none", () => {
+    const gifts: Gift[] = [
+      { id: "g1", year: 2030, amount: 38_000, grantor: "joint", recipientEntityId: "t1", useCrummeyPowers: true },
+    ];
+    const out = toCanonicalGifts(gifts, [], ctx([
+      trust({ beneficiaries: undefined, incomeBeneficiaries: [{ householdRole: "spouse", percentage: 100 }] }),
+    ]));
+    expect(out.map((c) => [c.grantor, c.crummeyBeneficiaryCount])).toEqual([
+      ["client", 1],
+      ["spouse", 0],
+    ]);
+  });
+});
+
 // ── Valuation discounts ──────────────────────────────────────────────────────
 
 const trust3 = (over: Partial<EntitySummary> = {}): EntitySummary =>

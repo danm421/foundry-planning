@@ -1,7 +1,7 @@
 // src/lib/solver/__tests__/revocable-tag-roundtrip.test.ts
 //
 // Persistence round-trip: a revocable-trust tag applied via
-// buildRevocableTagMutations() must survive the full save → load path:
+// buildRevocableMembershipMutations() must survive the full save → load path:
 //   1. mutationsToScenarioChanges() emits an "edit" draft (not "add") whose
 //      payload carries a { from, to } diff for revocableTrustName.
 //   2. applyScenarioChanges() replays that draft back onto the base tree and
@@ -12,7 +12,7 @@
 import { describe, it, expect } from "vitest";
 import type { Account, ClientData } from "@/engine/types";
 import type { ScenarioChange } from "@/engine/scenario/types";
-import { buildRevocableTagMutations } from "../estate-levers";
+import { buildRevocableMembershipMutations } from "../revocable-trust-rows";
 import { mutationsToScenarioChanges } from "../mutations-to-scenario-changes";
 import { applyScenarioChanges } from "@/engine/scenario/applyChanges";
 import type { SolverScenarioChangeDraft } from "../types";
@@ -57,10 +57,10 @@ describe("revocable-tag scenario round-trip", () => {
       planSettings: {} as ClientData["planSettings"],
     } as unknown as ClientData;
 
-    const mutations = buildRevocableTagMutations(
+    const mutations = buildRevocableMembershipMutations(
       [base],
-      new Set(["acct-1"]),
       "Smith Family Trust",
+      new Set(["acct-1"]),
     );
 
     // ── Save: mutations → structured scenario-change drafts ──────────────────

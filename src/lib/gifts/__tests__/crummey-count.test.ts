@@ -35,4 +35,45 @@ describe("crummeyBeneficiaryCount", () => {
   it("returns 0 when beneficiaries is undefined", () => {
     expect(crummeyBeneficiaryCount({})).toBe(0);
   });
+
+  it("counts the trust's lifetime (income) beneficiaries", () => {
+    expect(
+      crummeyBeneficiaryCount({
+        incomeBeneficiaries: [
+          { familyMemberId: "fm1", percentage: 50 },
+          { familyMemberId: "fm2", percentage: 50 },
+        ],
+      }),
+    ).toBe(2);
+  });
+
+  it("counts a person once when they sit on both lists", () => {
+    expect(
+      crummeyBeneficiaryCount({
+        incomeBeneficiaries: [{ familyMemberId: "fm1", percentage: 100 }],
+        beneficiaries: [b({ familyMemberId: "fm1" })],
+      }),
+    ).toBe(1);
+  });
+
+  it("never counts the donor as their own Crummey holder", () => {
+    const slat = { incomeBeneficiaries: [{ householdRole: "spouse" as const, percentage: 100 }] };
+    expect(crummeyBeneficiaryCount(slat, { donor: "client" })).toBe(1);
+    expect(crummeyBeneficiaryCount(slat, { donor: "spouse" })).toBe(0);
+  });
+
+  it("skips charities, sub-trusts and Other Heirs", () => {
+    expect(
+      crummeyBeneficiaryCount(
+        {
+          incomeBeneficiaries: [
+            { externalBeneficiaryId: "ch1", percentage: 40 },
+            { entityId: "t2", percentage: 30 },
+            { otherHeirs: true, percentage: 30 },
+          ],
+        },
+        { charityIds: new Set(["ch1"]) },
+      ),
+    ).toBe(0);
+  });
 });

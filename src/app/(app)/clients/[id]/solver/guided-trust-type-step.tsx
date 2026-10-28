@@ -1,0 +1,130 @@
+"use client";
+
+// Wizard step 1: what kind of trust. Picking a row applies that kind's preset
+// (`applyKindPreset`), which fills in later answers the advisor can still change.
+// On a wide dialog the groups sit in two columns (probate and charitable on the
+// left, estate-removal on the right) so all seven fit without scrolling.
+
+import {
+  applyKindPreset,
+  type GuidedTrustAnswers,
+  type GuidedTrustContext,
+  type GuidedTrustKind,
+} from "@/lib/solver/guided-trust";
+import { ChoiceRow, GroupLabel, StepHeader } from "./guided-trust-ui";
+
+interface Props {
+  answers: GuidedTrustAnswers;
+  ctx: GuidedTrustContext;
+  onChange: (next: GuidedTrustAnswers) => void;
+}
+
+interface Row {
+  kind: GuidedTrustKind;
+  name: string;
+  tag?: string;
+  note: string;
+  marriedOnly?: boolean;
+}
+
+const GROUPS: { label: string; place: string; rows: Row[] }[] = [
+  {
+    label: "Avoid probate",
+    place: "lg:col-start-1 lg:row-start-1",
+    rows: [
+      {
+        kind: "revocable",
+        name: "Revocable living trust",
+        tag: "no tax change",
+        note: "Accounts skip probate. You keep full control, and they stay in your taxable estate.",
+      },
+    ],
+  },
+  {
+    label: "Move wealth out of the estate",
+    place: "lg:col-start-2 lg:row-start-1 lg:row-span-2",
+    rows: [
+      {
+        kind: "irrevocable",
+        name: "Irrevocable gift trust",
+        tag: "removes growth",
+        note: "What you give leaves your estate. It uses lifetime exemption, so the saving is on everything it earns afterward.",
+      },
+      {
+        kind: "slat",
+        name: "SLAT · spousal access",
+        tag: "removes growth",
+        note: "Same, but with spousal access to distributions, so the couple keeps indirect access.",
+        marriedOnly: true,
+      },
+      {
+        kind: "ilit",
+        name: "ILIT · life insurance",
+        tag: "removes death benefit",
+        note: "The policy payout reaches heirs outside your taxable estate. An existing policy you transfer must stay out three years to count.",
+      },
+      {
+        kind: "idgt",
+        name: "IDGT · sale for a note",
+        tag: "freezes value",
+        note: "Sell assets to the trust for a note. Growth above the note's interest rate leaves your estate.",
+      },
+    ],
+  },
+  {
+    label: "Charitable",
+    place: "lg:col-start-1 lg:row-start-2",
+    rows: [
+      {
+        kind: "crt",
+        name: "CRT · you get income, charity gets the rest",
+        note: "You receive a yearly payout for life or a term; a charity gets what's left. Income-tax deduction now.",
+      },
+      {
+        kind: "clt",
+        name: "CLT · charity gets income, heirs get the rest",
+        note: "A charity receives a yearly payout for a term; your heirs get what's left, at a reduced taxable gift.",
+      },
+    ],
+  },
+];
+
+/** The display name of a trust kind, as the type step shows it. */
+export function kindName(kind: GuidedTrustKind): string {
+  for (const g of GROUPS) {
+    const row = g.rows.find((r) => r.kind === kind);
+    if (row) return row.name;
+  }
+  return kind;
+}
+
+export function GuidedTrustTypeStep({ answers, ctx, onChange }: Props) {
+  return (
+    <div>
+      <StepHeader title="What kind of trust?" />
+      <div
+        role="radiogroup"
+        aria-label="What kind of trust?"
+        className="grid gap-x-3 lg:grid-cols-2 lg:grid-rows-[auto_1fr]"
+      >
+        {GROUPS.map((g) => (
+          <div key={g.label} className={`min-w-0 ${g.place}`}>
+            <GroupLabel>{g.label}</GroupLabel>
+            {g.rows
+              .filter((r) => !r.marriedOnly || ctx.isMarried)
+              .map((r) => (
+                <ChoiceRow
+                  key={r.kind}
+                  name={r.name}
+                  tag={r.tag}
+                  description={r.note}
+                  checked={answers.kind === r.kind}
+                  onSelect={() => onChange(applyKindPreset(answers, r.kind))}
+                />
+              ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

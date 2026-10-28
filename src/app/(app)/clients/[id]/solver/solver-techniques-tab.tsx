@@ -10,7 +10,7 @@ import type {
   Reinvestment,
   Relocation,
 } from "@/engine/types";
-import type { SolverMutation } from "@/lib/solver/types";
+import type { SolverMutation, SolverSource } from "@/lib/solver/types";
 import type { AccountAssetMix } from "@/engine/monteCarlo/trial";
 import type { ClientMilestones } from "@/lib/milestones";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
@@ -206,6 +206,9 @@ interface Props {
   /** Forwarded to the estate technique's onOpen — the workspace uses it to
    *  switch the right pane to the Estate report. */
   onEstateOpen?: () => void;
+  /** What `mutations` sit on top of, for the estate dialog's impact estimate.
+   *  Defaults to the base plan so the tab renders in isolation. */
+  source?: SolverSource;
 }
 
 /** "Base plan" vs "Added" — only when the caller supplied base ids for the kind. */
@@ -233,6 +236,7 @@ export function SolverTechniquesTab({
   baseClientData,
   baseGifts,
   onEstateOpen,
+  source = "base",
 }: Props) {
   const [editor, setEditor] = useState<EditorState | null>(null);
 
@@ -641,6 +645,8 @@ export function SolverTechniquesTab({
         {baseClientData ? (
           <SolverEstateTechnique
             clientId={clientId}
+            source={source}
+            mutations={mutations ?? []}
             baseClientData={baseClientData}
             clientData={workingTree}
             baseGifts={baseGifts ?? []}

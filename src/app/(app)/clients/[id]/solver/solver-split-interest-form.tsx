@@ -1,21 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Account, ClientData } from "@/engine/types";
-import type { SolverMutation } from "@/lib/solver/types";
 import type { TrustSplitInterestInput } from "@/lib/schemas/trust-split-interest";
 import type { SplitInterestFundingPickerAccount } from "@/components/forms/split-interest-funding-picker";
 import type { SplitInterestFundingPick } from "@/lib/forms/split-interest-funding-diff";
 import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
-import { buildRetitleFundingMutation } from "@/lib/solver/trust-levers";
-import {
-  buildSplitInterestSnapshot,
-  buildSplitInterestTrustEntity,
-  buildCltRemainderGiftMutation,
-} from "@/lib/solver/split-interest-levers";
+import { buildSplitInterestSnapshot } from "@/lib/solver/split-interest-levers";
 import CrtDetailsSection from "@/components/forms/crt-details-section";
 import CltDetailsSection from "@/components/forms/clt-details-section";
-import type { SolverTrustDraft } from "./solver-trust-form";
+import type { SplitInterestAnswers } from "@/lib/solver/guided-trust";
+import { roleFirstName } from "@/lib/solver/trust-labels";
 
 const inputClassName =
   "mt-1 h-9 w-full rounded-md border border-hair-2 bg-card px-2.5 text-[14px] text-ink focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30";
@@ -35,40 +30,56 @@ interface Props {
   clientData: ClientData;
   subType: "crt" | "clt";
   isMarried: boolean;
-  /** Emits an external-beneficiary-upsert for a new charity; returns its id. */
-  onCreateCharity: (name: string, charityType: "public" | "private") => string;
-  /** Ordered primitive mutations to emit (entity first) + the draft. */
-  onApply: (mutations: SolverMutation[], draft: SolverTrustDraft) => void;
-  onClose: () => void;
+  grantor: "client" | "spouse";
+  onGrantorChange: (next: "client" | "spouse") => void;
+  /** Seeds the form on mount; later edits stay local and are reported via onChange. */
+  value: SplitInterestAnswers | null;
+  /** Complete answers, or null while they are not complete yet. */
+  onChange: (next: SplitInterestAnswers | null) => void;
+  /** Extra controls under the payout and funding section (the CLT's remainder). */
+  children?: ReactNode;
 }
+
+type PendingCharity = NonNullable<SplitInterestAnswers["newCharity"]>;
 
 export function SolverSplitInterestForm({
   clientData,
   subType,
   isMarried,
-  onCreateCharity,
-  onApply,
-  onClose,
+  grantor,
+  onGrantorChange,
+  value,
+  onChange,
+  children,
 }: Props) {
   const planStartYear = clientData.planSettings.planStartYear;
 
-  const [name, setName] = useState(
-    subType === "crt" ? "Charitable Remainder Trust" : "Charitable Lead Trust",
-  );
-  const [grantor, setGrantor] = useState<"client" | "spouse">("client");
-  const [splitInput, setSplitInput] = useState<TrustSplitInterestInput>({
-    origin: "new",
-    inceptionYear: planStartYear,
-    inceptionValue: 0,
-    payoutType: "unitrust",
-    payoutPercent: 0.05,
-    irc7520Rate: 0.04,
-    termType: "years",
-    termYears: 20,
-    charityId: "",
+  const [splitInput, setSplitInput] = useState<TrustSplitInterestInput>(() => {
+    const snap = value?.snapshot;
+    return {
+      origin: "new",
+      inceptionYear: snap?.inceptionYear ?? planStartYear,
+      inceptionValue: 0,
+      payoutType: snap?.payoutType ?? "unitrust",
+      payoutPercent: snap ? (snap.payoutPercent ?? undefined) : 0.05,
+      payoutAmount: snap?.payoutAmount ?? undefined,
+      irc7520Rate: snap?.irc7520Rate ?? 0.04,
+      termType: snap?.termType ?? "years",
+      termYears: snap ? (snap.termYears ?? undefined) : 20,
+      measuringLife1Id: snap?.measuringLife1Id ?? undefined,
+      measuringLife2Id: snap?.measuringLife2Id ?? undefined,
+      charityId: snap?.charityId ?? "",
+    };
   });
-  const [fundingPicks, setFundingPicks] = useState<SplitInterestFundingPick[]>([]);
-  const [hint, setHint] = useState<string | null>(null);
+  const [fundingPicks, setFundingPicks] = useState<SplitInterestFundingPick[]>(
+    () =>
+      value?.fundingPicks ??
+      (value?.fundingAccountIds ?? []).map((accountId) => ({ kind: "asset", accountId, percent: 1 })),
+  );
+  // A charity typed in here is only held; the wizard's Add trust creates it.
+  const [pendingCharity, setPendingCharity] = useState<PendingCharity | null>(
+    value?.newCharity ?? null,
+  );
 
   // Inline "add charity" mini-form.
   const [charityName, setCharityName] = useState("");
@@ -85,11 +96,13 @@ export function SolverSplitInterestForm({
   );
 
   const charities = useMemo(
-    () =>
-      (clientData.externalBeneficiaries ?? [])
+    () => [
+      ...(clientData.externalBeneficiaries ?? [])
         .filter((b) => b.kind === "charity")
         .map((b) => ({ id: b.id, name: b.name })),
-    [clientData.externalBeneficiaries],
+      ...(pendingCharity ? [{ id: pendingCharity.id, name: `${pendingCharity.name} (new)` }] : []),
+    ],
+    [clientData.externalBeneficiaries, pendingCharity],
   );
 
   // Eligible funding accounts — mirrors add-trust-form.tsx create-mode filtering:
@@ -155,7 +168,8 @@ export function SolverSplitInterestForm({
   function addCharity() {
     const trimmed = charityName.trim();
     if (!trimmed) return;
-    const id = onCreateCharity(trimmed, charityType);
+    const id = crypto.randomUUID();
+    setPendingCharity({ id, name: trimmed, charityType });
     setSplitInput((prev) => ({ ...prev, charityId: id }));
     setCharityName("");
   }
@@ -167,87 +181,95 @@ export function SolverSplitInterestForm({
     return splitInput.inceptionYear - parseInt(m.dateOfBirth.slice(0, 4), 10);
   }
 
-  function apply() {
-    if (!name.trim()) return setHint("Enter a trust name.");
-    if (!splitInput.charityId) return setHint("Select (or add) a remainder charity.");
-    if (fundingPicks.length === 0) return setHint("Select at least one funding source.");
-    setHint(null);
+  const blockedReason = !splitInput.charityId
+    ? "Select (or add) a remainder charity."
+    : fundingPicks.length === 0
+      ? "Select at least one funding source."
+      : null;
 
-    const age1 = ageAt(splitInput.measuringLife1Id);
-    const age2 = ageAt(splitInput.measuringLife2Id);
-
-    const entityId = crypto.randomUUID();
-    // Use the derived funding total for the frozen inceptionValue.
+  const answers = useMemo<SplitInterestAnswers | null>(() => {
+    if (blockedReason) return null;
     const snapshot = buildSplitInterestSnapshot(
       { ...splitInput, inceptionValue: fundingTotal },
       subType,
-      { age1, age2 },
+      { age1: ageAt(splitInput.measuringLife1Id), age2: ageAt(splitInput.measuringLife2Id) },
     );
-    const entity = buildSplitInterestTrustEntity({
-      id: entityId,
-      name: name.trim(),
-      subType,
-      grantor,
-      splitInterest: snapshot,
-    });
+    return {
+      snapshot,
+      fundingAccountIds: fundingPicks.flatMap((p) => (p.kind === "asset" ? [p.accountId] : [])),
+      fundingPicks,
+      newCharity: pendingCharity && pendingCharity.id === splitInput.charityId ? pendingCharity : null,
+    };
+    // ageAt reads splitInput and familyMembers, both listed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blockedReason, splitInput, fundingTotal, subType, fundingPicks, pendingCharity, familyMembers]);
 
-    const mutations: SolverMutation[] = [
-      { kind: "entity-upsert", id: entityId, value: entity },
-    ];
-
-    // CLT: record the remainder-interest gift to heirs at inception.
-    let remainderGiftId: string | undefined;
-    if (subType === "clt") {
-      remainderGiftId = crypto.randomUUID();
-      mutations.push(
-        buildCltRemainderGiftMutation(entityId, snapshot, grantor, remainderGiftId),
-      );
-    }
-
-    // Funding: retitle each picked asset account into the trust. Cash picks have
-    // no account to retitle, so they're skipped for funding emission (they still
-    // counted toward inceptionValue). Whole-account retitle is the solver's
-    // funding model (same as the 3a IDGT path).
-    const fundedOriginals: Account[] = [];
-    for (const pick of fundingPicks) {
-      if (pick.kind !== "asset") continue;
-      const account = clientData.accounts.find((a) => a.id === pick.accountId);
-      if (!account) continue;
-      mutations.push(buildRetitleFundingMutation(account, entityId));
-      fundedOriginals.push(account);
-    }
-
-    onApply(mutations, { entity, fundedOriginals, remainderGiftId });
-    onClose();
-  }
+  // Report whenever the content changes (stable JSON key, callback held in a ref
+  // so a fresh parent identity does not re-fire).
+  const answersJson = useMemo(
+    () => (answers ? JSON.stringify(answers) : `blocked:${blockedReason}`),
+    [answers, blockedReason],
+  );
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  });
+  useEffect(() => {
+    onChangeRef.current(answers);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- answersJson keys both
+  }, [answersJson]);
 
   const Section = subType === "crt" ? CrtDetailsSection : CltDetailsSection;
 
+  // Who gives and the new-charity field share one row; the payout and funding
+  // section keeps the full width so its funding picker can show account names.
   return (
     <div className="space-y-3">
-      <label className="block text-[12px] text-ink-2">
-        Name
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className={inputClassName}
-        />
-      </label>
+      <div className="grid items-end gap-x-4 gap-y-3 lg:grid-cols-2">
+        {isMarried && (
+          <label className="block text-[12px] text-ink-2">
+            Grantor
+            <select
+              value={grantor}
+              onChange={(e) => onGrantorChange(e.target.value as "client" | "spouse")}
+              className={inputClassName}
+            >
+              <option value="client">{roleFirstName("client", clientData)}</option>
+              <option value="spouse">{roleFirstName("spouse", clientData)}</option>
+            </select>
+          </label>
+        )}
 
-      {isMarried && (
-        <label className="block text-[12px] text-ink-2">
-          Grantor
+        {/* Inline "add charity" — makes a new charity available as the remainder. */}
+        <div className="flex items-end gap-2">
+          <label className="min-w-0 flex-1 text-[12px] text-ink-2">
+            New charity
+            <input
+              type="text"
+              value={charityName}
+              onChange={(e) => setCharityName(e.target.value)}
+              placeholder="Charity name"
+              className={inputClassName}
+            />
+          </label>
           <select
-            value={grantor}
-            onChange={(e) => setGrantor(e.target.value as "client" | "spouse")}
-            className={inputClassName}
+            aria-label="Charity type"
+            value={charityType}
+            onChange={(e) => setCharityType(e.target.value as "public" | "private")}
+            className="h-9 rounded-md border border-hair-2 bg-card px-2.5 text-[14px] text-ink focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
           >
-            <option value="client">Client</option>
-            <option value="spouse">Co-client</option>
+            <option value="public">Public</option>
+            <option value="private">Private</option>
           </select>
-        </label>
-      )}
+          <button
+            type="button"
+            onClick={addCharity}
+            className="h-9 rounded-md border border-hair-2 bg-card px-3 text-[13px] text-ink hover:border-accent"
+          >
+            Add
+          </button>
+        </div>
+      </div>
 
       <Section
         value={sectionValue}
@@ -278,45 +300,9 @@ export function SolverSplitInterestForm({
         </p>
       )}
 
-      {/* Inline "add charity" — makes a new charity available as the remainder. */}
-      <div className="flex items-end gap-2">
-        <label className="flex-1 text-[12px] text-ink-2">
-          New charity
-          <input
-            type="text"
-            value={charityName}
-            onChange={(e) => setCharityName(e.target.value)}
-            placeholder="Charity name"
-            className={inputClassName}
-          />
-        </label>
-        <select
-          aria-label="Charity type"
-          value={charityType}
-          onChange={(e) => setCharityType(e.target.value as "public" | "private")}
-          className="h-9 rounded-md border border-hair-2 bg-card px-2.5 text-[14px] text-ink focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
-        >
-          <option value="public">Public</option>
-          <option value="private">Private</option>
-        </select>
-        <button
-          type="button"
-          onClick={addCharity}
-          className="h-9 rounded-md border border-hair-2 bg-card px-3 text-[13px] text-ink hover:border-accent"
-        >
-          Add
-        </button>
-      </div>
+      {children}
 
-      {hint && <p className="text-[12px] text-crit">{hint}</p>}
-
-      <button
-        type="button"
-        onClick={apply}
-        className="h-9 rounded-md bg-accent px-3 text-[13px] text-white hover:bg-accent/90"
-      >
-        Add trust
-      </button>
+      {blockedReason && <p className="text-[12px] text-ink-3">{blockedReason}</p>}
     </div>
   );
 }

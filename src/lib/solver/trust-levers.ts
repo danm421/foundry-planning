@@ -16,10 +16,6 @@ import type { TrustSubType } from "@/lib/entities/trust";
 import { defaultIsGrantorFor } from "@/lib/trust-defaults";
 import type { SolverMutation } from "./types";
 
-/** Trust subtypes the solver can CREATE in Phase 3a. CRT/CLT are Phase 3b. */
-export const SOLVER_TRUST_SUBTYPES_3A = ["ilit", "idgt", "irrevocable"] as const;
-export type SolverTrustSubType3a = (typeof SOLVER_TRUST_SUBTYPES_3A)[number];
-
 interface BuildTrustEntityArgs {
   id: string;
   name: string;
