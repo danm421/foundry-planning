@@ -10,14 +10,16 @@
 // own create/update body, validated by `willCreateSchema` / `willUpdateSchema`
 // in src/lib/schemas/wills.ts. There is no PATCH-one-bequest endpoint.
 //
-// PATCH /wills/[willId] is a FULL REPLACE of both arrays: the route deletes
+// PATCH /wills/[willId] is a FULL REPLACE of `bequests`: the route deletes
 // every existing `will_bequests` row for that will (cascading to
-// `will_bequest_recipients`) and every `will_residuary_recipients` row, then
-// re-inserts whatever arrays were sent (src/app/api/clients/[id]/wills/
-// [willId]/route.ts, PATCH handler). Two consequences that matter to Forge:
+// `will_bequest_recipients`), then re-inserts whatever array was sent
+// (`updateWillForClient` in src/lib/clients/wills-writes.ts). The
+// `will_residuary_recipients` rows are replaced the same way only when the
+// body carries `residuaryRecipients`; omitting the key keeps them.
+// Two consequences that matter to Forge:
 //   1. To add/edit/remove ONE bequest, resend the ENTIRE `bequests` array
-//      (existing rows + the one change) and the entire `residuaryRecipients`
-//      array. Sending just the new/changed item deletes everything else.
+//      (existing rows + the one change). Sending just the new/changed item
+//      deletes everything else. Same for `residuaryRecipients` when sent.
 //   2. Every bequest/recipient/residuary row gets a BRAND NEW uuid on every
 //      PATCH, even for rows whose content didn't change (delete-then-insert,
 //      and the create/update zod schemas don't even accept a caller-supplied
@@ -87,7 +89,7 @@ export const WILLS_ENTITIES: readonly DetailEntity[] = [
         kind: "array",
         required: false,
         notes:
-          "Optional (zod .optional(), no default — distinct from bequests' .default([]), though both read back as \"no rows\" either way). Each item has the shape of the `will_residuary_recipients` entity below. An empty/omitted array is a valid, meaningful state: the UI shows \"No remainder clause specified. Residual assets are distributed by the default order — surviving spouse, then children, then other heirs.\" Same FULL REPLACE semantics as `bequests` on PATCH.",
+          "Optional (zod .optional(), no default — distinct from bequests' .default([]), though both read back as \"no rows\" either way). Each item has the shape of the `will_residuary_recipients` entity below. An empty array is a valid, meaningful state: the UI shows \"No remainder clause specified. Residual assets are distributed by the default order — surviving spouse, then children, then other heirs.\" On PATCH, sending the key FULL REPLACES the remainder estate (send [] to clear it); omitting the key keeps it unchanged.",
       },
       {
         key: "executor",

@@ -325,7 +325,7 @@ export async function createWillForClient(args: RouteArgs): Promise<EntityWriteR
   return { ok: true, data, resourceId: willId };
 }
 
-/** PATCH /wills/[willId]: replaces ALL the will's provisions and its remaining estate (absent → none). `resourceId` is the will. */
+/** PATCH /wills/[willId]: replaces ALL the will's provisions, and its remaining estate only when the body carries `residuaryRecipients` (absent → kept; Estate Planning saves send `bequests` only). `resourceId` is the will. */
 export async function updateWillForClient(args: RouteArgs & { willId: string }): Promise<EntityWriteResult<WillUpdateInput>> {
   const { clientId: id, firmId, willId } = args;
   const handle = handleOf(args);
@@ -345,13 +345,15 @@ export async function updateWillForClient(args: RouteArgs & { willId: string }):
   if (crossRefError) return crossRefRefusal(crossRefError);
 
   // Transactional full-replace: delete existing bequests (cascades to
-  // recipients) and residuary, then re-insert.
+  // recipients) and, when sent, the residuary, then re-insert.
   try {
     await inTransaction(args, async (tx) => {
       await tx.delete(willBequests).where(eq(willBequests.willId, willId));
-      await tx
-        .delete(willResiduaryRecipients)
-        .where(eq(willResiduaryRecipients.willId, willId));
+      if (residuaryRecipients) {
+        await tx
+          .delete(willResiduaryRecipients)
+          .where(eq(willResiduaryRecipients.willId, willId));
+      }
       for (const b of bequests) {
         const [bequestRow] = await tx
           .insert(willBequests)

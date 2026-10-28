@@ -880,6 +880,26 @@ describe("residuary recipients — GET / POST / PATCH", () => {
     expect(dbState.willResiduaryRecipients).toHaveLength(0);
   });
 
+  it("PATCH without residuaryRecipients keeps the existing residuary (Estate Planning saves send bequests only)", async () => {
+    resetState({
+      wills: [{ id: WILL_EXISTING_ID, clientId: CLIENT_A_ID, grantor: "client" }],
+      willResiduaryRecipients: [RESIDUARY_ROW_SPOUSE],
+    });
+
+    const { PATCH } = await import("../[willId]/route");
+    const res = await PATCH(
+      new Request("http://x", {
+        method: "PATCH",
+        body: JSON.stringify({ bequests: [] }),
+      }) as unknown as Parameters<typeof PATCH>[0],
+      {
+        params: Promise.resolve({ id: CLIENT_A_ID, willId: WILL_EXISTING_ID }),
+      } as unknown as Parameters<typeof PATCH>[1],
+    );
+    expect(res.status).toBe(200);
+    expect(dbState.willResiduaryRecipients).toEqual([RESIDUARY_ROW_SPOUSE]);
+  });
+
   it("tier round-trip: POST a contingent residuary recipient and GET echoes tier='contingent'", async () => {
     // POST a new will with a contingent-tier residuary recipient
     const { POST } = await import("../route");
