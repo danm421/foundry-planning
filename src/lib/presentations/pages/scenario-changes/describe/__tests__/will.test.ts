@@ -74,4 +74,12 @@ describe("will describer — dollar gifts", () => {
     expect(dollarRow([{ id: "f1", amount: 20_000 }], { dollarSource: "account", accountId: "roth" }).detail.join(" | "))
       .toContain("$20,000 from Roth 401(k)");
   });
+
+  it("reads a gift whose named account was removed as the will list does", () => {
+    const removed = { dollarSource: "account", accountId: null };
+    expect(dollarRow([{ id: "f1", amount: 20_000 }], removed).detail.join(" | "))
+      .toContain("$20,000 · account removed — pays nothing until you pick a source");
+    expect(dollarRow([{ id: "f1", amount: 20_000 }], { ...removed, fallbackToEstate: true }).detail.join(" | "))
+      .toContain("$20,000 · account removed — paid from cash & brokerage");
+  });
 });
