@@ -254,7 +254,12 @@ export async function saveBequest(args: SaveBequestArgs): Promise<void> {
         accountId: args.accountId,
         percentage: args.percentage,
         condition: args.condition,
-        sortOrder: existing ? existing.bequests.length : 0,
+        sortOrder: existing
+          ? Math.max(
+              -1,
+              ...existing.bequests.map((b) => (b as { sortOrder: number }).sortOrder),
+            ) + 1
+          : 0,
         recipients: [
           {
             recipientKind: args.recipient.kind,

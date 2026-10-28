@@ -102,6 +102,28 @@ describe("buildBequestMutations", () => {
     expect("residuaryRecipients" in value).toBe(false);
   });
 
+  it("keeps a dollar gift and its position when it appends a bequest", () => {
+    const dollar: WillBequest = {
+      id: "b-dollar", name: "Grandchildren", kind: "dollar", dollarSource: "estate", fallbackToEstate: false,
+      assetMode: null, accountId: null, entityId: null, liabilityId: null, percentage: 100,
+      condition: "always", sortOrder: 0,
+      recipients: [
+        { recipientKind: "family_member", recipientId: "fm-1", percentage: 0, amount: 20000, sortOrder: 0 },
+        { recipientKind: "family_member", recipientId: "fm-1", percentage: 0, amount: 20000, sortOrder: 1 },
+      ],
+    };
+    const pct = clause({ id: "b-pct", assetMode: "specific", accountId: "acct-home", name: "Home", sortOrder: 1 });
+    const t = tree({ wills: [will("client", { bequests: [dollar, pct] })] });
+    const muts = buildBequestMutations([oneAccount("acct-brk", 40)], TRUST, t, ids());
+    const value = (muts[0] as { value: Will }).value;
+    expect(value.bequests[0]).toEqual(dollar);
+    expect(value.bequests[0]).toMatchObject({
+      kind: "dollar", dollarSource: "estate", sortOrder: 0,
+      recipients: [{ amount: 20000 }, { amount: 20000 }],
+    });
+    expect(value.bequests[2].sortOrder).toBe(2);
+  });
+
   it("appends to an existing will, keeping its other bequests and residuary heirs", () => {
     const existing = will("client", {
       bequests: [clause({ id: "b-home", assetMode: "specific", accountId: "acct-home", name: "Home", sortOrder: 3 })],

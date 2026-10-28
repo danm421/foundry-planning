@@ -203,6 +203,56 @@ d("wills writers (Plan 4, Task 13)", () => {
     expect(audits.map((a) => (a.metadata as { bequestCount: number }).bequestCount).sort()).toEqual([3, 3, 4, 4]);
   });
 
+  it("keeps a dollar gift and its position when the import adds a provision after it", async () => {
+    const seed = await seedSaveClient(FIRM, { coClient: true });
+    const { clientId, scenarioId } = seed;
+    const [cash] = await db.insert(accounts).values({ clientId, scenarioId, name: "Chase Savings", category: "cash", subType: "savings" }).returning();
+    const [emma, noah] = await db
+      .insert(familyMembers)
+      .values([
+        { clientId, firstName: "Emma", lastName: "Hendricks", role: "child", relationship: "child" },
+        { clientId, firstName: "Noah", lastName: "Hendricks", role: "child", relationship: "child" },
+      ])
+      .returning();
+    const [will] = await db.insert(wills).values({ clientId, grantor: "client" }).returning();
+    const [dollar, pct] = await db
+      .insert(willBequests)
+      .values([
+        { willId: will.id, name: "Grandchildren", kind: "dollar", dollarSource: "estate", fallbackToEstate: false, percentage: "100", condition: "always", sortOrder: 0 },
+        { willId: will.id, name: "Chase Savings", kind: "asset", assetMode: "specific", accountId: cash.id, percentage: "100", condition: "always", sortOrder: 1 },
+      ])
+      .returning();
+    await db.insert(willBequestRecipients).values([
+      { bequestId: dollar.id, recipientKind: "family_member", recipientId: emma.id, percentage: null, amount: "20000", sortOrder: 0 },
+      { bequestId: dollar.id, recipientKind: "family_member", recipientId: noah.id, percentage: null, amount: "20000", sortOrder: 1 },
+      { bequestId: pct.id, recipientKind: "family_member", recipientId: emma.id, percentage: "100", sortOrder: 0 },
+    ]);
+
+    const onRecord = record("will", will.id);
+    await inSave({ clientId, firmId: FIRM }, async (ctx) => {
+      await WILL_WRITERS.will_bequest.update(ctx, inputOf(provisionLine(onRecord, { percentage: 60 }, { recordId: pct.id })));
+      const [brk] = await ctx.tx.insert(accounts).values({ clientId, scenarioId, name: "Schwab Brokerage", category: "taxable", subType: "brokerage" }).returning();
+      await WILL_WRITERS.will_bequest.create(
+        ctx,
+        inputOf(
+          provisionLine(onRecord, { kind: "asset", accountId: record("account", brk.id), percentage: 100, recipients: [{ who: CO_CLIENT, percentage: 100 }], condition: "always" }, { name: "Schwab Brokerage", sortOrder: 0 }),
+        ),
+      );
+    });
+
+    const after = await bequestsOf(will.id);
+    expect(after.map((b) => [b.name, b.sortOrder])).toEqual([
+      ["Grandchildren", 0],
+      ["Chase Savings", 1],
+      ["Schwab Brokerage", 2],
+    ]);
+    expect(after[0]).toMatchObject({ id: dollar.id, kind: "dollar", dollarSource: "estate", fallbackToEstate: false });
+    expect(await recipientsOf(dollar.id)).toMatchObject([
+      { recipientId: emma.id, amount: "20000.00", percentage: null },
+      { recipientId: noah.id, amount: "20000.00", percentage: null },
+    ]);
+  });
+
   describe("Other Heirs on record", () => {
     /** A will on record whose provision and remaining estate both leave a share to Other Heirs. */
     async function willWithOtherHeirs() {

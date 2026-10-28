@@ -341,7 +341,7 @@ const getEstateSummary = defineTool({
     "line list — the hypothetical estate tax if both died today (headline federal/state/admin/" +
     "total figures for the client-first ordering, and for the spouse-first ordering when the " +
     "household is married), the year-by-year gift ledger, the trusts and business entities on " +
-    "the plan, and any wills (bequests and residuary recipients). Use this for estate-tax " +
+    "the plan, and any wills (bequests and residuary recipients; a bequest is a percentage gift or a dollar gift, and they are paid in list order). Use this for estate-tax " +
     "exposure and gifting questions.",
   inputSchema: z.object({ clientId: clientIdArg, scenarioId: scenarioArg }),
   page: "estate",

@@ -56,7 +56,7 @@ function withAssetBequest(
     liabilityId: null,
     percentage: 100,
     condition,
-    sortOrder: will.bequests.length,
+    sortOrder: Math.max(-1, ...will.bequests.map((b) => b.sortOrder)) + 1,
     recipients,
   };
   return { ...will, bequests: [...will.bequests, bequest] };

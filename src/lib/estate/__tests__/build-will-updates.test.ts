@@ -239,4 +239,39 @@ describe("buildJointWillUpdates", () => {
     expect(clientWill.bequests[0].recipients).toEqual([]);
     expect(spouseWill.bequests[0].recipients).toEqual([]);
   });
+
+  it("keeps a dollar gift and its position, and a new gift goes after the highest sortOrder", () => {
+    const dollar: WillBequest = {
+      id: "bq-dollar",
+      name: "Grandchildren",
+      kind: "dollar",
+      dollarSource: "estate",
+      fallbackToEstate: false,
+      assetMode: null,
+      accountId: null,
+      entityId: null,
+      liabilityId: null,
+      percentage: 100,
+      condition: "always",
+      sortOrder: 0,
+      recipients: [
+        { recipientKind: "family_member", recipientId: "fm-a", percentage: 0, amount: 20000, sortOrder: 0 },
+        { recipientKind: "family_member", recipientId: "fm-b", percentage: 0, amount: 20000, sortOrder: 1 },
+      ],
+    };
+    // sortOrders 0 and 2 (a gift at 1 was deleted): length is 2, so length would collide.
+    const pct = { ...specificBequest("bq-pct", "acc-other"), sortOrder: 2 };
+    const out = buildWillUpdates(
+      baseInput({ clientWill: will("will-client", "client", [dollar, pct]) }),
+    );
+    const bequests = out[0].bequests;
+    expect(bequests).toHaveLength(3);
+    expect(bequests[0]).toMatchObject({
+      kind: "dollar",
+      dollarSource: "estate",
+      sortOrder: 0,
+      recipients: [{ amount: 20000 }, { amount: 20000 }],
+    });
+    expect(bequests[2]).toMatchObject({ accountId: "acc-1", sortOrder: 3 });
+  });
 });
