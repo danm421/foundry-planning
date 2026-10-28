@@ -419,6 +419,32 @@ describe("loadClientData", () => {
     expect(ss!.piaMonthly).toBe(2400);
   });
 
+  it("maps a dollar gift onto the engine shape", async () => {
+    seedValidFixture();
+    dbState.willBequests = [
+      {
+        ...willBequestRow,
+        kind: "dollar" as never,
+        assetMode: null as never,
+        accountId: null as never,
+        dollarSource: "estate",
+        fallbackToEstate: false,
+      } as never,
+    ];
+    dbState.willBequestRecipients = [
+      { ...willBequestRecipientRow, percentage: null, amount: "20000.00" } as never,
+    ];
+
+    const data = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+
+    const gift = data.wills![0].bequests[0];
+    expect(gift.kind).toBe("dollar");
+    expect(gift.percentage).toBe(100);
+    expect(gift.dollarSource).toBe("estate");
+    expect(gift.fallbackToEstate).toBe(false);
+    expect(gift.recipients[0]).toMatchObject({ amount: 20000, percentage: 0 });
+  });
+
   it("hydrates residuaryRecipients onto each Will", async () => {
     seedValidFixture();
     dbState.willResiduaryRecipients = [willResiduaryRecipientRow];

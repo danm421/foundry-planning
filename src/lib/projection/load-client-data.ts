@@ -871,12 +871,17 @@ const loadClientDataCached = cache(
         entityId: b.entityId,
         liabilityId: b.liabilityId ?? null,
         percentage: parseFloat(b.percentage),
+        ...(b.kind === "dollar"
+          ? { dollarSource: b.dollarSource, fallbackToEstate: b.fallbackToEstate }
+          : {}),
         condition: b.condition,
         sortOrder: b.sortOrder,
         recipients: (recipientsByBequest.get(b.id) ?? []).map((r) => ({
           recipientKind: r.recipientKind,
           recipientId: r.recipientId,
-          percentage: parseFloat(r.percentage),
+          // A dollar gift's recipients carry `amount`; the engine reads 0 here.
+          percentage: r.percentage == null ? 0 : parseFloat(r.percentage),
+          ...(r.amount != null ? { amount: parseFloat(r.amount) } : {}),
           sortOrder: r.sortOrder,
         })),
       });

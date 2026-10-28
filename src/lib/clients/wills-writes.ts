@@ -13,6 +13,7 @@
 import { and, asc, count, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  accountOwners,
   accounts,
   entities,
   externalBeneficiaries,
@@ -40,6 +41,8 @@ import { writeError, type EntityWriteResult } from "./entity-write-result";
 
 type CrossRefCheck = {
   accountIds: string[];
+  /** Accounts a dollar gift is paid from: cash or brokerage, and not entity-owned. */
+  dollarAccountIds: string[];
   familyMemberIds: string[];
   externalIds: string[];
   entityIds: string[];
@@ -54,6 +57,7 @@ export function gatherCrossRefs(
 ): CrossRefCheck {
   const check: CrossRefCheck = {
     accountIds: [],
+    dollarAccountIds: [],
     familyMemberIds: [],
     externalIds: [],
     entityIds: [],
@@ -61,6 +65,10 @@ export function gatherCrossRefs(
   };
   for (const b of bequests) {
     if (b.kind === "asset" && b.accountId) check.accountIds.push(b.accountId);
+    if (b.kind === "dollar" && b.accountId) {
+      check.accountIds.push(b.accountId);
+      check.dollarAccountIds.push(b.accountId);
+    }
     if (b.kind === "asset" && b.entityId) check.entityIds.push(b.entityId);
     if (b.kind === "liability") check.liabilityIds.push(b.liabilityId);
     for (const r of b.recipients) {
@@ -130,6 +138,24 @@ export async function verifyCrossRefs(
     if (rows.length !== new Set(check.entityIds).size) {
       return { code: "One or more entity IDs (bequest or recipient) do not belong to this client" };
     }
+  }
+
+  // A dollar gift is paid only from cash or brokerage held by the client (or
+  // co-client) — never from an entity-owned account.
+  if (check.dollarAccountIds.length > 0) {
+    const categories = await handle
+      .select({ id: accounts.id, category: accounts.category })
+      .from(accounts)
+      .where(and(eq(accounts.clientId, clientId), inArray(accounts.id, check.dollarAccountIds)));
+    const notCash = categories.find((a) => a.category !== "cash" && a.category !== "taxable");
+    if (notCash) return { code: "dollar_bequest_source_not_cash", detail: notCash.id };
+
+    const owners = await handle
+      .select({ accountId: accountOwners.accountId, entityId: accountOwners.entityId })
+      .from(accountOwners)
+      .where(inArray(accountOwners.accountId, check.dollarAccountIds));
+    const entityOwned = owners.find((o) => o.entityId != null);
+    if (entityOwned) return { code: "dollar_bequest_source_entity_owned", detail: entityOwned.accountId };
   }
 
   // Liability-bequest cross-ref: batch-fetch all referenced liabilities in one
@@ -214,7 +240,9 @@ function bequestValues(willId: string, b: WillBequestInput, sortOrder: number) {
     name: b.name,
     kind: b.kind,
     assetMode: b.kind === "asset" ? b.assetMode : null,
-    accountId: b.kind === "asset" ? (b.accountId ?? null) : null,
+    accountId: b.kind === "asset" || b.kind === "dollar" ? (b.accountId ?? null) : null,
+    dollarSource: b.kind === "dollar" ? b.dollarSource : null,
+    fallbackToEstate: b.kind === "dollar" ? b.fallbackToEstate : false,
     entityId: b.kind === "asset" ? (b.entityId ?? null) : null,
     liabilityId: b.kind === "liability" ? b.liabilityId : null,
     percentage: b.kind === "asset" ? String(b.percentage) : "100",
@@ -224,17 +252,26 @@ function bequestValues(willId: string, b: WillBequestInput, sortOrder: number) {
 }
 
 async function insertRecipients(tx: Tx, bequestId: string, b: WillBequestInput): Promise<void> {
-  if (b.recipients.length > 0) {
-    await tx.insert(willBequestRecipients).values(
-      b.recipients.map((r) => ({
-        bequestId,
-        recipientKind: r.recipientKind,
-        recipientId: r.recipientId,
-        percentage: String(r.percentage),
-        sortOrder: r.sortOrder,
-      })),
-    );
-  }
+  if (b.recipients.length === 0) return;
+  const rows =
+    b.kind === "dollar"
+      ? b.recipients.map((r) => ({
+          bequestId,
+          recipientKind: r.recipientKind,
+          recipientId: r.recipientId,
+          percentage: null,
+          amount: String(r.amount),
+          sortOrder: r.sortOrder,
+        }))
+      : b.recipients.map((r) => ({
+          bequestId,
+          recipientKind: r.recipientKind,
+          recipientId: r.recipientId,
+          percentage: String(r.percentage),
+          amount: null,
+          sortOrder: r.sortOrder,
+        }));
+  await tx.insert(willBequestRecipients).values(rows);
 }
 
 async function insertResiduary(tx: Tx, willId: string, rows: WillResiduaryRecipientInput[]): Promise<void> {
@@ -463,13 +500,21 @@ export async function updateWillBequestForClient(args: SaveArgs & { bequestId: s
     kind: before.kind,
     name: before.name,
     assetMode: before.assetMode,
+    dollarSource: before.dollarSource,
+    fallbackToEstate: before.fallbackToEstate,
     accountId: before.accountId,
     entityId: before.entityId,
     liabilityId: before.liabilityId,
     percentage: Number(before.percentage),
     condition: before.condition,
     sortOrder: before.sortOrder,
-    recipients: recipients.map((r) => ({ recipientKind: r.recipientKind, recipientId: r.recipientId, percentage: Number(r.percentage), sortOrder: r.sortOrder })),
+    recipients: recipients.map((r) => ({
+      recipientKind: r.recipientKind,
+      recipientId: r.recipientId,
+      ...(r.percentage !== null ? { percentage: Number(r.percentage) } : {}),
+      ...(r.amount !== null ? { amount: Number(r.amount) } : {}),
+      sortOrder: r.sortOrder,
+    })),
     ...patch,
   });
   if (!parsed.success) return invalidBody(parsed.error);
