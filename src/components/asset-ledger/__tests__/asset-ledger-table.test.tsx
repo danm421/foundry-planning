@@ -106,4 +106,27 @@ describe("AssetLedgerTable", () => {
     expect(screen.getAllByText("Beginning of Year").length).toBeGreaterThan(0);
     expect(screen.getAllByText("End of Year").length).toBeGreaterThan(0);
   });
+
+  it("keeps a basis-only row under hideZero and leaves its amount blank", () => {
+    const account = ledger.sections[0].accounts[0];
+    const withRealized: AssetLedger = {
+      ...ledger,
+      sections: [{
+        ...ledger.sections[0],
+        accounts: [{
+          ...account,
+          rows: [
+            ...account.rows.slice(0, 2),
+            { category: "growth", label: "Realized this year, added to basis", amount: 0, basis: 9_000, basisOnly: true, internal: false },
+            ...account.rows.slice(2),
+          ],
+        }],
+      }],
+    };
+    render(<AssetLedgerTable ledger={withRealized} filter={{ hideZero: true }} />);
+    const row = screen.getByText("Realized this year, added to basis").closest("tr")!;
+    const cells = row.querySelectorAll("td");
+    expect(cells[2].textContent).toBe("—");
+    expect(cells[3].textContent).toBe("$9,000");
+  });
 });

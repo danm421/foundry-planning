@@ -409,4 +409,47 @@ describe("buildAssetLedger — files by the engine's per-year entity ownership",
     expect(Math.abs(acct.residual)).toBeLessThanOrEqual(1);
     expect(Math.abs(acct.basisResidual)).toBeLessThanOrEqual(1);
   });
+
+  it("moves a taxable account's realized growth onto its own basis row", () => {
+    // Joint Schwab brokerage, 6.5% growth on $4.1M: 15% ordinary, 15% qualified,
+    // 70% gains at 5% turnover → $89,278 taxed this year and added to basis.
+    const ledger = buildAssetLedger(mkYear({
+      brokerage: mkLedger({
+        beginningValue: 4_100_000, endingValue: 4_366_500, growth: 266_500,
+        basisBoY: 2_980_000, basisEoY: 3_069_277.5,
+        growthDetail: {
+          ordinaryIncome: 39_975, qualifiedDividends: 39_975, stCapitalGains: 9_327.5,
+          ltCapitalGains: 177_222.5, taxExempt: 0, basisIncrease: 89_277.5,
+        },
+        entries: [{ category: "growth", label: "Growth (6.50%)", amount: 266_500, basis: 89_277.5 }],
+      }),
+    }), ctx);
+    const acct = ledger.sections[0].accounts[0];
+    const entryRows = acct.rows.filter((r) => !r.bookend);
+    expect(entryRows.map((r) => [r.label, r.amount, r.basis])).toEqual([
+      ["Growth (6.50%)", 266_500, 0],
+      ["Realized this year, added to basis (ordinary income, qualified dividends, short-term gains)", 0, 89_277.5],
+    ]);
+    expect(entryRows[1].basisOnly).toBe(true);
+    expect(acct.reconciles).toBe(true);
+  });
+
+  it("leaves cash growth and growth with no realized share as one row", () => {
+    const detail = { ordinaryIncome: 2_000, qualifiedDividends: 0, stCapitalGains: 0, ltCapitalGains: 0, taxExempt: 0, basisIncrease: 2_000 };
+    const ledger = buildAssetLedger(mkYear({
+      // Cash: basis tracks value, so a separate row would say nothing new.
+      cash: mkLedger({
+        beginningValue: 50_000, endingValue: 52_000, basisBoY: 50_000, basisEoY: 52_000, growthDetail: detail,
+        entries: [{ category: "growth", label: "Growth (4.00%)", amount: 2_000, basis: 2_000 }],
+      }),
+      // Taxable, all unrealized: nothing was taxed, so no basis moved.
+      brokerage: mkLedger({
+        beginningValue: 100_000, endingValue: 106_000, basisBoY: 80_000, basisEoY: 80_000,
+        growthDetail: { ...detail, ordinaryIncome: 0, ltCapitalGains: 6_000, basisIncrease: 0 },
+        entries: [{ category: "growth", label: "Growth (6.00%)", amount: 6_000, basis: 0 }],
+      }),
+    }), { ...ctx, accountCategories: { ...ctx.accountCategories, cash: "cash" } });
+    const rows = ledger.sections[0].accounts.flatMap((a) => a.rows.filter((r) => !r.bookend));
+    expect(rows.map((r) => r.label)).toEqual(["Growth (4.00%)", "Growth (6.00%)"]);
+  });
 });

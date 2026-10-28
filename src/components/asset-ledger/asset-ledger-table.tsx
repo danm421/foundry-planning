@@ -26,7 +26,7 @@ function SpacerRow({ height = "h-3" }: { height?: string }) {
 function visibleRows(block: AssetAccountBlock, f: AssetFilterState): AssetRow[] {
   return block.rows.filter((r) => {
     if (r.bookend) return true;
-    if (f.hideZero && Math.round(r.amount) === 0) return false;
+    if (f.hideZero && Math.round(r.amount) === 0 && Math.round(r.basis) === 0) return false;
     return true;
   });
 }
@@ -103,7 +103,7 @@ function AccountBlock({
             {r.counterpartyName ?? ""}
           </td>
           <td className="border-b border-hair bg-card px-3 py-1.5 text-right tabular-nums">
-            <MoneyText value={r.amount} format="accounting" />
+            <MoneyText value={r.basisOnly ? null : r.amount} format="accounting" />
           </td>
           <td className="border-b border-hair bg-card px-3 py-1.5 text-right tabular-nums">
             <MoneyText value={r.basis} format="accounting" />

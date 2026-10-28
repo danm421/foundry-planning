@@ -10,23 +10,52 @@ function isEmpty(ledger: AccountLedger): boolean {
   return ledger.beginningValue === 0 && ledger.endingValue === 0 && ledger.entries.length === 0;
 }
 
+const REALIZED_PARTS = [
+  ["ordinaryIncome", "ordinary income"],
+  ["qualifiedDividends", "qualified dividends"],
+  ["stCapitalGains", "short-term gains"],
+  ["taxExempt", "tax-exempt income"],
+] as const;
+
+/** A taxable account's growth entry carries the basis its realized share
+ *  (taxed this year, so it raises cost basis) adds. Split that onto its own
+ *  basis-only row so the ledger shows where the basis came from. Cash is left
+ *  whole: its basis tracks value, so the extra row would say nothing. */
+function realizedBasisRow(row: AssetRow, ledger: AccountLedger, category: string | undefined): AssetRow | null {
+  const detail = ledger.growthDetail;
+  if (row.category !== "growth" || row.basis <= 0 || !detail || category !== "taxable") return null;
+  const parts = REALIZED_PARTS.filter(([key]) => detail[key] > 0).map(([, name]) => name);
+  return {
+    category: "growth",
+    label: `Realized this year, added to basis${parts.length > 0 ? ` (${parts.join(", ")})` : ""}`,
+    amount: 0,
+    basis: row.basis,
+    basisOnly: true,
+    internal: false,
+  };
+}
+
 /** `sliceOf`: the authored account a death carved this one out of — a
  *  synthetic id has no name of its own, so it takes its origin's. */
 function buildBlock(id: string, ledger: AccountLedger, ctx: AssetLedgerContext, sliceOf?: string): AssetAccountBlock {
   const basisBoY = ledger.basisBoY ?? 0;
   const basisEoY = ledger.basisEoY ?? 0;
 
-  const entryRows: AssetRow[] = ledger.entries.map((e) => ({
-    category: e.category,
-    label: e.label,
-    amount: e.amount,
-    basis: e.basis ?? 0,
-    counterpartyName: e.counterpartyId
-      ? (ctx.accountNames[e.counterpartyId] ?? ctx.entityNames[e.counterpartyId])
-      : undefined,
-    sourceId: e.sourceId,
-    internal: e.isInternalTransfer ?? false,
-  }));
+  const entryRows: AssetRow[] = ledger.entries.flatMap((e) => {
+    const row: AssetRow = {
+      category: e.category,
+      label: e.label,
+      amount: e.amount,
+      basis: e.basis ?? 0,
+      counterpartyName: e.counterpartyId
+        ? (ctx.accountNames[e.counterpartyId] ?? ctx.entityNames[e.counterpartyId])
+        : undefined,
+      sourceId: e.sourceId,
+      internal: e.isInternalTransfer ?? false,
+    };
+    const realized = realizedBasisRow(row, ledger, ctx.accountCategories[id]);
+    return realized ? [{ ...row, basis: 0 }, realized] : [row];
+  });
 
   const boyRow: AssetRow = {
     category: "bookend",

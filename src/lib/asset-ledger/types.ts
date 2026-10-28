@@ -16,6 +16,9 @@ export interface AssetRow {
   counterpartyName?: string;
   /** True for synthesized Beginning/End-of-Year bookend rows. */
   bookend?: boolean;
+  /** True for a row that moves only basis (amount 0) — realized growth on a
+   *  taxable account. Its Amount cell renders blank. */
+  basisOnly?: boolean;
   sourceId?: string;
   /** True for the source/target legs of pure portfolio-to-portfolio transfers. */
   internal: boolean;
