@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { PresentationsLauncher } from "../launcher";
 import { draftKey } from "@/components/presentations/launcher/use-launcher-draft";
 import { OBSERVATIONS_PAGE_OPTIONS_DEFAULT } from "@/lib/presentations/pages/observations-next-steps/options-schema";
@@ -98,6 +99,36 @@ describe("PresentationsLauncher", () => {
       (screen.getByRole("button", { name: /Generate PDF/i }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
+  });
+
+  // A page's Options dialog renders inside its draggable row. A press on a
+  // label or a gap in the dialog used to bubble up and drag the whole page —
+  // the dialog flew off with it, and letting go reordered the deck.
+  it("a drag that starts inside a page's Options dialog never drags the page behind it", async () => {
+    render(
+      <PresentationsLauncher
+        clientId="c1"
+        currentUserId="me"
+        clientLastName="Sample"
+        householdId="hh-test"
+        scenarios={[]}
+        snapshots={[]}
+        initialTemplates={{ shared: [], mine: [], builtIn: [], builtInHidden: [] }}
+        investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Options for Cover Sheet" }));
+    const dialog = await screen.findByRole("dialog");
+    const pageRow = dialog.closest<HTMLElement>('[aria-roledescription="sortable"]')!;
+    const user = userEvent.setup();
+    await user.pointer([
+      { keys: "[MouseLeft>]", target: dialog, coords: { clientX: 10, clientY: 10 } },
+      { target: dialog, coords: { clientX: 10, clientY: 40 } },
+      { target: dialog, coords: { clientX: 10, clientY: 90 } },
+    ]);
+    // dnd-kit marks the row it is dragging aria-pressed.
+    expect(pageRow).not.toHaveAttribute("aria-pressed");
+    await user.pointer({ keys: "[/MouseLeft]", target: dialog, coords: { clientX: 10, clientY: 90 } });
   });
 
   it("opens a per-report preview that POSTs preview=true with a single page", async () => {

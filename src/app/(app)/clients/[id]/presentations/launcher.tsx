@@ -255,7 +255,7 @@ export function PresentationsLauncher(props: Props) {
   const [previewRequest, setPreviewRequest] = useState<PreviewRequest | null>(null);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(PageRowSensor, { activationConstraint: { distance: 5 } }),
   );
 
   const handleDragEnd = useCallback(
@@ -830,6 +830,18 @@ export function PresentationsLauncher(props: Props) {
     </div>
     </PresentationOptionsProvider>
   );
+}
+
+/** A page's Options dialog renders inside its row, so a press anywhere in the
+ *  dialog bubbled up to the row's drag listener — dragging a label or a gap in
+ *  the dialog dragged the whole page, dialog and all. Presses inside a dialog
+ *  are the dialog's. */
+class PageRowSensor extends PointerSensor {
+  static activators = PointerSensor.activators.map((activator) => ({
+    ...activator,
+    handler: (...args: Parameters<typeof activator.handler>) =>
+      !(args[0].target as Element).closest('[role="dialog"]') && activator.handler(...args),
+  }));
 }
 
 function SortableRow({
