@@ -228,14 +228,14 @@ describe("GuidedTrustFundingStep", () => {
       render(<Host start={start} wills={[jordanWill]} />);
       await openBequest(user);
       // The existing all-assets item competes with the one being built.
-      expect(screen.getByText(/this trust shares it|another clause leaving everything/)).toBeInTheDocument();
+      expect(screen.getByText(/Gifts listed above this one/)).toBeInTheDocument();
     });
 
     it("shows no conflict note for the first bequest on an empty will", async () => {
       const user = userEvent.setup();
       render(<Host married={false} />);
       await openBequest(user);
-      expect(screen.queryByText(/this trust shares it|another clause|get nothing/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Gifts listed above this one|get nothing/)).not.toBeInTheDocument();
     });
   });
 
