@@ -13,7 +13,7 @@ ALTER TABLE "will_bequests" ADD CONSTRAINT "will_bequests_kind_shape_check" CHEC
     AND (("asset_mode" = 'specific' AND "account_id" IS NOT NULL) OR ("asset_mode" = 'all_assets' AND "account_id" IS NULL)))
   OR ("kind"::text = 'liability' AND "asset_mode" IS NULL AND "account_id" IS NULL AND "liability_id" IS NOT NULL
     AND "condition" = 'always' AND "dollar_source" IS NULL AND NOT "fallback_to_estate")
-  OR ("kind"::text = 'dollar' AND "asset_mode" IS NULL AND "entity_id" IS NULL AND "liability_id" IS NULL
+  OR ("kind"::text = 'dollar' AND "asset_mode" IS NULL AND "entity_id" IS NULL AND "liability_id" IS NULL AND "dollar_source" IS NOT NULL
     AND (("dollar_source"::text = 'estate' AND "account_id" IS NULL AND NOT "fallback_to_estate")
          OR "dollar_source"::text = 'account'))
 );--> statement-breakpoint

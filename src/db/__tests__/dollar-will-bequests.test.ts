@@ -139,6 +139,13 @@ describe("dollar will bequests", () => {
     );
   });
 
+  it("rejects a dollar gift with no source", async () => {
+    await rejectsWithConstraint(
+      db.insert(willBequests).values(dollar({ dollarSource: null, accountId: null, sortOrder: 10 })),
+      "will_bequests_kind_shape_check",
+    );
+  });
+
   async function freshBequest(sortOrder: number) {
     const [b] = await db.insert(willBequests).values(dollar({ sortOrder })).returning();
     return b.id;
