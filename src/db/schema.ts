@@ -4365,6 +4365,12 @@ export const willRecipientKindEnum = pgEnum("will_recipient_kind", [
 export const willBequestKindEnum = pgEnum("will_bequest_kind", [
   "asset",
   "liability",
+  "dollar",
+]);
+
+export const willDollarSourceEnum = pgEnum("will_dollar_source", [
+  "estate",
+  "account",
 ]);
 
 export const willResiduaryTierEnum = pgEnum("will_residuary_tier", [
@@ -4400,8 +4406,10 @@ export const willBequests = pgTable(
     name: text("name").notNull(),
     kind: willBequestKindEnum("kind").notNull(),
     assetMode: willAssetModeEnum("asset_mode"),
+    // set null (not cascade): deleting the named account keeps a dollar gift;
+    // the accounts_drop_percentage_will_gifts trigger removes percentage gifts.
     accountId: uuid("account_id").references(() => accounts.id, {
-      onDelete: "cascade",
+      onDelete: "set null",
     }),
     entityId: uuid("entity_id").references(() => entities.id, {
       onDelete: "cascade",
@@ -4409,6 +4417,8 @@ export const willBequests = pgTable(
     liabilityId: uuid("liability_id").references(() => liabilities.id, {
       onDelete: "cascade",
     }),
+    dollarSource: willDollarSourceEnum("dollar_source"),
+    fallbackToEstate: boolean("fallback_to_estate").notNull().default(false),
     percentage: numeric("percentage", { precision: 5, scale: 2 }).notNull(),
     condition: willConditionEnum("condition").notNull(),
     sortOrder: integer("sort_order").notNull(),
@@ -4430,7 +4440,8 @@ export const willBequestRecipients = pgTable("will_bequest_recipients", {
     .references(() => willBequests.id, { onDelete: "cascade" }),
   recipientKind: willRecipientKindEnum("recipient_kind").notNull(),
   recipientId: uuid("recipient_id"),
-  percentage: numeric("percentage", { precision: 5, scale: 2 }).notNull(),
+  percentage: numeric("percentage", { precision: 5, scale: 2 }),
+  amount: numeric("amount", { precision: 14, scale: 2 }),
   sortOrder: integer("sort_order").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
