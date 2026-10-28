@@ -33,6 +33,10 @@ import {
   planningKbChunks,
   forgeConversations,
   integrationConnections,
+  workspaceConnections,
+  workspaceFirmApprovals,
+  workspaceMemberAccess,
+  workspaceOauthStates,
   advisorProfiles,
   advisorOnboarding,
   complianceExportBatches,
@@ -277,6 +281,11 @@ export async function purgeFirmById(firmId: string): Promise<void> {
   await db.delete(staffAdvisorVisibility).where(eq(staffAdvisorVisibility.firmId, firmId));
   await db.delete(integrationOauthStates).where(eq(integrationOauthStates.firmId, firmId));
   await db.delete(integrationSyncRuns).where(eq(integrationSyncRuns.firmId, firmId));
+  // Workspace (Microsoft 365): workspace_connections holds encrypted refresh tokens.
+  await db.delete(workspaceConnections).where(eq(workspaceConnections.firmId, firmId));
+  await db.delete(workspaceFirmApprovals).where(eq(workspaceFirmApprovals.firmId, firmId));
+  await db.delete(workspaceMemberAccess).where(eq(workspaceMemberAccess.firmId, firmId));
+  await db.delete(workspaceOauthStates).where(eq(workspaceOauthStates.firmId, firmId));
   await db.delete(intakeForms).where(eq(intakeForms.firmId, firmId));
   await db.delete(intakeEmailSettings).where(eq(intakeEmailSettings.firmId, firmId));
   await db.delete(opsEntitlementOverrides).where(eq(opsEntitlementOverrides.firmId, firmId));

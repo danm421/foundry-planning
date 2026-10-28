@@ -23,6 +23,10 @@ const mocks = vi.hoisted(() => ({
   deleteStaffAdvisorVisibility: vi.fn(),
   deleteIntegrationOauthStates: vi.fn(),
   deleteIntegrationSyncRuns: vi.fn(),
+  deleteWorkspaceConnections: vi.fn(),
+  deleteWorkspaceFirmApprovals: vi.fn(),
+  deleteWorkspaceMemberAccess: vi.fn(),
+  deleteWorkspaceOauthStates: vi.fn(),
   deleteIntakeForms: vi.fn(),
   deleteIntakeEmailSettings: vi.fn(),
   deleteOpsEntitlementOverrides: vi.fn(),
@@ -101,6 +105,10 @@ vi.mock("@/db", async () => {
           if (tbl === s.staffAdvisorVisibility) return mocks.deleteStaffAdvisorVisibility();
           if (tbl === s.integrationOauthStates) return mocks.deleteIntegrationOauthStates();
           if (tbl === s.integrationSyncRuns) return mocks.deleteIntegrationSyncRuns();
+          if (tbl === s.workspaceConnections) return mocks.deleteWorkspaceConnections();
+          if (tbl === s.workspaceFirmApprovals) return mocks.deleteWorkspaceFirmApprovals();
+          if (tbl === s.workspaceMemberAccess) return mocks.deleteWorkspaceMemberAccess();
+          if (tbl === s.workspaceOauthStates) return mocks.deleteWorkspaceOauthStates();
           if (tbl === s.intakeForms) return mocks.deleteIntakeForms();
           if (tbl === s.intakeEmailSettings) return mocks.deleteIntakeEmailSettings();
           if (tbl === s.opsEntitlementOverrides) return mocks.deleteOpsEntitlementOverrides();
@@ -424,6 +432,10 @@ describe("purgeFirmById", () => {
       integration_connections: mocks.deleteIntegrationConnection,
       integration_oauth_states: mocks.deleteIntegrationOauthStates,
       integration_sync_runs: mocks.deleteIntegrationSyncRuns,
+      workspace_connections: mocks.deleteWorkspaceConnections,
+      workspace_firm_approvals: mocks.deleteWorkspaceFirmApprovals,
+      workspace_member_access: mocks.deleteWorkspaceMemberAccess,
+      workspace_oauth_states: mocks.deleteWorkspaceOauthStates,
       intake_forms: mocks.deleteIntakeForms,
       intake_email_settings: mocks.deleteIntakeEmailSettings,
       ops_entitlement_overrides: mocks.deleteOpsEntitlementOverrides,
