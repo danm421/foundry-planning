@@ -29,6 +29,7 @@ import { controllingEntity } from "@/engine/ownership";
 import { buildAccountRows, loadAccountMetaRows, linkedStatusMapFrom } from "@/lib/accounts/load-account-rows";
 import { linkedStatusOf } from "@/lib/accounts/linked-source";
 import { categoryDefaultRates } from "@/lib/investments/category-default-rates";
+import { realizationMixOf } from "@/lib/investments/realization-mix";
 import { planSettingsEngineToFormProps, savingsRuleEngineToView } from "@/lib/scenario/view-adapters";
 import { buildIncomeRows } from "@/lib/balance-sheet/build-income-rows";
 import {
@@ -158,6 +159,7 @@ export async function loadNetWorthViewProps(
     name: ac.name,
     slug: ac.slug,
     geometricReturn: parseFloat(ac.geometricReturn),
+    ...realizationMixOf(ac),
   }));
 
   const portfolioAllocationsMap: Record<string, { assetClassId: string; weight: number }[]> = {};

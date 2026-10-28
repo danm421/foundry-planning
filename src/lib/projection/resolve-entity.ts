@@ -181,56 +181,43 @@ export function resolveAccountFromRaw(
     if (catSource === "asset_mix") effectiveSource = "asset_mix";
   }
 
+  // The account's own realization overrides and turnover, laid over the mix its
+  // growth source supplies — Plan default included, so an override set on an
+  // account that follows the plan's default portfolio is not silently dropped.
+  const withOverrides = (p: { pctOi: number; pctLtcg: number; pctQdiv: number; pctTaxEx: number }) => ({
+    pctOrdinaryIncome: raw.overridePctOi != null ? parseFloat(raw.overridePctOi) : p.pctOi,
+    pctLtCapitalGains: raw.overridePctLtCg != null ? parseFloat(raw.overridePctLtCg) : p.pctLtcg,
+    pctQualifiedDividends: raw.overridePctQdiv != null ? parseFloat(raw.overridePctQdiv) : p.pctQdiv,
+    pctTaxExempt: raw.overridePctTaxExempt != null ? parseFloat(raw.overridePctTaxExempt) : p.pctTaxEx,
+    turnoverPct: parseFloat(raw.turnoverPct ?? "0"),
+  });
+
   if (effectiveSource === "inflation") {
     growthRate = resolvedInflationRate;
   } else if (effectiveSource === "model_portfolio" && raw.modelPortfolioId) {
     const p = resolver.resolvePortfolio(raw.modelPortfolioId);
     growthRate = p.geoReturn;
-    realization = {
-      pctOrdinaryIncome:
-        raw.overridePctOi != null ? parseFloat(raw.overridePctOi) : p.pctOi,
-      pctLtCapitalGains:
-        raw.overridePctLtCg != null ? parseFloat(raw.overridePctLtCg) : p.pctLtcg,
-      pctQualifiedDividends:
-        raw.overridePctQdiv != null ? parseFloat(raw.overridePctQdiv) : p.pctQdiv,
-      pctTaxExempt:
-        raw.overridePctTaxExempt != null ? parseFloat(raw.overridePctTaxExempt) : p.pctTaxEx,
-      turnoverPct: parseFloat(raw.turnoverPct ?? "0"),
-    };
+    realization = withOverrides(p);
   } else if (effectiveSource === "ticker_portfolio" && raw.tickerPortfolioId) {
     const p = resolver.resolveTickerPortfolio(raw.tickerPortfolioId);
     growthRate = p.geoReturn;
-    realization = {
-      pctOrdinaryIncome:
-        raw.overridePctOi != null ? parseFloat(raw.overridePctOi) : p.pctOi,
-      pctLtCapitalGains:
-        raw.overridePctLtCg != null ? parseFloat(raw.overridePctLtCg) : p.pctLtcg,
-      pctQualifiedDividends:
-        raw.overridePctQdiv != null ? parseFloat(raw.overridePctQdiv) : p.pctQdiv,
-      pctTaxExempt:
-        raw.overridePctTaxExempt != null ? parseFloat(raw.overridePctTaxExempt) : p.pctTaxEx,
-      turnoverPct: parseFloat(raw.turnoverPct ?? "0"),
-    };
+    realization = withOverrides(p);
   } else if (effectiveSource === "asset_mix") {
     const resolved = resolver.resolveAccountMix(raw.id);
     growthRate = resolved.geoReturn;
-    realization = {
-      pctOrdinaryIncome:
-        raw.overridePctOi != null ? parseFloat(raw.overridePctOi) : resolved.pctOi,
-      pctLtCapitalGains:
-        raw.overridePctLtCg != null ? parseFloat(raw.overridePctLtCg) : resolved.pctLtcg,
-      pctQualifiedDividends:
-        raw.overridePctQdiv != null ? parseFloat(raw.overridePctQdiv) : resolved.pctQdiv,
-      pctTaxExempt:
-        raw.overridePctTaxExempt != null ? parseFloat(raw.overridePctTaxExempt) : resolved.pctTaxEx,
-      turnoverPct: parseFloat(raw.turnoverPct ?? "0"),
-    };
+    realization = withOverrides(resolved);
   } else if (effectiveSource === "custom" && raw.growthRate != null) {
     growthRate = n(raw.growthRate);
   } else {
     const catDefault = resolver.resolveCategoryDefault(raw.category);
     growthRate = catDefault.rate;
-    realization = catDefault.realization;
+    const r = catDefault.realization;
+    realization = r && withOverrides({
+      pctOi: r.pctOrdinaryIncome,
+      pctLtcg: r.pctLtCapitalGains,
+      pctQdiv: r.pctQualifiedDividends,
+      pctTaxEx: r.pctTaxExempt,
+    });
   }
 
   if (raw.category === "cash") {

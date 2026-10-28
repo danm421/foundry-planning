@@ -64,7 +64,7 @@ describe("Account dialog → holdings-derived value and basis", () => {
         initial={BROKERAGE}
         familyMembers={[{ id: "fm-client", role: "client", firstName: "Alice" }]}
         entities={[]}
-        assetClasses={[{ id: "ac-eq", name: "US Equity", slug: "us-equity", geometricReturn: 0.07 }]}
+        assetClasses={[{ id: "ac-eq", name: "US Equity", slug: "us-equity", geometricReturn: 0.07, pctOrdinaryIncome: 0, pctQualifiedDividends: 0, pctLtCapitalGains: 1, pctTaxExempt: 0 }]}
       />,
     );
 

@@ -3,8 +3,10 @@
 import { useState } from "react";
 
 import { inputCompactClassName } from "./input-styles";
+import type { RealizationMix } from "@/lib/investments/realization-mix";
 
-export interface AssetClassOption {
+/** `RealizationMix` is the class's tax split, read by the Realization tab. */
+export interface AssetClassOption extends RealizationMix {
   id: string;
   name: string;
   slug: string | null;

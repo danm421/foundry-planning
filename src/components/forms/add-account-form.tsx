@@ -4,6 +4,8 @@ import { useState, useEffect, useRef, useMemo, useCallback, forwardRef, useImper
 import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { AssetMixTab, type AssetClassOption } from "./asset-mix-tab";
+import { RealizationTab } from "./realization-tab";
+import { blendRealization } from "@/lib/investments/realization-mix";
 import { BasePlanOnly } from "@/components/base-plan-only";
 import { scenarioAccountEditFields } from "@/lib/accounts/scenario-account-fields";
 import { HoldingsTab } from "./holdings-tab";
@@ -1088,6 +1090,34 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
 
   // Resolve category default info for display
   const catDefaultSource = categoryDefaultSources?.[growthCategory];
+
+  // The mix the Realization tab's blank boxes follow — the same source
+  // `resolveAccountFromRaw` reads. Null for a flat custom or inflation rate,
+  // which the projection never splits into income and gains.
+  const realizationSource = useMemo(() => {
+    if (!assetClasses || growthSource === "inflation" || growthSource === "custom") return null;
+    const blend = (allocs: readonly { assetClassId: string; weight: number }[] | undefined) =>
+      blendRealization(allocs ?? [], assetClasses);
+    if (growthSource === "asset_mix" || (growthSource === "default" && catDefaultSource?.source === "asset_mix")) {
+      return { label: "this account's asset mix", mix: blend(customAllocations) };
+    }
+    if (growthSource === "model_portfolio" && modelPortfolioId) {
+      const name = modelPortfolios?.find((mp) => mp.id === modelPortfolioId)?.name ?? "the model portfolio";
+      return { label: name, mix: blend(portfolioAllocationsMap?.[modelPortfolioId]) };
+    }
+    if (growthSource === "ticker_portfolio" && tickerPortfolioId) {
+      const fp = fundPortfolios?.find((p) => p.id === tickerPortfolioId);
+      return fp ? { label: fp.name, mix: blend(fp.allocations) } : null;
+    }
+    // Plan default — also where a portfolio choice left blank falls back.
+    if (catDefaultSource?.source === "model_portfolio" && catDefaultSource.portfolioId) {
+      return {
+        label: `${catDefaultSource.portfolioName ?? "the plan's default portfolio"} (plan default)`,
+        mix: blend(portfolioAllocationsMap?.[catDefaultSource.portfolioId]),
+      };
+    }
+    return null;
+  }, [assetClasses, growthSource, catDefaultSource, customAllocations, modelPortfolioId, modelPortfolios, portfolioAllocationsMap, tickerPortfolioId, fundPortfolios]);
 
   useEffect(() => {
     if (allocationsLoaded) return;
@@ -3156,56 +3186,28 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
 
       )}
 
-      {/* Realization tab — taxable and retirement accounts */}
+      {/* Realization tab — taxable accounts */}
       {!lockTab && category === "taxable" && (
         <div className={activeTab === "realization" ? "" : "hidden"}>
-          <div className="space-y-4">
-            <p className="text-xs text-ink-3">
-              How growth is realized for tax purposes. Leave blank to inherit from the model portfolio.
-            </p>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={fieldLabelClassName}>Ordinary Income %</label>
-                <PercentInput name="overridePctOi"
-                  value={overridePctOi}
-                  onChange={(raw) => setOverridePctOi(raw)}
-                  placeholder="From portfolio"
-                  className={inputClassName} />
-              </div>
-              <div>
-                <label className={fieldLabelClassName}>LT Capital Gains %</label>
-                <PercentInput name="overridePctLtCg"
-                  value={overridePctLtCg}
-                  onChange={(raw) => setOverridePctLtCg(raw)}
-                  placeholder="From portfolio"
-                  className={inputClassName} />
-              </div>
-              <div>
-                <label className={fieldLabelClassName}>Qualified Dividends %</label>
-                <PercentInput name="overridePctQdiv"
-                  value={overridePctQdiv}
-                  onChange={(raw) => setOverridePctQdiv(raw)}
-                  placeholder="From portfolio"
-                  className={inputClassName} />
-              </div>
-              <div>
-                <label className={fieldLabelClassName}>Tax-Exempt %</label>
-                <PercentInput name="overridePctTaxExempt"
-                  value={overridePctTaxExempt}
-                  onChange={(raw) => setOverridePctTaxExempt(raw)}
-                  placeholder="From portfolio"
-                  className={inputClassName} />
-              </div>
-              <div>
-                <label className={fieldLabelClassName}>Turnover %</label>
-                <PercentInput name="turnoverPct"
-                  value={turnoverPct}
-                  onChange={(raw) => setTurnoverPct(raw)}
-                  className={inputClassName} />
-                <p className="mt-1 text-xs text-ink-3">Portion of LT CG realized as short-term each year.</p>
-              </div>
-            </div>
-          </div>
+          <RealizationTab
+            source={realizationSource}
+            overrides={{
+              pctOrdinaryIncome: overridePctOi,
+              pctQualifiedDividends: overridePctQdiv,
+              pctLtCapitalGains: overridePctLtCg,
+              pctTaxExempt: overridePctTaxExempt,
+            }}
+            onOverrideChange={(key, raw) =>
+              ({
+                pctOrdinaryIncome: setOverridePctOi,
+                pctQualifiedDividends: setOverridePctQdiv,
+                pctLtCapitalGains: setOverridePctLtCg,
+                pctTaxExempt: setOverridePctTaxExempt,
+              })[key](raw)
+            }
+            turnoverPct={turnoverPct}
+            onTurnoverChange={setTurnoverPct}
+          />
         </div>
       )}
 

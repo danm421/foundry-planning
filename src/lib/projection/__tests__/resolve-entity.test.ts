@@ -724,3 +724,82 @@ describe("resolveAccountFromRaw — annuity growth", () => {
     expect(acct.growthRate).toBeCloseTo(0.06, 10);
   });
 });
+
+describe("resolveAccountFromRaw — Plan default realization overrides", () => {
+  /** Taxable's Plan default is a model portfolio that realizes 20% ordinary
+   *  income, 60% long-term gains, 20% qualified dividends. */
+  function ctxWithTaxableDefaultPortfolio(): ResolutionContext {
+    const resolver = createGrowthSourceResolver({
+      planSettings: {
+        growthSourceTaxable: "model_portfolio",
+        growthSourceCash: "default",
+        growthSourceRetirement: "default",
+        growthSourceRealEstate: "default",
+        growthSourceBusiness: "default",
+        growthSourceLifeInsurance: "default",
+        modelPortfolioIdTaxable: "mp-1",
+        modelPortfolioIdCash: null,
+        modelPortfolioIdRetirement: null,
+        defaultGrowthTaxable: "0.07",
+        defaultGrowthCash: "0.02",
+        defaultGrowthRetirement: "0.06",
+        defaultGrowthRealEstate: "0.04",
+        defaultGrowthBusiness: "0.05",
+        defaultGrowthLifeInsurance: "0.03",
+        inflationAssetClassId: null,
+      },
+      assetClasses: [
+        {
+          id: "ac-1",
+          geometricReturn: "0.06",
+          pctOrdinaryIncome: "0.2",
+          pctLtCapitalGains: "0.6",
+          pctQualifiedDividends: "0.2",
+          pctTaxExempt: "0",
+        },
+      ],
+      modelPortfolios: [{ id: "mp-1" }],
+      modelPortfolioAllocations: [{ portfolioId: "mp-1", assetClassId: "ac-1", weight: "1" }],
+      accountAssetAllocations: [],
+      clientCmaOverrides: [],
+    });
+    return {
+      resolver,
+      resolvedInflationRate: 0.025,
+      beneficiariesByAccountId: new Map(),
+      policiesByAccount: {},
+      ownersByAccountId: new Map(),
+    };
+  }
+
+  const onPlanDefault = {
+    ...baseRawAccount,
+    id: "a-default",
+    name: "Brokerage",
+    category: "taxable" as const,
+    subType: "brokerage",
+    value: "100000",
+    basis: "100000",
+    growthSource: "default",
+    growthRate: null,
+  };
+
+  it("uses the default portfolio's mix when nothing is overridden", () => {
+    const acct = resolveAccountFromRaw(onPlanDefault, ctxWithTaxableDefaultPortfolio());
+    expect(acct.realization?.pctOrdinaryIncome).toBeCloseTo(0.2, 10);
+    expect(acct.realization?.pctLtCapitalGains).toBeCloseTo(0.6, 10);
+    expect(acct.realization?.turnoverPct).toBe(0);
+  });
+
+  it("applies the account's overrides and turnover on top of the default portfolio", () => {
+    const acct = resolveAccountFromRaw(
+      { ...onPlanDefault, overridePctOi: "0.05", overridePctLtCg: "0.75", turnoverPct: "0.1" },
+      ctxWithTaxableDefaultPortfolio(),
+    );
+    expect(acct.realization?.pctOrdinaryIncome).toBeCloseTo(0.05, 10);
+    expect(acct.realization?.pctLtCapitalGains).toBeCloseTo(0.75, 10);
+    // Not overridden — still the portfolio's.
+    expect(acct.realization?.pctQualifiedDividends).toBeCloseTo(0.2, 10);
+    expect(acct.realization?.turnoverPct).toBeCloseTo(0.1, 10);
+  });
+});

@@ -5,11 +5,11 @@ import { HoldingOverrideEditor } from "../holding-override-editor";
 import type { HoldingRow } from "@/lib/investments/holdings-client";
 
 const ASSET_CLASSES = [
-  { id: "ac-lc", name: "US Large Cap", slug: "us_large_cap", geometricReturn: 0.07 },
-  { id: "ac-sc", name: "US Small Cap", slug: "us_small_cap", geometricReturn: 0.08 },
-  { id: "ac-em", name: "Emerging Markets", slug: "emerging_markets", geometricReturn: 0.08 },
-  { id: "ac-tips", name: "TIPS", slug: "tips", geometricReturn: 0.02 },
-  { id: "ac-cash", name: "Cash", slug: "cash", geometricReturn: 0 },
+  { id: "ac-lc", name: "US Large Cap", slug: "us_large_cap", geometricReturn: 0.07, pctOrdinaryIncome: 0, pctQualifiedDividends: 0, pctLtCapitalGains: 1, pctTaxExempt: 0 },
+  { id: "ac-sc", name: "US Small Cap", slug: "us_small_cap", geometricReturn: 0.08, pctOrdinaryIncome: 0, pctQualifiedDividends: 0, pctLtCapitalGains: 1, pctTaxExempt: 0 },
+  { id: "ac-em", name: "Emerging Markets", slug: "emerging_markets", geometricReturn: 0.08, pctOrdinaryIncome: 0, pctQualifiedDividends: 0, pctLtCapitalGains: 1, pctTaxExempt: 0 },
+  { id: "ac-tips", name: "TIPS", slug: "tips", geometricReturn: 0.02, pctOrdinaryIncome: 0, pctQualifiedDividends: 0, pctLtCapitalGains: 1, pctTaxExempt: 0 },
+  { id: "ac-cash", name: "Cash", slug: "cash", geometricReturn: 0, pctOrdinaryIncome: 0, pctQualifiedDividends: 0, pctLtCapitalGains: 1, pctTaxExempt: 0 },
 ];
 
 function holding(over: Partial<HoldingRow> = {}): HoldingRow {

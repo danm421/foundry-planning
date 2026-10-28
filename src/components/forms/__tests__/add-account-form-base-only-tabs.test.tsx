@@ -45,8 +45,8 @@ const ANNUITY: AccountFormInitial = {
 };
 
 const ASSET_CLASSES = [
-  { id: "ac-eq", name: "US Equity", slug: "us-equity", geometricReturn: 0.07 },
-  { id: "ac-inf", name: "Inflation", slug: "inflation", geometricReturn: 0.025 },
+  { id: "ac-eq", name: "US Equity", slug: "us-equity", geometricReturn: 0.07, pctOrdinaryIncome: 0, pctQualifiedDividends: 0, pctLtCapitalGains: 1, pctTaxExempt: 0 },
+  { id: "ac-inf", name: "Inflation", slug: "inflation", geometricReturn: 0.025, pctOrdinaryIncome: 0, pctQualifiedDividends: 0, pctLtCapitalGains: 1, pctTaxExempt: 0 },
 ];
 
 const STORED_CONTRACT = {

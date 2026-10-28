@@ -8,6 +8,9 @@ export interface FundPortfolioOption {
   id: string;
   name: string;
   blendedReturnPct: number | null;
+  /** Asset-class look-through weights (0–1) — the account form blends its
+   *  realization split from them. */
+  allocations: { assetClassId: string; weight: number }[];
 }
 
 /** Firm's fund portfolios as growth-source dropdown options, each with a
@@ -37,9 +40,13 @@ export async function loadFundPortfolioOptions(firmId: string): Promise<FundPort
     rowsByPortfolio.set(r.tickerPortfolioId, list);
   }
 
-  return portfolios.map((p) => ({
-    id: p.id,
-    name: p.name,
-    blendedReturnPct: tickerPortfolioBlendedReturnPct(rowsByPortfolio.get(p.id) ?? [], assetClassReturns),
-  }));
+  return portfolios.map((p) => {
+    const allocations = rowsByPortfolio.get(p.id) ?? [];
+    return {
+      id: p.id,
+      name: p.name,
+      blendedReturnPct: tickerPortfolioBlendedReturnPct(allocations, assetClassReturns),
+      allocations,
+    };
+  });
 }

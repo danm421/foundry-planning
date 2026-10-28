@@ -8,6 +8,7 @@ import type {
   SavingsRuleView,
 } from "@/lib/scenario/view-adapters";
 import type { AccountRow } from "@/components/balance-sheet-view";
+import type { AssetClassOption } from "@/components/forms/asset-mix-tab";
 import type { GrowthContext } from "@/lib/investments/growth-context";
 import type { AccountPatch } from "@/lib/inline-edit/account-write";
 import type { CategoryDefaultRateMap } from "@/lib/investments/category-default-rates";
@@ -326,7 +327,7 @@ export interface HouseholdMapProps {
   // dialog: `geometricReturn` and `weight` are PARSED numbers, and the asset
   // class carries its `slug`. The plan's snippet had all three as raw Drizzle
   // strings without the slug, which `AddAccountDialog` rejects.
-  assetClassOptions: { id: string; name: string; slug: string | null; geometricReturn: number }[];
+  assetClassOptions: AssetClassOption[];
   portfolioAllocationsMap: Record<string, { assetClassId: string; weight: number }[]>;
   /** The portfolio NAME backing each category's default, for the dialog's
    *  "Plan default" label. Derived from `growthContext.categoryDefaults`, which

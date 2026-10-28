@@ -228,7 +228,7 @@ describe("AddAccountForm — edit hydration roundtrip", () => {
 
 describe("AddAccountForm — Holdings tab on a new account", () => {
   const ASSET_CLASSES = [
-    { id: "ac-1", name: "US Large Cap", slug: "us_large_cap", geometricReturn: 0.07 },
+    { id: "ac-1", name: "US Large Cap", slug: "us_large_cap", geometricReturn: 0.07, pctOrdinaryIncome: 0, pctQualifiedDividends: 0, pctLtCapitalGains: 1, pctTaxExempt: 0 },
   ];
 
   it("creates the account when the Holdings tab is opened before any save", async () => {
@@ -1227,7 +1227,7 @@ describe("AddAccountForm — an annuity picks its growth like an investable acco
         familyMembers={FAMILY_MEMBERS}
         entities={[]}
         modelPortfolios={[{ id: "mp-1", name: "Moderate", blendedReturn: 0.062 }]}
-        fundPortfolios={[{ id: "tp-1", name: "Core Four", blendedReturnPct: 5.9 }]}
+        fundPortfolios={[{ id: "tp-1", name: "Core Four", blendedReturnPct: 5.9, allocations: [] }]}
         categoryDefaults={CATEGORY_DEFAULTS}
         resolvedInflationRate={0.025}
       />,
@@ -1637,5 +1637,92 @@ describe("AddAccountForm — margin loan group", () => {
         familyMembers={FAMILY_MEMBERS} entities={[]} categoryDefaults={CATEGORY_DEFAULTS} milestones={MILESTONES} />);
       expect(screen.queryByText(MARGIN_REPAY_AFTER_BORROW_MESSAGE)).toBeNull();
     });
+  });
+});
+
+// ── Realization tab: shows the portfolio's split, overrides it per row ────────
+
+describe("AddAccountForm — Realization tab", () => {
+  // Plan default for taxable is "Balanced": 50/50 bonds and stocks.
+  const ASSET_CLASSES = [
+    { id: "ac-bond", name: "Bonds", slug: "bonds", geometricReturn: 0.04, pctOrdinaryIncome: 0.8, pctQualifiedDividends: 0, pctLtCapitalGains: 0.2, pctTaxExempt: 0 },
+    { id: "ac-stock", name: "Stocks", slug: "stocks", geometricReturn: 0.08, pctOrdinaryIncome: 0, pctQualifiedDividends: 0.2, pctLtCapitalGains: 0.8, pctTaxExempt: 0 },
+  ];
+
+  function renderTaxable() {
+    render(
+      <AddAccountForm
+        clientId="client-123"
+        category="taxable"
+        mode="create"
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+        assetClasses={ASSET_CLASSES}
+        modelPortfolios={[{ id: "mp-bal", name: "Balanced", blendedReturn: 0.06 }]}
+        portfolioAllocationsMap={{
+          "mp-bal": [
+            { assetClassId: "ac-bond", weight: 0.5 },
+            { assetClassId: "ac-stock", weight: 0.5 },
+          ],
+        }}
+        categoryDefaultSources={{
+          taxable: { source: "model_portfolio", portfolioId: "mp-bal", portfolioName: "Balanced", blendedReturn: 0.06 },
+        }}
+        initialTab="realization"
+      />,
+    );
+  }
+
+  it("shows the plan-default portfolio's split, with blank boxes following it", () => {
+    renderTaxable();
+    expect(screen.getByText("Balanced (plan default)")).toBeInTheDocument();
+    const oi = screen.getByLabelText("Ordinary income") as HTMLInputElement;
+    expect(oi.value).toBe("");
+    expect(oi.placeholder).toBe("40.00");
+    expect((screen.getByLabelText("Long-term capital gains") as HTMLInputElement).placeholder).toBe("50.00");
+    expect(screen.queryByRole("button", { name: /^Reset/ })).toBeNull();
+  });
+
+  it("overrides one row, flags a total off 100%, and resets back to the portfolio", () => {
+    renderTaxable();
+    const oi = screen.getByLabelText("Ordinary income") as HTMLInputElement;
+    fireEvent.change(oi, { target: { value: "30" } });
+
+    expect(oi.value).toBe("30");
+    expect(screen.getByText("These add to 90.00%. They should total 100%.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset ordinary income to the portfolio's figure" }));
+    expect(oi.value).toBe("");
+    expect(screen.queryByText(/They should total 100%/)).toBeNull();
+  });
+
+  it("explains a flat-rate account has no yearly split instead of showing the table", () => {
+    render(
+      <AddAccountForm
+        clientId="client-123"
+        category="taxable"
+        mode="edit"
+        initial={{
+          id: "acct-flat",
+          name: "Brokerage",
+          category: "taxable",
+          subType: "brokerage",
+          owner: "client",
+          value: "100000",
+          basis: "100000",
+          growthRate: "0.05",
+          growthSource: "custom",
+          overridePctOi: "0.1",
+        }}
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+        assetClasses={ASSET_CLASSES}
+        initialTab="realization"
+      />,
+    );
+    expect(screen.getByText(/grows at a flat rate/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Ordinary income")).toBeNull();
+    // The stored override rides along hidden, so a save does not wipe it.
+    expect((document.querySelector('input[name="overridePctOi"]') as HTMLInputElement).value).toBe("10.00");
   });
 });

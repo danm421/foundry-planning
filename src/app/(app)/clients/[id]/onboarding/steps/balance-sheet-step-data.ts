@@ -20,6 +20,7 @@ import { treeMilestones } from "@/lib/milestones";
 import { resolveInflationRate } from "@/lib/inflation";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { buildIncomeRows } from "@/lib/balance-sheet/build-income-rows";
+import { realizationMixOf } from "@/lib/investments/realization-mix";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 import { inheritedIraRowFields } from "@/lib/accounts/inherited-ira";
 
@@ -116,6 +117,7 @@ export async function loadBalanceSheetStepData(clientId: string, firmId: string)
     name: ac.name,
     slug: ac.slug,
     geometricReturn: parseFloat(ac.geometricReturn),
+    ...realizationMixOf(ac),
   }));
 
   const portfolioAllocationsMap: Record<string, { assetClassId: string; weight: number }[]> = {};

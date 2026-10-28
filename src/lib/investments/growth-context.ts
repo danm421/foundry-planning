@@ -23,7 +23,7 @@ export interface GrowthContext {
   fundPortfolios: FundPortfolioOption[];
   resolvedInflationRate: number; // decimal
   /** Keyed by account category (taxable/cash/retirement). */
-  categoryDefaults: Record<string, { portfolioName: string | null; blendedReturnPct: number | null }>;
+  categoryDefaults: Record<string, { portfolioId?: string; portfolioName: string | null; blendedReturnPct: number | null }>;
 }
 
 /**
@@ -89,6 +89,7 @@ export async function loadImportGrowthContext(
     if (!mpId) return { portfolioName: null, blendedReturnPct: null };
     const blended = blendedById.get(mpId);
     return {
+      portfolioId: mpId,
       portfolioName: nameById.get(mpId) ?? null,
       blendedReturnPct: blended != null ? Math.round(blended * 10000) / 100 : null,
     };

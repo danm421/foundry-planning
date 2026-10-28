@@ -38,6 +38,7 @@ import { isHydratableExpense, isHydratableIncome } from "@/lib/household-map/map
 import { isSocialSecurityIncome } from "@/lib/household-map/social-security";
 import { buildFlowScenarioFields } from "@/lib/inline-edit/flow-write";
 import { pruneScenarioFields } from "@/lib/inline-edit/scenario-fields";
+import { realizationMixOf } from "@/lib/investments/realization-mix";
 import type { Expense, Income, SavingsRule } from "@/engine/types";
 import HouseholdMapView from "@/components/household-map/household-map-view";
 
@@ -299,6 +300,7 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
     name: ac.name,
     slug: ac.slug,
     geometricReturn: parseFloat(ac.geometricReturn),
+    ...realizationMixOf(ac),
   }));
 
   const portfolioAllocationsMap: Record<string, { assetClassId: string; weight: number }[]> = {};
@@ -322,6 +324,7 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
     categoryDefaultSources[category] = d.portfolioName
       ? {
           source: "model_portfolio",
+          portfolioId: d.portfolioId,
           portfolioName: d.portfolioName,
           blendedReturn: d.blendedReturnPct != null ? d.blendedReturnPct / 100 : undefined,
         }
