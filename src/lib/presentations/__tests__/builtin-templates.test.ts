@@ -39,8 +39,8 @@ describe("built-in templates", () => {
   it("Foundation Plan has the expected 9-page sequence", () => {
     const fp = BUILTIN_TEMPLATES.find((t) => t.slug === "foundation-plan")!;
     expect(fp.pages.map((p) => p.pageId)).toEqual([
-      "cover", "toc", "clientProfile", "balanceSheet", "assetAllocation",
-      "retirementSummary", "taxSummary", "lifeInsuranceSummary", "estateSummary",
+      "cover", "toc", "clientProfile", "balanceSheetReport", "solverCashFlow",
+      "assetAllocation", "retirementSummary", "taxSummary", "estateSummary",
     ]);
   });
 

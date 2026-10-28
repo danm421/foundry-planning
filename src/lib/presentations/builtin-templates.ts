@@ -39,14 +39,14 @@ export const BUILTIN_TEMPLATES: readonly BuiltInTemplate[] = [
       page("cover", { title: "" }),
       page("toc"),
       page("clientProfile"),
-      // asOf:"today" is portable; year/portfolio come from defaults (no frozen 2026).
-      page("balanceSheet", { asOf: "today", includeOutOfEstate: false }),
+      // Defaults print the household view as of today (no frozen year).
+      page("balanceSheetReport"),
+      // year:null prints the first plan year, whatever year the deck is run.
+      page("solverCashFlow"),
       // default has no firm-specific portfolio reference (drops the captured UUID).
       page("assetAllocation"),
       page("retirementSummary"),
       page("taxSummary", { lowThreshold: 0.22, highThreshold: 0.24 }),
-      // default solves per-client; captured deathYear:2045 was an arbitrary snapshot.
-      page("lifeInsuranceSummary"),
       page("estateSummary", { ordering: "primaryFirst" }),
     ],
   },
