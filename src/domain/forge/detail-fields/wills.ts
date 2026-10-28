@@ -161,7 +161,7 @@ export const WILLS_ENTITIES: readonly DetailEntity[] = [
         required: false,
         nullable: true,
         notes:
-          "Only accepted when kind='asset'. Must be set (and mutually exclusive with entityId) when assetMode='specific'; must be null when assetMode='all_assets'. Cross-referenced server-side against this client's `accounts` — a 400 (\"One or more accountIds do not belong to this client\") if it doesn't resolve. The picker (src/components/bequest-dialog/index.tsx) additionally hides accounts already 100%-owned by an entity, and accounts with category 'retirement' or 'life_insurance' (those transfer by beneficiary designation, not the will) — Forge should avoid targeting those categories even though the server doesn't itself reject them by category.",
+          "Accepted when kind='asset' or kind='dollar'. kind='dollar': the account the gift is paid from — set it when dollarSource='account' (null there means the named account was deleted: the gift pays nothing, or pays from cash & brokerage when fallbackToEstate is true); null or omitted when dollarSource='estate' (defaults to null). A new or changed dollar source must be a cash or taxable account not wholly owned by trusts or businesses (400 dollar_bequest_source_not_cash / dollar_bequest_source_entity_owned); a gift re-saved with the source it already has on the will is not re-checked. kind='asset': must be set (and mutually exclusive with entityId) when assetMode='specific'; must be null when assetMode='all_assets'. Cross-referenced server-side against this client's `accounts` — a 400 (\"One or more accountIds do not belong to this client\") if it doesn't resolve. The picker (src/components/bequest-dialog/index.tsx) additionally hides accounts already 100%-owned by an entity, and accounts with category 'retirement' or 'life_insurance' (those transfer by beneficiary designation, not the will) — Forge should avoid targeting those categories even though the server doesn't itself reject them by category.",
       },
       {
         key: "entityId",
@@ -189,7 +189,7 @@ export const WILLS_ENTITIES: readonly DetailEntity[] = [
         enumValues: ["estate", "account"],
         required: false,
         notes:
-          "Required when kind='dollar', otherwise omit. 'estate' = \"Estate (what's left at this point)\": the dollars come from cash and brokerage accounts left after the gifts above this one in the list. 'account' = one named cash or brokerage account, given in accountId. Dollar gifts are never paid from retirement, real estate, business or other accounts.",
+          "Required when kind='dollar', otherwise omit. 'estate' = \"Estate — cash & brokerage\": the dollars come from the cash and brokerage left after the gifts above this one in the list. 'account' = one named cash or brokerage account, given in accountId. Dollar gifts are never paid from retirement, real estate, business or other accounts.",
       },
       {
         key: "fallbackToEstate",
@@ -233,7 +233,7 @@ export const WILLS_ENTITIES: readonly DetailEntity[] = [
         kind: "array",
         required: true,
         notes:
-          "Non-empty (min 1) for both kinds. Each item has the shape of the `will_bequest_recipients` entity below. Sum-of-percentage rule differs by this bequest's kind: kind='asset' → recipient percentages must sum to exactly 100 (±0.01). kind='liability' → sum must be >0 and ≤100.01, with room left over (\"falls to estate creditor-payoff\" per the UI). Liability bequests also restrict recipientKind to 'family_member' or 'entity' only — 'spouse' and 'external_beneficiary' are rejected by willBequestLiabilitySchema's superRefine for a debt bequest even though they're valid for asset bequests and residuary recipients.",
+          "Non-empty (min 1) for every kind. Each item has the shape of the `will_bequest_recipients` entity below, except a kind='dollar' gift's: each of those carries `amount` (dollars, > 0) instead of `percentage`, with no sum rule. Sum-of-percentage rule differs by this bequest's kind: kind='asset' → recipient percentages must sum to exactly 100 (±0.01). kind='liability' → sum must be >0 and ≤100.01, with room left over (\"falls to estate creditor-payoff\" per the UI). Liability bequests also restrict recipientKind to 'family_member' or 'entity' only — 'spouse' and 'external_beneficiary' are rejected by willBequestLiabilitySchema's superRefine for a debt bequest even though they're valid for asset bequests and residuary recipients.",
       },
     ],
   },

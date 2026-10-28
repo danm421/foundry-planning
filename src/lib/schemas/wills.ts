@@ -141,7 +141,8 @@ export const willBequestDollarSchema = z
     kind: z.literal("dollar"),
     name: z.string().trim().min(1).max(200),
     dollarSource: z.enum(["estate", "account"]),
-    accountId: uuidSchema.nullable(),
+    // Omitted = null, so an estate-source gift needn't send it.
+    accountId: uuidSchema.nullable().default(null),
     fallbackToEstate: z.boolean().default(false),
     assetMode: z.null().optional(),
     entityId: z.null().optional(),

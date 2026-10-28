@@ -469,6 +469,14 @@ describe("dollar bequests", () => {
     if (r.success) expect("percentage" in r.data).toBe(false);
   });
 
+  it("an estate-source gift may leave accountId out: it defaults to null", () => {
+    const withoutAccount: Record<string, unknown> = { ...dollarGift };
+    delete withoutAccount.accountId;
+    const r = willBequestSchema.safeParse(withoutAccount);
+    expect(r.success).toBe(true);
+    if (r.success && r.data.kind === "dollar") expect(r.data.accountId).toBeNull();
+  });
+
   it("accepts a named-account gift whose account was deleted (account, accountId null)", () => {
     const r = willBequestSchema.safeParse({
       ...dollarGift,
