@@ -171,7 +171,7 @@ describe("F2 — survivor recipientId on death-event ledger", () => {
     });
   });
 
-  describe("will bequest with recipientKind=spouse — applyWillSpecificBequests", () => {
+  describe("will bequest with recipientKind=spouse — applyWillGiftShares", () => {
     it("primaryFirst: specific bequest to spouse routes recipientId to surviving spouse FM id", () => {
       const will = willToSpouse("client", "acc-sole");
       const result = applyFirstDeath(

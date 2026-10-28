@@ -7,9 +7,8 @@ import {
   applyFallback,
   applyIncomeTermination,
   applyTitling,
-  applyWillAllAssetsResidual,
+  applyWillGiftShares,
   applyWillResiduary,
-  applyWillSpecificBequests,
   computeSteppedUpBasis,
   distributeFirstDeathUnlinkedLiabilities,
   drainableShareAtDeath,
@@ -19,9 +18,11 @@ import {
   partitionGiftedLiabilities,
   routeAtDeath,
   runPourOut,
+  type ChainSlot,
   type DeathEventInput,
   type DeathEventResult,
 } from "./shared";
+import { allocateWillGifts } from "./will-gifts";
 import { controllingEntity, isFullyEntityOwned, ownedByHousehold, controllingFamilyMember } from "../ownership";
 import { seedMarginLoan, withLiveMargin } from "../margin";
 import {
@@ -117,6 +118,9 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
   // Build a per-will map for quick lookups. Only the deceased's will matters.
   const deceasedWill: Will | null = will && will.grantor === deceased ? will : null;
 
+  // Pass 1 — titling and beneficiary designations, account by account. Every
+  // account gets a slot in its original order; nothing is folded in yet.
+  const slots: ChainSlot[] = [];
   for (const acct of accounts) {
     // Top-level business accounts: applyBusinessSuccession owns the
     // consolidated transfer; running them through the chain too would
@@ -130,7 +134,7 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
       acct.parentAccountId == null &&
       deceasedFmId != null
     ) {
-      nextAccounts.push(acct);
+      slots.push({ kind: "keep", accounts: [acct] });
       continue;
     }
 
@@ -144,7 +148,7 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
     // isHeirOwned: sole FM owner is not a household principal (already distributed to heir)
     const isHeirOwned = cfm != null && cfm !== deceasedFmId && cfm !== survivorFmId;
     if (!touchedByDeceased || isFullyEntityOwned(acct) || isHeirOwned) {
-      nextAccounts.push(acct);
+      slots.push({ kind: "keep", accounts: [acct] });
       continue;
     }
 
@@ -185,14 +189,8 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
       // the gift overlay still resolves the account wholly to its recipients
       // on every gift-aware read. (The final death needs none of this — no
       // survivor, and the projection ends there.)
-      nextAccounts.push(moveDecedentRowToSurvivor(acct, deceasedFmId, survivorFmId));
+      slots.push({ kind: "keep", accounts: [moveDecedentRowToSurvivor(acct, deceasedFmId, survivorFmId)] });
       continue;
-    }
-    for (const slice of route.entitySlices) {
-      nextAccounts.push(slice);
-      nextAccountBalances[slice.id] = slice.value;
-      nextBasisMap[slice.id] = slice.basis;
-      seedMarginLoan(nextMarginMap, slice, nextShareMap);
     }
     const routedAcct = route.account;
     const routedBalance = route.balance;
@@ -213,7 +211,6 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
 
     // Track remaining undisposed fraction for this account.
     let undisposed = 1; // always 100% of the deceased's share goes through the chain
-    let anySpecificClauseTouched = false;
     const stepAccts: Account[] = [];
     const stepLiabs: Liability[] = [];
     const stepLedger: Array<Omit<DeathTransfer, "year" | "deceased" | "deathOrder">> = [];
@@ -242,33 +239,56 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
       }
     }
 
-    // Step 3a: Specific bequests
-    if (undisposed > 1e-9 && deceasedWill) {
-      const step3a = applyWillSpecificBequests(
-        effectiveAcct, undisposed, deceasedWill, 1, survivor, survivorFmId,
-        familyMembers, externalBeneficiaries, entities, linkedLiability,
-      );
-      if (step3a.fractionClaimed > 0) {
-        stepAccts.push(...step3a.resultingAccounts);
-        stepLiabs.push(...step3a.resultingLiabilities);
-        stepLedger.push(...step3a.ledgerEntries);
-        undisposed -= step3a.fractionClaimed;
-        anySpecificClauseTouched = true;
-        warnings.push(...step3a.warnings);
-      }
+    slots.push({
+      kind: "route", acct, entitySlices: route.entitySlices, effectiveAcct, linkedLiability,
+      undisposed, stepAccts, stepLiabs, stepLedger,
+    });
+  }
+
+  // Pass 2 — the will's gifts, top to bottom across everything the will
+  // still governs.
+  const giftShares = deceasedWill
+    ? allocateWillGifts(
+        slots.flatMap((s) =>
+          s.kind === "route" && s.undisposed > 1e-9
+            ? [{
+                accountId: s.acct.id,
+                category: s.effectiveAcct.category,
+                value: s.effectiveAcct.value,
+                undisposed: s.undisposed,
+              }]
+            : [],
+        ),
+        deceasedWill, 1, survivorFmId,
+      )
+    : [];
+
+  // Pass 3 — fold every account back in, in its original order.
+  for (const slot of slots) {
+    if (slot.kind === "keep") {
+      nextAccounts.push(...slot.accounts);
+      continue;
+    }
+    const { acct, effectiveAcct, linkedLiability, stepAccts, stepLiabs, stepLedger } = slot;
+    let { undisposed } = slot;
+    for (const slice of slot.entitySlices) {
+      nextAccounts.push(slice);
+      nextAccountBalances[slice.id] = slice.value;
+      nextBasisMap[slice.id] = slice.basis;
+      seedMarginLoan(nextMarginMap, slice, nextShareMap);
     }
 
-    // Step 3b: all_assets residual (only if no specific clause touched this account)
+    // Step 3: the will's gifts on this account
     if (undisposed > 1e-9 && deceasedWill) {
-      const step3b = applyWillAllAssetsResidual(
-        effectiveAcct, undisposed, anySpecificClauseTouched, deceasedWill, 1, survivor, survivorFmId,
+      const step3 = applyWillGiftShares(
+        effectiveAcct, giftShares.filter((g) => g.accountId === acct.id), survivor, survivorFmId,
         familyMembers, externalBeneficiaries, entities, linkedLiability,
       );
-      if (step3b.fractionClaimed > 0) {
-        stepAccts.push(...step3b.resultingAccounts);
-        stepLiabs.push(...step3b.resultingLiabilities);
-        stepLedger.push(...step3b.ledgerEntries);
-        undisposed -= step3b.fractionClaimed;
+      if (step3.fractionClaimed > 0) {
+        stepAccts.push(...step3.resultingAccounts);
+        stepLiabs.push(...step3.resultingLiabilities);
+        stepLedger.push(...step3.ledgerEntries);
+        undisposed -= step3.fractionClaimed;
       }
     }
 

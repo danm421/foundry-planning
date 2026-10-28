@@ -5,6 +5,7 @@ import type { FilingStatus } from "../../lib/tax/types";
 import type { AccountOwner } from "../ownership";
 import { controllingEntity, controllingFamilyMember, giftAwareLiabilityOwners, giftAwareOwners, isFullyEntityOwned, ownedByHousehold } from "../ownership";
 import { OTHER_HEIRS_LABEL, OTHER_HEIRS_SINK } from "../other-heirs";
+import type { WillGiftShare } from "./will-gifts";
 
 /** Compute the year of the first-death event. Returns null when there is no
  *  spouse, when no lifeExpectancy is set, or when the earliest death falls
@@ -640,6 +641,28 @@ export interface StepResult {
   fractionClaimed: number;
 }
 
+/** One account's place in a death chain. The chain first records every account
+ *  in order — passed through untouched (`keep`), or routed through titling and
+ *  designations (`route`) — so the will's gifts can be paid across the whole
+ *  estate before each account is folded back in, in its original position. */
+export type ChainSlot =
+  | { kind: "keep"; accounts: Account[] }
+  | {
+      kind: "route";
+      /** The account as it came in; its id keys the maps the fold rewrites. */
+      acct: Account;
+      /** Entity-owned slices peeled off a mixed account, retained as they are. */
+      entitySlices: Account[];
+      /** The routed share at its death balance, basis stepped up. */
+      effectiveAcct: Account;
+      linkedLiability: Liability | undefined;
+      /** Fraction of `effectiveAcct` titling and designations left for the will. */
+      undisposed: number;
+      stepAccts: Account[];
+      stepLiabs: Liability[];
+      stepLedger: Array<Omit<DeathTransfer, "year" | "deceased" | "deathOrder">>;
+    };
+
 export interface ExternalBeneficiarySummary {
   id: string;
   name: string;
@@ -1075,87 +1098,34 @@ function resolveRecipientLabelAndMutation(
   };
 }
 
-/** Step 3a: specific-asset bequests for this account. Over-allocation
- *  (specifics summing >100% of the undisposed remainder) is pro-rated and a
- *  warning is emitted. Returns fractionClaimed + warnings. */
-export function applyWillSpecificBequests(
+/** Step 3: the will's gifts on one account — its shares from
+ *  `allocateWillGifts`, which already paid the whole will top to bottom.
+ *  `consumed` means the shares took the whole account; the chain gates on its
+ *  own `undisposed`, which this step never sees. */
+export function applyWillGiftShares(
   source: Account,
-  undisposedFraction: number,
-  will: Will,
-  deathOrder: 1 | 2,
+  shares: WillGiftShare[],
   survivor: "client" | "spouse" | null,
   survivorFmId: string | null,
   familyMembers: FamilyMember[],
   externals: ExternalBeneficiarySummary[],
   entities: EntitySummary[],
   linkedLiability: Liability | undefined,
-): StepResult & { warnings: string[] } {
-  const specifics = will.bequests.filter(
-    (b) =>
-      b.kind === "asset" &&
-      b.assetMode === "specific" &&
-      b.accountId === source.id &&
-      firesAtDeath(b, deathOrder),
-  );
-
-  // Shared "this clause claims nothing" result — the account flows on to the
-  // residuary / fallback steps untouched.
-  const notFired = (
-    warnings: string[],
-  ): StepResult & { warnings: string[] } => ({
-    consumed: false,
-    resultingAccounts: [],
-    resultingLiabilities: [],
-    ledgerEntries: [],
-    fractionClaimed: 0,
-    warnings,
+): StepResult {
+  const splitShares: SplitShare[] = shares.map(({ fraction, recipient: r }) => {
+    const { ownerMutation, removed, ...recipient } =
+      resolveRecipientLabelAndMutation(r, survivor, survivorFmId, familyMembers, externals, entities);
+    return {
+      fraction,
+      removed: removed || undefined,
+      ownerMutation,
+      ledgerMeta: { via: "will", ...recipient },
+    };
   });
 
-  if (specifics.length === 0) {
-    return notFired([]);
-  }
-
-  // Compute per-bequest fractions (of the source account total). Over-
-  // allocation (sum > 1) pro-rates.
-  const bequestFractions = specifics.map(
-    (b) => undisposedFraction * (b.percentage / 100),
-  );
-  const rawTotal = bequestFractions.reduce((s, f) => s + f, 0);
-  const warnings: string[] = [];
-  let scale = 1;
-  if (rawTotal > undisposedFraction + 1e-9) {
-    warnings.push(`over_allocation_in_will:${source.id}`);
-    scale = undisposedFraction / rawTotal;
-  }
-  const scaledBequestFractions = bequestFractions.map((f) => f * scale);
-
-  // Flatten into per-recipient shares. Lapsed recipients (spouse-named with no
-  // surviving spouse) are skipped so their share falls through to the next step.
-  const shares: SplitShare[] = [];
-  specifics.forEach((b, i) => {
-    const bFrac = scaledBequestFractions[i];
-    b.recipients.forEach((r) => {
-      if (recipientHasLapsed(r, survivorFmId)) return;
-      const rFrac = bFrac * (r.percentage / 100);
-      const { ownerMutation, removed, ...recipient } =
-        resolveRecipientLabelAndMutation(r, survivor, survivorFmId, familyMembers, externals, entities);
-      shares.push({
-        fraction: rFrac,
-        removed: removed || undefined,
-        ownerMutation,
-        ledgerMeta: { via: "will", ...recipient },
-      });
-    });
-  });
-
-  const totalClaimed = shares.reduce((s, sh) => s + sh.fraction, 0);
-
-  // A specific clause with no effective allocation — every matching bequest
-  // resolved to zero recipients (e.g. the distribution dialog cleared them) or
-  // zero percentages — claims nothing. Treat it as not-fired, rather than
-  // dividing by zero when normalizing shares below.
+  const totalClaimed = splitShares.reduce((s, sh) => s + sh.fraction, 0);
   if (totalClaimed < 1e-9) {
-    return notFired(warnings);
+    return empty();
   }
 
   // Scale source + liability down to `totalClaimed` and normalize shares to sum=1.
@@ -1167,87 +1137,12 @@ export function applyWillSpecificBequests(
         monthlyPayment: linkedLiability.monthlyPayment * totalClaimed,
       }
     : undefined;
-  const normalized = shares.map((sh) => ({ ...sh, fraction: sh.fraction / totalClaimed }));
+  const normalized = splitShares.map((sh) => ({ ...sh, fraction: sh.fraction / totalClaimed }));
 
   const split = splitAccount(scaledSource, normalized, scaledLiability);
 
   return {
-    consumed: Math.abs(totalClaimed - undisposedFraction) < 1e-9,
-    resultingAccounts: split.resultingAccounts,
-    resultingLiabilities: split.resultingLiabilities,
-    ledgerEntries: split.ledgerEntries,
-    fractionClaimed: totalClaimed,
-    warnings,
-  };
-}
-
-/** Step 3b: "all other assets" residual. Fires ONLY when no specific clause
- *  in this will touched this account. Sweeps the full undisposed remainder
- *  across the all_assets clauses' recipients. Multiple all_assets clauses
- *  (rare) split the residual among themselves per their own percentages. */
-export function applyWillAllAssetsResidual(
-  source: Account,
-  undisposedFraction: number,
-  accountTouchedBySpecific: boolean,
-  will: Will,
-  deathOrder: 1 | 2,
-  survivor: "client" | "spouse" | null,
-  survivorFmId: string | null,
-  familyMembers: FamilyMember[],
-  externals: ExternalBeneficiarySummary[],
-  entities: EntitySummary[],
-  linkedLiability: Liability | undefined,
-): StepResult {
-  if (accountTouchedBySpecific) {
-    return empty();
-  }
-  const allAssets = will.bequests.filter(
-    (b) => b.kind === "asset" && b.assetMode === "all_assets" && firesAtDeath(b, deathOrder),
-  );
-  if (allAssets.length === 0) {
-    return empty();
-  }
-
-  // Distribute undisposedFraction across all_assets clauses by their percentage.
-  const weights = allAssets.map((b) => b.percentage);
-  const weightSum = weights.reduce((s, w) => s + w, 0);
-
-  const shares: SplitShare[] = [];
-  allAssets.forEach((b, i) => {
-    const clauseFraction = undisposedFraction * (weights[i] / weightSum);
-    b.recipients.forEach((r) => {
-      if (recipientHasLapsed(r, survivorFmId)) return;
-      const rFrac = clauseFraction * (r.percentage / 100);
-      const { ownerMutation, removed, ...recipient } =
-        resolveRecipientLabelAndMutation(r, survivor, survivorFmId, familyMembers, externals, entities);
-      shares.push({
-        fraction: rFrac,
-        removed: removed || undefined,
-        ownerMutation,
-        ledgerMeta: { via: "will", ...recipient },
-      });
-    });
-  });
-
-  const totalClaimed = shares.reduce((s, sh) => s + sh.fraction, 0);
-  // Every all_assets recipient lapsed — the residual falls through to step 3c
-  // / step 4 rather than disappearing into a divide-by-zero normalization.
-  if (totalClaimed < 1e-9) {
-    return empty();
-  }
-  const scaledSource: Account = scaleAccountValue(source, totalClaimed);
-  const scaledLiability: Liability | undefined = linkedLiability
-    ? {
-        ...linkedLiability,
-        balance: linkedLiability.balance * totalClaimed,
-        monthlyPayment: linkedLiability.monthlyPayment * totalClaimed,
-      }
-    : undefined;
-  const normalized = shares.map((sh) => ({ ...sh, fraction: sh.fraction / totalClaimed }));
-  const split = splitAccount(scaledSource, normalized, scaledLiability);
-
-  return {
-    consumed: Math.abs(totalClaimed - undisposedFraction) < 1e-9,
+    consumed: Math.abs(totalClaimed - 1) < 1e-9,
     resultingAccounts: split.resultingAccounts,
     resultingLiabilities: split.resultingLiabilities,
     ledgerEntries: split.ledgerEntries,
@@ -1268,12 +1163,12 @@ export function selectResiduaryTier(
 }
 
 /** Step 3c: residuary ("remainder estate") clause. Fires on whatever fraction
- *  of the account the specific + all_assets bequests left undisposed, routing
- *  it to the will's residuary recipients for the governing `tier`. An empty
- *  tier claims nothing — the account flows on to the fallback cascade.
- *  Mirrors applyWillAllAssetsResidual's share-building + scale/normalize/split
- *  pattern; only the recipient source (residuaryRecipients vs all_assets
- *  bequests) and the ledger `via` tag differ. */
+ *  of the account the will's gifts left undisposed, routing it to the will's
+ *  residuary recipients for the governing `tier`. An empty tier claims
+ *  nothing — the account flows on to the fallback cascade. Mirrors
+ *  applyWillGiftShares's share-building + scale/normalize/split pattern; only
+ *  the recipient source (residuaryRecipients vs gift shares) and the ledger
+ *  `via` tag differ. */
 export function applyWillResiduary(
   source: Account,
   undisposedFraction: number,

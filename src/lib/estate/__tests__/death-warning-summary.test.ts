@@ -54,13 +54,6 @@ describe("summarizeDeathWarnings", () => {
     expect(notes[0].message).toContain("1 asset has");
   });
 
-  it("translates over_allocation_in_will", () => {
-    const notes = summarizeDeathWarnings(["over_allocation_in_will:acct-2"], names);
-    expect(notes[0].key).toBe("over_allocation_in_will");
-    expect(notes[0].message).toContain("more than 100%");
-    expect(notes[0].items).toEqual(["Schwab Ind. Account"]);
-  });
-
   it("translates life_insurance_no_beneficiaries", () => {
     const notes = summarizeDeathWarnings(
       ["life_insurance_no_beneficiaries:pol-1"],
@@ -106,14 +99,14 @@ describe("summarizeDeathWarnings", () => {
     expect(notes[0].items).toEqual([]);
   });
 
-  it("orders notes: residual, over-allocation, then the rest", () => {
+  it("orders notes: residual first, then the rest", () => {
     const notes = summarizeDeathWarnings(
-      ["over_allocation_in_will:acct-1", "residual_fallback_fired:acct-2"],
+      ["life_insurance_no_beneficiaries:pol-1", "residual_fallback_fired:acct-2"],
       names,
     );
     expect(notes.map((n) => n.key)).toEqual([
       "residual_fallback_fired",
-      "over_allocation_in_will",
+      "life_insurance_no_beneficiaries",
     ]);
   });
 
