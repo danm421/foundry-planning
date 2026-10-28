@@ -120,7 +120,7 @@ export function willBequestRecord(
       percentage: Number(b.percentage),
       recipients: recipients
         .filter((r) => r.recipientKind !== "other_heirs")
-        .map((r) => {
+        .map((r): PlacedValue => {
           const who = refs.recipient(r.recipientKind, r.recipientId, grantor);
           return b.kind === "dollar" ? { who, amount: Number(r.amount) } : { who, percentage: Number(r.percentage) };
         }),
