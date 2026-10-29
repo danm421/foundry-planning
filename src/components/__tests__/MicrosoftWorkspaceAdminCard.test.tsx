@@ -220,6 +220,48 @@ describe("MicrosoftWorkspaceAdminCard — approved", () => {
     expect(fetchMock.mock.calls[0][0]).toBe("/api/workspace/microsoft/members/access-all");
   });
 
+  it("says so once Turn on for everyone has saved, and where advisors connect", async () => {
+    fetchMock.mockReturnValue(ok({ enabled: 4 }));
+    render(<MicrosoftWorkspaceAdminCard approval={APPROVAL} members={MEMBERS} flash={null} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Turn on for everyone" }));
+
+    expect((await screen.findByRole("status")).textContent).toBe(
+      "Microsoft 365 is on for everyone. Each advisor connects their own Outlook from Workspace.",
+    );
+  });
+
+  it("Turn on for everyone can't be pressed once everyone is on", () => {
+    const allOn = MEMBERS.map((m) => ({ ...m, enabled: true }));
+    const { rerender } = render(
+      <MicrosoftWorkspaceAdminCard approval={APPROVAL} members={MEMBERS} flash={null} />,
+    );
+    expect(screen.getByRole("button", { name: "Turn on for everyone" })).toBeEnabled();
+
+    rerender(<MicrosoftWorkspaceAdminCard approval={APPROVAL} members={allOn} flash={null} />);
+    expect(screen.getByRole("button", { name: "Turn on for everyone" })).toBeDisabled();
+  });
+
+  it("drops the on-for-everyone note at the next change", async () => {
+    fetchMock.mockReturnValue(ok());
+    const { rerender } = render(
+      <MicrosoftWorkspaceAdminCard approval={APPROVAL} members={MEMBERS} flash={null} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Turn on for everyone" }));
+    await screen.findByText(/on for everyone\./);
+
+    fireEvent.click(screen.getByRole("switch", { name: /Dana Whitfield/ }));
+    expect(screen.queryByText(/on for everyone\./)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Turn on for everyone" }));
+    await screen.findByText(/on for everyone\./);
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect Microsoft 365" }));
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(3));
+    rerender(<MicrosoftWorkspaceAdminCard approval={null} members={[]} flash={null} />);
+    expect(screen.queryByText(/on for everyone\./)).toBeNull();
+  });
+
   it("asks for confirmation before disconnecting, naming Entra", async () => {
     fetchMock.mockReturnValue(ok());
     render(<MicrosoftWorkspaceAdminCard approval={APPROVAL} members={MEMBERS} flash={null} />);

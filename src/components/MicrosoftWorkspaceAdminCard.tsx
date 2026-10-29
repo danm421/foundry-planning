@@ -27,6 +27,7 @@ const BASE = "/api/workspace/microsoft";
 /** This card's page, without the flash's `?approved=1` / `?error=consent_*`. */
 const PAGE_PATH = "/settings/integrations/microsoft_365";
 const LINK_COPIED = "Link copied — it works once and expires in 7 days.";
+const ALL_ON = "Microsoft 365 is on for everyone. Each advisor connects their own Outlook from Workspace.";
 
 const FLASH_COPY: Record<Exclude<Flash, null>, string> = {
   approved: "Microsoft 365 is approved. Now choose which advisors get it.",
@@ -159,6 +160,7 @@ export function MicrosoftWorkspaceAdminCard({ approval, members, flash }: Props)
 
   async function toggle(m: Member, next: boolean) {
     setError(null);
+    setNotice(null);
     setPending((s) => ({ ...s, [m.userId]: next }));
     setSaving((s) => ({ ...s, [m.userId]: true }));
     try {
@@ -176,9 +178,12 @@ export function MicrosoftWorkspaceAdminCard({ approval, members, flash }: Props)
   async function turnOnAll() {
     setBusy("all");
     setError(null);
+    setNotice(null);
     try {
       const res = await post("members/access-all");
       if (!res.ok) throw new Error();
+      // The only change on screen may be one switch, so say it worked.
+      setNotice(ALL_ON);
       router.refresh();
     } catch {
       setError("Couldn't turn Microsoft 365 on for everyone. Try again.");
@@ -190,6 +195,7 @@ export function MicrosoftWorkspaceAdminCard({ approval, members, flash }: Props)
   async function disconnect() {
     setBusy("disconnect");
     setError(null);
+    setNotice(null);
     try {
       const res = await post("disconnect");
       if (!res.ok) throw new Error();
@@ -231,13 +237,18 @@ export function MicrosoftWorkspaceAdminCard({ approval, members, flash }: Props)
               <h2 className="text-sm font-medium text-ink">Advisors</h2>
               <button
                 type="button"
-                className="btn-ghost text-sm"
+                className="btn-ghost text-sm disabled:cursor-not-allowed disabled:opacity-50"
                 onClick={turnOnAll}
-                disabled={busy === "all"}
+                disabled={busy === "all" || members.every((m) => pending[m.userId] ?? m.enabled)}
               >
                 Turn on for everyone
               </button>
             </div>
+            {notice ? (
+              <p role="status" className="border-b border-hair px-4 py-2 text-sm text-ink-3">
+                {notice}
+              </p>
+            ) : null}
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-hair text-left font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">
