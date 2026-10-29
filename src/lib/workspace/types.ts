@@ -16,7 +16,16 @@ export type IdTokenClaims = {
   email: string;
 };
 
-export type WorkspaceProvider = "microsoft";
+export type WorkspaceProvider = "microsoft" | "google";
+
+/** One connected account as the Workspace screen lists it (no tokens). */
+export type AccountSummary = {
+  id: string;
+  provider: WorkspaceProvider;
+  email: string;
+  status: "connected" | "needs_reconnect";
+  connectedAt: string; // ISO
+};
 
 /** One person's state for a provider, as the firm roster shows it. */
 export type MemberStatus = "off" | "not_connected" | "connected" | "needs_reconnect";

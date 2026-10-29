@@ -459,6 +459,7 @@ export type AuditAction =
   | "workspace.firm_disconnect"
   | "workspace.member_access"
   | "workspace.connect"
+  | "workspace.admin_disconnect"
   | "workspace.disconnect" // an advisor dropped their own Microsoft connection
   | "workspace.event_create"
   | "workspace.event_move"

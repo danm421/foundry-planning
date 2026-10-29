@@ -21,7 +21,7 @@ export class WorkspaceReconnectRequiredError extends Error {
   }
 }
 
-const PROVIDER_NAME: Record<WorkspaceProvider, string> = { microsoft: "Microsoft" };
+const PROVIDER_NAME: Record<WorkspaceProvider, string> = { microsoft: "Microsoft", google: "Google" };
 
 /**
  * The provider kept answering 429/503/504 after our retries. "The provider is

@@ -32,6 +32,7 @@ const conn: WorkspaceConnection = {
   scope: "Calendars.ReadWrite",
   status: "connected",
   lastError: null,
+  connectedAt: new Date("2026-01-01T00:00:00Z"),
 };
 
 function json(body?: unknown, status = 200): Response {

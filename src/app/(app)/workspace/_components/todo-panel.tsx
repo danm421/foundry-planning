@@ -33,6 +33,8 @@ const NOTICE = "mb-3 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-
 const CHIP =
   "ml-1.5 inline-block rounded-full border border-hair-2 px-1.5 align-[1px] font-mono text-[9px] uppercase leading-[1.5] tracking-[0.08em] text-ink-3";
 
+const SOURCE_LABEL: Record<TodoItem["source"], string> = { microsoft: "Outlook", google: "Google", foundry: "Foundry" };
+
 const todoUrl = (o: { listId: string; taskId: string }) =>
   `/api/workspace/todos/${encodeURIComponent(o.listId)}/${encodeURIComponent(o.taskId)}`;
 
@@ -334,7 +336,7 @@ function TodoRow({
               {item.title}
             </button>
           )}
-          <span className={CHIP}>{item.source === "microsoft" ? "Outlook" : "Foundry"}</span>
+          <span className={CHIP}>{SOURCE_LABEL[item.source]}</span>
         </p>
         {item.meta || item.dueDate ? (
           <p className="mt-0.5 text-[11px] text-ink-3">

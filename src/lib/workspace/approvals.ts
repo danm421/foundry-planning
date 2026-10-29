@@ -25,10 +25,9 @@ export async function getFirmApproval(
 }
 
 /**
- * An advisor's sign-in belongs to the tenant the firm approved, so a
- * re-approval from a DIFFERENT tenant drops the firm's advisor connections in
- * the same write; they sign in again against the new tenant. The access
- * switches are the firm's own choice and survive.
+ * Re-approving from a different tenant leaves advisors' connections alone:
+ * advisors now sign in from any organization, so a connection is not tied to
+ * the firm's approved tenant.
  */
 export async function upsertFirmApproval(input: {
   firmId: string;
@@ -38,16 +37,6 @@ export async function upsertFirmApproval(input: {
   approvedByUserId: string;
 }): Promise<void> {
   await db.transaction(async (tx) => {
-    const [existing] = await tx
-      .select({ tenantId: workspaceFirmApprovals.tenantId })
-      .from(workspaceFirmApprovals)
-      .where(and(eq(workspaceFirmApprovals.firmId, input.firmId), eq(workspaceFirmApprovals.provider, input.provider)))
-      .for("update");
-    if (existing && existing.tenantId !== input.tenantId) {
-      await tx
-        .delete(workspaceConnections)
-        .where(and(eq(workspaceConnections.firmId, input.firmId), eq(workspaceConnections.provider, input.provider)));
-    }
     await tx
       .insert(workspaceFirmApprovals)
       .values(input)
