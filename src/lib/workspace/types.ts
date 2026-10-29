@@ -56,3 +56,9 @@ export type WorkspaceTodo = {
   dueDate: string | null;
   notes: string;
 };
+
+/** Why `GET /api/workspace/todos` came back without its Outlook half. */
+export type OutlookError = "needs_reconnect" | "throttled" | "not_connected";
+
+/** One attendee type-ahead suggestion: a CRM contact or a teammate. */
+export type AttendeeSuggestion = { email: string; name: string; kind: "client" | "team" };

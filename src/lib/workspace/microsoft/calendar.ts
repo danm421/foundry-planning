@@ -1,6 +1,7 @@
 // src/lib/workspace/microsoft/calendar.ts
 import type { WallClock, WorkspaceEvent } from "../types";
-import { graphJson, graphPages, type GraphContext } from "./graph";
+import { addDays } from "../week";
+import { graphJson, graphPages, jsonInit, type GraphContext } from "./graph";
 
 const EVENT_FIELDS =
   "id,subject,start,end,isAllDay,isOrganizer,isCancelled,type,attendees,onlineMeeting,webLink";
@@ -20,7 +21,10 @@ type GraphEvent = {
 };
 
 /** Graph's `2026-10-28T10:00:00.0000000` → `2026-10-28T10:00`. */
-const toWallClock = (dateTime: string): WallClock => dateTime.slice(0, 16);
+const fromGraphTime = (dateTime: string): WallClock => dateTime.slice(0, 16);
+
+/** A wall clock as Graph's `dateTimeTimeZone`. */
+const toGraphTime = (w: WallClock, timeZone: string) => ({ dateTime: `${w}:00`, timeZone });
 
 function toWorkspaceEvent(e: GraphEvent): WorkspaceEvent {
   const attendees: WorkspaceEvent["attendees"] = [];
@@ -31,8 +35,8 @@ function toWorkspaceEvent(e: GraphEvent): WorkspaceEvent {
   return {
     id: e.id,
     subject: e.subject ?? "",
-    start: toWallClock(e.start.dateTime),
-    end: toWallClock(e.end.dateTime),
+    start: fromGraphTime(e.start.dateTime),
+    end: fromGraphTime(e.end.dateTime),
     isAllDay: e.isAllDay,
     isOrganizer: e.isOrganizer,
     isCancelled: e.isCancelled,
@@ -43,19 +47,7 @@ function toWorkspaceEvent(e: GraphEvent): WorkspaceEvent {
   };
 }
 
-/** `YYYY-MM-DD` plus `days`, by calendar date (UTC math, so the machine's zone can't shift it). */
-function addDays(date: string, days: number): string {
-  const [y, m, d] = date.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
-}
-
 const eventPath = (id: string) => `/me/events/${encodeURIComponent(id)}`;
-const jsonInit = (method: string, body: unknown, timeZone?: string) => ({
-  method,
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify(body),
-  timeZone,
-});
 
 /** The mailbox's own time zone name (Windows or IANA, as Graph reports it). */
 export async function getMailboxTimeZone(ctx: GraphContext): Promise<string> {
@@ -124,8 +116,8 @@ export async function createEvent(
   }
   const body = {
     subject: input.subject,
-    start: { dateTime: `${input.start}:00`, timeZone: input.timeZone },
-    end: { dateTime: `${input.end}:00`, timeZone: input.timeZone },
+    start: toGraphTime(input.start, input.timeZone),
+    end: toGraphTime(input.end, input.timeZone),
     attendees: input.attendees.map((address) => ({ emailAddress: { address }, type: "required" })),
     ...(teamsAllowed ? { isOnlineMeeting: true, onlineMeetingProvider: "teamsForBusiness" } : {}),
   };
@@ -139,10 +131,7 @@ export async function moveEvent(
   eventId: string,
   input: { start: WallClock; end: WallClock; timeZone: string },
 ): Promise<WorkspaceEvent> {
-  const body = {
-    start: { dateTime: `${input.start}:00`, timeZone: input.timeZone },
-    end: { dateTime: `${input.end}:00`, timeZone: input.timeZone },
-  };
+  const body = { start: toGraphTime(input.start, input.timeZone), end: toGraphTime(input.end, input.timeZone) };
   const moved = await graphJson<GraphEvent>(ctx, eventPath(eventId), jsonInit("PATCH", body, input.timeZone));
   return toWorkspaceEvent(moved);
 }

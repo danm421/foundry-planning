@@ -8,7 +8,7 @@ import { isWorkspaceEnabled } from "@/lib/workspace/flag";
 import { microsoftAppConfig } from "@/lib/workspace/microsoft/config";
 import { buildAuthorizeUrl } from "@/lib/workspace/microsoft/oauth";
 import { createWorkspaceOauthState } from "@/lib/workspace/oauth-states";
-import { workspaceErrorResponse } from "@/lib/workspace/route-errors";
+import { redirectTo, workspaceErrorResponse } from "@/lib/workspace/route-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -50,8 +50,4 @@ export async function GET(req: Request): Promise<Response> {
   } catch (err) {
     return workspaceErrorResponse(err);
   }
-}
-
-function redirectTo(req: Request, path: string): Response {
-  return NextResponse.redirect(new URL(path, req.url), 307);
 }

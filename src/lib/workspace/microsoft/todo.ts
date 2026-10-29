@@ -1,6 +1,6 @@
 // src/lib/workspace/microsoft/todo.ts
 import type { WorkspaceTodo } from "../types";
-import { graphJson, graphPages, type GraphContext } from "./graph";
+import { graphJson, graphPages, jsonInit, type GraphContext } from "./graph";
 
 type GraphList = { id: string; wellknownListName?: string };
 type GraphTask = {
@@ -14,11 +14,6 @@ const toDueDateTime = (date: string | null) =>
   date === null ? null : { dateTime: `${date}T00:00:00`, timeZone: "UTC" };
 const toBody = (notes: string) => ({ content: notes, contentType: "text" });
 const taskPath = (listId: string) => `/me/todo/lists/${encodeURIComponent(listId)}/tasks`;
-const jsonInit = (method: string, body: unknown) => ({
-  method,
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify(body),
-});
 
 function toWorkspaceTodo(listId: string, t: GraphTask): WorkspaceTodo {
   return {

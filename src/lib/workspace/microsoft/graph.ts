@@ -70,6 +70,14 @@ export async function graphFetch(
   }
 }
 
+/** A JSON-body request for `graphJson`; `timeZone` as in `graphFetch`. */
+export const jsonInit = (method: string, body: unknown, timeZone?: string) => ({
+  method,
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify(body),
+  timeZone,
+});
+
 /** `graphFetch` + JSON. A 202/204 has no body and resolves `undefined`. */
 export async function graphJson<T>(
   ctx: GraphContext,

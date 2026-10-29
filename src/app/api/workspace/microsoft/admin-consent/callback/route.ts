@@ -1,11 +1,10 @@
-import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { recordAudit } from "@/lib/audit";
 import { upsertFirmApproval } from "@/lib/workspace/approvals";
 import { isWorkspaceEnabled } from "@/lib/workspace/flag";
 import { MICROSOFT_SCOPES } from "@/lib/workspace/microsoft/config";
 import { consumeWorkspaceOauthState } from "@/lib/workspace/oauth-states";
-import { workspaceErrorResponse } from "@/lib/workspace/route-errors";
+import { redirectTo, workspaceErrorResponse } from "@/lib/workspace/route-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -82,8 +81,4 @@ async function settleConsent(
     metadata: { provider: "microsoft", tenantId },
   });
   return "approved";
-}
-
-function redirectTo(req: Request, path: string): Response {
-  return NextResponse.redirect(new URL(path, req.url), 307);
 }

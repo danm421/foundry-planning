@@ -8,8 +8,7 @@ import {
   privateHouseholdFilter,
   resolveVisibleAdvisorIds,
 } from "@/lib/visibility";
-
-export type AttendeeSuggestion = { email: string; name: string; kind: "client" | "team" };
+import type { AttendeeSuggestion } from "./types";
 
 const MAX_CLIENTS = 6;
 const MAX_TEAM = 4;

@@ -21,8 +21,16 @@ export type WorkspaceConnection = {
   lastError: string | null;
 };
 
-function expiryFrom(tokens: MicrosoftTokenSet): Date {
-  return new Date(Date.now() + tokens.expiresInSec * 1000);
+/** What a fresh token set writes: the tokens, encrypted, and a connection that works again. */
+function tokenColumns(tokens: MicrosoftTokenSet) {
+  return {
+    accessTokenEnc: encryptSecret(tokens.accessToken),
+    refreshTokenEnc: encryptSecret(tokens.refreshToken),
+    tokenExpiresAt: new Date(Date.now() + tokens.expiresInSec * 1000),
+    scope: tokens.scope,
+    status: "connected" as const,
+    lastError: null,
+  };
 }
 
 /** Drizzle wraps driver errors; the Postgres code/constraint can sit on `.cause`. */
@@ -95,12 +103,7 @@ export async function upsertUserConnection(input: {
     tenantId: input.tenantId,
     externalUserId: input.externalUserId,
     externalEmail: input.externalEmail,
-    accessTokenEnc: encryptSecret(input.tokens.accessToken),
-    refreshTokenEnc: encryptSecret(input.tokens.refreshToken),
-    tokenExpiresAt: expiryFrom(input.tokens),
-    scope: input.tokens.scope,
-    status: "connected" as const,
-    lastError: null,
+    ...tokenColumns(input.tokens),
   };
   try {
     const [row] = await db
@@ -121,15 +124,7 @@ export async function upsertUserConnection(input: {
 export async function storeRefreshedTokens(connectionId: string, tokens: MicrosoftTokenSet): Promise<void> {
   await db
     .update(workspaceConnections)
-    .set({
-      accessTokenEnc: encryptSecret(tokens.accessToken),
-      refreshTokenEnc: encryptSecret(tokens.refreshToken),
-      tokenExpiresAt: expiryFrom(tokens),
-      scope: tokens.scope,
-      status: "connected",
-      lastError: null,
-      updatedAt: new Date(),
-    })
+    .set({ ...tokenColumns(tokens), updatedAt: new Date() })
     .where(eq(workspaceConnections.id, connectionId));
 }
 
@@ -139,16 +134,4 @@ export async function markNeedsReconnect(connectionId: string, reason: string): 
     .update(workspaceConnections)
     .set({ status: "needs_reconnect", lastError: reason, updatedAt: new Date() })
     .where(eq(workspaceConnections.id, connectionId));
-}
-
-export async function deleteUserConnection(firmId: string, userId: string, provider: WorkspaceProvider): Promise<void> {
-  await db
-    .delete(workspaceConnections)
-    .where(
-      and(
-        eq(workspaceConnections.firmId, firmId),
-        eq(workspaceConnections.userId, userId),
-        eq(workspaceConnections.provider, provider),
-      ),
-    );
 }

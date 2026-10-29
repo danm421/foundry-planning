@@ -7,6 +7,7 @@ import { upsertUserConnection } from "@/lib/workspace/connections";
 import { isWorkspaceEnabled } from "@/lib/workspace/flag";
 import { exchangeCode, MicrosoftAuthError, readIdTokenClaims } from "@/lib/workspace/microsoft/oauth";
 import { consumeWorkspaceOauthState } from "@/lib/workspace/oauth-states";
+import { redirectTo } from "@/lib/workspace/route-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -82,8 +83,4 @@ export async function GET(req: Request): Promise<Response> {
     });
     return redirectTo(req, "/workspace?error=connect_failed");
   }
-}
-
-function redirectTo(req: Request, path: string): Response {
-  return NextResponse.redirect(new URL(path, req.url), 307);
 }

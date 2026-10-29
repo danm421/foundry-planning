@@ -8,7 +8,6 @@ import { requireOrgAndUser } from "@/lib/db-helpers";
 import { parseBody } from "@/lib/schemas/common";
 import { resolveActingConnection } from "@/lib/workspace/acting-connection";
 import {
-  GraphRequestError,
   GraphThrottledError,
   WorkspaceNotConnectedError,
   WorkspaceReconnectRequiredError,
@@ -16,13 +15,11 @@ import {
 import { isWorkspaceEnabled } from "@/lib/workspace/flag";
 import type { GraphContext } from "@/lib/workspace/microsoft/graph";
 import { createTodo, listOpenTodos } from "@/lib/workspace/microsoft/todo";
-import { workspaceErrorResponse } from "@/lib/workspace/route-errors";
+import { safeErrorFields, workspaceErrorResponse } from "@/lib/workspace/route-errors";
 import { createTodoSchema } from "@/lib/workspace/schemas";
-import type { WorkspaceTodo } from "@/lib/workspace/types";
+import type { OutlookError, WorkspaceTodo } from "@/lib/workspace/types";
 
 export const dynamic = "force-dynamic";
-
-type OutlookError = "needs_reconnect" | "throttled" | "not_connected";
 
 /**
  * The Microsoft half of the list. Any failure here degrades to an
@@ -40,10 +37,7 @@ async function loadOutlook(
     if (err instanceof WorkspaceNotConnectedError) return { outlook: null, outlookError: "not_connected" };
     if (err instanceof WorkspaceReconnectRequiredError) return { outlook: null, outlookError: "needs_reconnect" };
     if (!(err instanceof GraphThrottledError)) {
-      console.error("Workspace to-dos: Microsoft side failed:", {
-        name: err instanceof Error ? err.name : typeof err,
-        ...(err instanceof GraphRequestError ? { status: err.status, requestId: err.requestId } : {}),
-      });
+      console.error("Workspace to-dos: Microsoft side failed:", safeErrorFields(err));
     }
     return { outlook: null, outlookError: "throttled" };
   }

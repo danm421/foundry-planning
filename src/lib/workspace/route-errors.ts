@@ -43,9 +43,19 @@ export function workspaceErrorResponse(err: unknown): Response {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 
-  console.error("Workspace route error:", {
+  console.error("Workspace route error:", safeErrorFields(err));
+  return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+}
+
+/** The error's name plus, for a Graph error, its status and `request-id`: all a log line may carry. */
+export function safeErrorFields(err: unknown): { name: string; status?: number; requestId?: string | null } {
+  return {
     name: err instanceof Error ? err.name : typeof err,
     ...(err instanceof GraphRequestError ? { status: err.status, requestId: err.requestId } : {}),
-  });
-  return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  };
+}
+
+/** A redirect to an app path, for routes a browser navigates to. */
+export function redirectTo(req: Request, path: string): Response {
+  return NextResponse.redirect(new URL(path, req.url), 307);
 }

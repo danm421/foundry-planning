@@ -46,9 +46,20 @@ export function mondayOf(date: string): string {
   return addDays(date, -((weekday + 6) % 7));
 }
 
+/** `HH:MM` → minutes past midnight. */
+export function minutesOfTime(t: string): number {
+  return Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+}
+
+/** Minutes past midnight → `HH:MM`, wrapping at midnight. */
+export function timeOf(minutes: number): string {
+  const m = minutes % 1440;
+  return `${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`;
+}
+
 /** Minutes past midnight, read off the string. */
 export function minutesOf(w: WallClock): number {
-  return Number(w.slice(11, 13)) * 60 + Number(w.slice(14, 16));
+  return minutesOfTime(w.slice(11, 16));
 }
 
 export function snapMinutes(m: number, step = 15): number {
@@ -58,8 +69,7 @@ export function snapMinutes(m: number, step = 15): number {
 /** `minutes` past `date`'s midnight as a wall clock; past 24:00 (or before 00:00) rolls the day. */
 export function toWallClock(date: string, minutes: number): WallClock {
   const days = Math.floor(minutes / 1440);
-  const m = minutes - days * 1440;
-  return `${days ? addDays(date, days) : date}T${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`;
+  return `${days ? addDays(date, days) : date}T${timeOf(minutes - days * 1440)}`;
 }
 
 function shift(w: WallClock, minutes: number): WallClock {
