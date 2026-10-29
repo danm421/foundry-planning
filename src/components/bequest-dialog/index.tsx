@@ -398,6 +398,7 @@ export default function BequestDialog({
       onOpenChange={onOpenChange}
       title={editing ? "Edit bequest" : "New bequest"}
       size="md"
+      fixedHeight
       primaryAction={{
         label: saving ? "Saving…" : "Save",
         form: FORM_ID,
