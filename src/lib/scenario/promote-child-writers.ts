@@ -658,6 +658,8 @@ async function insertWillBequestRows(
       accountId: remapId(b.accountId, ctx),
       entityId: remapId(b.entityId, ctx),
       liabilityId: remapId(b.liabilityId, ctx),
+      dollarSource: b.kind === "dollar" ? (b.dollarSource ?? null) : null,
+      fallbackToEstate: b.kind === "dollar" ? b.fallbackToEstate === true : false,
       percentage: b.percentage,
       condition: b.condition,
       sortOrder: b.sortOrder,
@@ -672,7 +674,9 @@ async function insertWillBequestRows(
         bequestId: inserted.id,
         recipientKind: r.recipientKind,
         recipientId: remapId(r.recipientId, ctx),
-        percentage: r.percentage,
+        // A dollar gift's recipient carries `amount`; its percentage is NULL.
+        percentage: b.kind === "dollar" ? null : r.percentage,
+        amount: b.kind === "dollar" ? r.amount : null,
         sortOrder: r.sortOrder,
       });
       await tx.insert(willBequestRecipients).values(recipientValues as never);

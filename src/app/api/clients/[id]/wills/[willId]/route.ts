@@ -11,7 +11,6 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { updateWillForClient, willBelongsToClient } from "@/lib/clients/wills-writes";
-import { computeSoftWarnings } from "../_helpers";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
@@ -71,6 +70,8 @@ export async function GET(
         accountId: b.accountId,
         entityId: b.entityId,
         liabilityId: b.liabilityId,
+        dollarSource: b.dollarSource,
+        fallbackToEstate: b.fallbackToEstate,
         percentage: parseFloat(b.percentage),
         condition: b.condition,
         sortOrder: b.sortOrder,
@@ -78,7 +79,8 @@ export async function GET(
           id: r.id,
           recipientKind: r.recipientKind,
           recipientId: r.recipientId,
-          percentage: parseFloat(r.percentage),
+          percentage: r.percentage == null ? null : parseFloat(r.percentage),
+          amount: r.amount == null ? null : parseFloat(r.amount),
           sortOrder: r.sortOrder,
         })),
       })),
@@ -123,10 +125,7 @@ export async function PATCH(
     if (!result.ok) {
       return NextResponse.json(result.body ?? { error: result.error }, { status: result.status });
     }
-    return NextResponse.json({
-      id: willId,
-      warnings: computeSoftWarnings(result.data.bequests),
-    });
+    return NextResponse.json({ id: willId });
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });

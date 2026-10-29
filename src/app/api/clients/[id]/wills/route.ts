@@ -9,7 +9,6 @@ import {
 import { eq, asc, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { createWillForClient } from "@/lib/clients/wills-writes";
-import { computeSoftWarnings } from "./_helpers";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
@@ -76,6 +75,8 @@ export async function GET(
         accountId: b.accountId,
         entityId: b.entityId,
         liabilityId: b.liabilityId,
+        dollarSource: b.dollarSource,
+        fallbackToEstate: b.fallbackToEstate,
         percentage: parseFloat(b.percentage),
         condition: b.condition,
         sortOrder: b.sortOrder,
@@ -83,7 +84,8 @@ export async function GET(
           id: r.id,
           recipientKind: r.recipientKind,
           recipientId: r.recipientId,
-          percentage: parseFloat(r.percentage),
+          percentage: r.percentage == null ? null : parseFloat(r.percentage),
+          amount: r.amount == null ? null : parseFloat(r.amount),
           sortOrder: r.sortOrder,
         })),
       });
@@ -137,10 +139,7 @@ export async function POST(
     if (!result.ok) {
       return NextResponse.json(result.body ?? { error: result.error }, { status: result.status });
     }
-    return NextResponse.json(
-      { id: result.resourceId, warnings: computeSoftWarnings(result.data.bequests) },
-      { status: 201 },
-    );
+    return NextResponse.json({ id: result.resourceId }, { status: 201 });
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });

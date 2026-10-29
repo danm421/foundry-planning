@@ -15,8 +15,8 @@ vi.mock("@clerk/nextjs/server", () => ({
 
 import { asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { accounts, auditLog, externalBeneficiaries, familyMembers, liabilities, willBequestRecipients, willBequests, willResiduaryRecipients, wills } from "@/db/schema";
-import { createWillForClient, replaceWillResiduaryForClient, updateWillForClient } from "@/lib/clients/wills-writes";
+import { accountOwners, accounts, auditLog, entities, externalBeneficiaries, familyMembers, liabilities, willBequestRecipients, willBequests, willResiduaryRecipients, wills } from "@/db/schema";
+import { createWillForClient, replaceWillResiduaryForClient, updateWillBequestForClient, updateWillForClient } from "@/lib/clients/wills-writes";
 import type { PlacedValue, RecordRef, TargetKind } from "../../change-set";
 import { SaveLineError } from "../types";
 import { WILL_WRITERS } from "../writers/wills";
@@ -201,6 +201,56 @@ d("wills writers (Plan 4, Task 13)", () => {
     const audits = await auditsOf(clientId);
     expect(audits.map((a) => a.action)).toEqual(["will.update", "will.update", "will.update", "will.update"]);
     expect(audits.map((a) => (a.metadata as { bequestCount: number }).bequestCount).sort()).toEqual([3, 3, 4, 4]);
+  });
+
+  it("keeps a dollar gift and its position when the import adds a provision after it", async () => {
+    const seed = await seedSaveClient(FIRM, { coClient: true });
+    const { clientId, scenarioId } = seed;
+    const [cash] = await db.insert(accounts).values({ clientId, scenarioId, name: "Chase Savings", category: "cash", subType: "savings" }).returning();
+    const [emma, noah] = await db
+      .insert(familyMembers)
+      .values([
+        { clientId, firstName: "Emma", lastName: "Hendricks", role: "child", relationship: "child" },
+        { clientId, firstName: "Noah", lastName: "Hendricks", role: "child", relationship: "child" },
+      ])
+      .returning();
+    const [will] = await db.insert(wills).values({ clientId, grantor: "client" }).returning();
+    const [dollar, pct] = await db
+      .insert(willBequests)
+      .values([
+        { willId: will.id, name: "Grandchildren", kind: "dollar", dollarSource: "estate", fallbackToEstate: false, percentage: "100", condition: "always", sortOrder: 0 },
+        { willId: will.id, name: "Chase Savings", kind: "asset", assetMode: "specific", accountId: cash.id, percentage: "100", condition: "always", sortOrder: 1 },
+      ])
+      .returning();
+    await db.insert(willBequestRecipients).values([
+      { bequestId: dollar.id, recipientKind: "family_member", recipientId: emma.id, percentage: null, amount: "20000", sortOrder: 0 },
+      { bequestId: dollar.id, recipientKind: "family_member", recipientId: noah.id, percentage: null, amount: "20000", sortOrder: 1 },
+      { bequestId: pct.id, recipientKind: "family_member", recipientId: emma.id, percentage: "100", sortOrder: 0 },
+    ]);
+
+    const onRecord = record("will", will.id);
+    await inSave({ clientId, firmId: FIRM }, async (ctx) => {
+      await WILL_WRITERS.will_bequest.update(ctx, inputOf(provisionLine(onRecord, { percentage: 60 }, { recordId: pct.id })));
+      const [brk] = await ctx.tx.insert(accounts).values({ clientId, scenarioId, name: "Schwab Brokerage", category: "taxable", subType: "brokerage" }).returning();
+      await WILL_WRITERS.will_bequest.create(
+        ctx,
+        inputOf(
+          provisionLine(onRecord, { kind: "asset", accountId: record("account", brk.id), percentage: 100, recipients: [{ who: CO_CLIENT, percentage: 100 }], condition: "always" }, { name: "Schwab Brokerage", sortOrder: 0 }),
+        ),
+      );
+    });
+
+    const after = await bequestsOf(will.id);
+    expect(after.map((b) => [b.name, b.sortOrder])).toEqual([
+      ["Grandchildren", 0],
+      ["Chase Savings", 1],
+      ["Schwab Brokerage", 2],
+    ]);
+    expect(after[0]).toMatchObject({ id: dollar.id, kind: "dollar", dollarSource: "estate", fallbackToEstate: false });
+    expect(await recipientsOf(dollar.id)).toMatchObject([
+      { recipientId: emma.id, amount: "20000.00", percentage: null },
+      { recipientId: noah.id, amount: "20000.00", percentage: null },
+    ]);
   });
 
   describe("Other Heirs on record", () => {
@@ -462,5 +512,53 @@ d("wills writers (Plan 4, Task 13)", () => {
     }, rollback);
     // Neither write's audit row (will.create, will.update) outlives the rollback.
     expect(await auditsOf(seed.clientId)).toEqual([]);
+  });
+
+  it("a dollar gift whose account has since moved into a trust still saves — only a new or changed source is checked", async () => {
+    const seed = await seedSaveClient(FIRM, { coClient: true });
+    await inSave({ clientId: seed.clientId, firmId: FIRM }, async (ctx) => {
+      const { clientId, scenarioId } = seed;
+      const [schwab, chase] = await ctx.tx
+        .insert(accounts)
+        .values([
+          { clientId, scenarioId, name: "Schwab Brokerage", category: "taxable", subType: "brokerage" },
+          { clientId, scenarioId, name: "Chase Savings", category: "cash", subType: "savings" },
+        ])
+        .returning();
+      const [trust] = await ctx.tx.insert(entities).values({ clientId, name: "Hendricks Family Trust", entityType: "trust" }).returning();
+      const [emma] = await ctx.tx.insert(familyMembers).values({ clientId, firstName: "Emma", lastName: "Hendricks", role: "child", relationship: "child" }).returning();
+      const [will] = await ctx.tx.insert(wills).values({ clientId, grantor: "client" }).returning();
+      const [fromSchwab, fromEstate] = await ctx.tx
+        .insert(willBequests)
+        .values([
+          { willId: will.id, name: "Cash gift", kind: "dollar", dollarSource: "account", accountId: schwab.id, fallbackToEstate: true, percentage: "100", condition: "always", sortOrder: 0 },
+          { willId: will.id, name: "Cash gift", kind: "dollar", dollarSource: "estate", fallbackToEstate: false, percentage: "100", condition: "always", sortOrder: 1 },
+        ])
+        .returning();
+      await ctx.tx.insert(willBequestRecipients).values([
+        { bequestId: fromSchwab.id, recipientKind: "family_member", recipientId: emma.id, percentage: null, amount: "20000", sortOrder: 0 },
+        { bequestId: fromEstate.id, recipientKind: "family_member", recipientId: emma.id, percentage: null, amount: "5000", sortOrder: 0 },
+      ]);
+      // Both accounts are retitled to the trust after the gifts were written.
+      await ctx.tx.insert(accountOwners).values([
+        { accountId: schwab.id, entityId: trust.id, percent: "1" },
+        { accountId: chase.id, entityId: trust.id, percent: "1" },
+      ]);
+      const opts = { tx: ctx.tx, afterCommit: ctx.afterCommit, clientId, firmId: FIRM, actorId: SAVE_ACTOR, willId: will.id };
+      const refused = { ok: false, status: 400, error: "dollar_bequest_source_entity_owned" };
+
+      // One provision in place: the gift on Schwab saves; the estate gift moved onto Chase doesn't.
+      expect(await updateWillBequestForClient({ ...opts, bequestId: fromSchwab.id, input: { condition: "if_spouse_predeceased" } })).toMatchObject({ ok: true });
+      expect(await updateWillBequestForClient({ ...opts, bequestId: fromEstate.id, input: { dollarSource: "account", accountId: chase.id } })).toMatchObject(refused);
+
+      // The whole-replace update the will page sends: the same rule.
+      const gift = (accountId: string | null, sortOrder: number) => ({
+        kind: "dollar", name: "Cash gift", dollarSource: accountId ? "account" : "estate", accountId, fallbackToEstate: accountId !== null,
+        condition: "always", sortOrder, recipients: [{ recipientKind: "family_member", recipientId: emma.id, amount: 20000, sortOrder: 0 }],
+      });
+      expect(await updateWillForClient({ ...opts, input: { bequests: [gift(schwab.id, 0), gift(null, 1)] } })).toMatchObject({ ok: true });
+      expect(await updateWillForClient({ ...opts, input: { bequests: [gift(schwab.id, 0), gift(chase.id, 1)] } })).toMatchObject(refused);
+      expect((await ctx.tx.select().from(willBequests).where(eq(willBequests.willId, will.id))).map((b) => b.accountId).sort()).toEqual([schwab.id, null].sort());
+    }, rollback);
   });
 });

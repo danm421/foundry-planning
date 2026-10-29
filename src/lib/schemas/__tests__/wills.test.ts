@@ -444,3 +444,79 @@ describe("Other Heirs will recipients", () => {
     expect(r.success).toBe(true);
   });
 });
+
+describe("dollar bequests", () => {
+  const dollarRecipient = {
+    recipientKind: "family_member" as const,
+    recipientId: u("5"),
+    amount: 20000,
+    sortOrder: 0,
+  };
+  const dollarGift = {
+    kind: "dollar" as const,
+    name: "$20k to a grandchild",
+    dollarSource: "estate" as const,
+    accountId: null,
+    fallbackToEstate: false,
+    condition: "always" as const,
+    sortOrder: 0,
+    recipients: [dollarRecipient],
+  };
+
+  it("parses an estate-wide dollar gift and strips percentage", () => {
+    const r = willBequestSchema.safeParse({ ...dollarGift, percentage: 100 });
+    expect(r.success).toBe(true);
+    if (r.success) expect("percentage" in r.data).toBe(false);
+  });
+
+  it("an estate-source gift may leave accountId out: it defaults to null", () => {
+    const withoutAccount: Record<string, unknown> = { ...dollarGift };
+    delete withoutAccount.accountId;
+    const r = willBequestSchema.safeParse(withoutAccount);
+    expect(r.success).toBe(true);
+    if (r.success && r.data.kind === "dollar") expect(r.data.accountId).toBeNull();
+  });
+
+  it("accepts a named-account gift whose account was deleted (account, accountId null)", () => {
+    const r = willBequestSchema.safeParse({
+      ...dollarGift,
+      dollarSource: "account",
+      accountId: null,
+      fallbackToEstate: true,
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("accepts a named-account gift with an accountId", () => {
+    const r = willBequestSchema.safeParse({ ...dollarGift, dollarSource: "account", accountId: u("1") });
+    expect(r.success).toBe(true);
+  });
+
+  it("rejects estate source with an accountId", () => {
+    expect(willBequestSchema.safeParse({ ...dollarGift, accountId: u("1") }).success).toBe(false);
+  });
+
+  it("rejects estate source with fallbackToEstate true", () => {
+    expect(willBequestSchema.safeParse({ ...dollarGift, fallbackToEstate: true }).success).toBe(false);
+  });
+
+  it("rejects amount 0 and a NaN amount", () => {
+    for (const amount of [0, NaN]) {
+      const r = willBequestSchema.safeParse({ ...dollarGift, recipients: [{ ...dollarRecipient, amount }] });
+      expect(r.success).toBe(false);
+    }
+  });
+
+  it("rejects a dollar gift whose recipients carry only a percentage", () => {
+    const r = willBequestSchema.safeParse({
+      ...dollarGift,
+      recipients: [{ recipientKind: "family_member", recipientId: u("5"), percentage: 100, sortOrder: 0 }],
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects an amount recipient on an asset gift", () => {
+    const r = willBequestSchema.safeParse({ ...validBequest, recipients: [dollarRecipient] });
+    expect(r.success).toBe(false);
+  });
+});

@@ -26,9 +26,10 @@ import type { SolverMutation, SolverScenarioChangeDraft } from "@/lib/solver/typ
 import { buildCltRemainderGiftMutation } from "@/lib/solver/split-interest-levers";
 import {
   applyBeneficiaryDesignations,
+  applyWillGiftShares,
   applyWillResiduary,
-  applyWillSpecificBequests,
 } from "@/engine/death-event/shared";
+import { allocateWillGifts } from "@/engine/death-event/will-gifts";
 import { applyScenarioChanges } from "@/engine/scenario/applyChanges";
 import type { ScenarioChange, TargetKind } from "@/engine/scenario/types";
 import { runProjection } from "@/engine/projection";
@@ -488,13 +489,11 @@ describe("buildDissolveTrustMutations — dangling references", () => {
     expect(ids).toEqual(["fm-spouse"]);
   });
 
-  it("drops a bequest the trust was the ONLY recipient of, so a sibling clause is not pro-rated down", () => {
-    // An emptied clause is NOT inert. `specifics` is filtered by account id
-    // alone (death-event/shared.ts:916-921) and its `percentage` still lands in
-    // `rawTotal` (:942-945), so two 60% clauses on one account over-allocate and
-    // BOTH scale to 50% (:947-951) — the spouse silently loses ten points of the
-    // account. `cascadeResolution.ts:243-247` drops such a row on a saved-
-    // scenario reload too, so keeping it would also split preview from save.
+  it("drops a bequest the trust was the ONLY recipient of", () => {
+    // `cascadeResolution.ts:243-247` drops such a row on a saved-scenario
+    // reload, so keeping it would split preview from save. In the engine an
+    // emptied clause is now inert: gifts are paid in list order, each from
+    // what is left, so it takes nothing and its sibling is not pro-rated down.
     const toTrust = {
       id: "bq-trust", name: "To the ILIT", kind: "asset", assetMode: "specific",
       accountId: "acct-1", entityId: null, liabilityId: null, percentage: 60,
@@ -514,24 +513,26 @@ describe("buildDissolveTrustMutations — dangling references", () => {
     const after = applyMutations(t, buildDissolveTrustMutations(t, ilit)).wills![0];
     expect(after.bequests.map((b) => b.id)).toEqual(["bq-spouse"]);
 
-    // Run the engine's own specific-bequest pass over both shapes. The control
-    // (the emptied clause kept) is what proves this is not a vacuous assertion:
-    // it really does move 10% of the account and raise a bogus warning.
+    // Run the engine's own will-gift pass over both shapes. Both now pay the
+    // spouse 60%, and no over-allocation warning exists to assert on any more
+    // (list order, spec 2026-10-28).
     const source = t.accounts[0] as Account;
     const fms = t.familyMembers as FamilyMember[];
+    const pool = [{ accountId: source.id, category: source.category, value: source.value, undisposed: 1 }];
     const run = (will: typeof after) =>
-      applyWillSpecificBequests(source, 1, will, 1, "spouse", "fm-spouse", fms, [], [], undefined);
+      applyWillGiftShares(
+        source, allocateWillGifts(pool, will, 1, "fm-spouse"),
+        "spouse", "fm-spouse", fms, [], [], undefined,
+      );
 
     const dropped = run(after);
     expect(dropped.fractionClaimed).toBeCloseTo(0.6, 10);
-    expect(dropped.warnings).toEqual([]);
 
     const kept = run({
       ...after,
       bequests: [{ ...toTrust, recipients: [] }, after.bequests[0]] as typeof after.bequests,
     });
-    expect(kept.fractionClaimed).toBeCloseTo(0.5, 10);
-    expect(kept.warnings).toContain("over_allocation_in_will:acct-1");
+    expect(kept.fractionClaimed).toBeCloseTo(0.6, 10); // list order (spec 2026-10-28)
   });
 
   it("clears a will residuary recipient naming the trust", () => {

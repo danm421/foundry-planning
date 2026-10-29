@@ -1122,4 +1122,32 @@ describe("buildOwnershipColumn — lifetime asset gift to a person", () => {
     expect(client.assets[0].percent).toBe(1);
     expect(col.grandTotal).toBe(1_000_000);
   });
+
+  it("counts a dollar gift: an estate-wide dollar gift covers a cash account but not the house", () => {
+    const acct = (id: string, category: string) => ({
+      id, name: id, category, subType: category === "taxable" ? "brokerage" : "primary_residence",
+      value: 50_000, basis: 40_000, growthRate: 0.03, rmdEnabled: false,
+      owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+      beneficiaries: [],
+    });
+    const gift = (over: Record<string, unknown>) => ({
+      id: "w1", grantor: "client", residuaryRecipients: [],
+      bequests: [{
+        id: "d1", name: "Cash gift", kind: "dollar", assetMode: null, accountId: null, entityId: null,
+        liabilityId: null, dollarSource: "estate", percentage: 100, condition: "always", sortOrder: 0,
+        recipients: [{ recipientKind: "family_member", recipientId: "fm-client", percentage: 0, amount: 20_000, sortOrder: 0 }],
+        ...over,
+      }],
+    });
+    const conflict = (cd: ClientData, id: string) =>
+      buildOwnershipColumn(cd).groups.flatMap((g) => g.assets).find((a) => a.accountId === id)?.hasConflict;
+
+    const estateWide = data({ accounts: [acct("cash1", "taxable"), acct("house", "real_estate")], wills: [gift({})] } as unknown as Partial<ClientData>);
+    expect(conflict(estateWide, "cash1")).toBe(false);
+    expect(conflict(estateWide, "house")).toBe(true);
+
+    const named = data({ accounts: [acct("cash1", "taxable"), acct("cash2", "cash")], wills: [gift({ dollarSource: "account", accountId: "cash1" })] } as unknown as Partial<ClientData>);
+    expect(conflict(named, "cash1")).toBe(false);
+    expect(conflict(named, "cash2")).toBe(true);
+  });
 });

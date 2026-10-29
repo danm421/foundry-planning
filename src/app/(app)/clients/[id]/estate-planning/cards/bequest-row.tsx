@@ -1,5 +1,6 @@
 "use client";
 
+import { formatCurrency } from "@/lib/cell-drill/format";
 import type { BequestSummaryRow } from "../lib/derive-card-data";
 
 export function BequestRow({
@@ -31,7 +32,7 @@ export function BequestRow({
             <div className="text-[10px] text-[var(--color-ink-3)] mt-0.5">{subLine}</div>
           )}
         </div>
-        <span className="tabular-nums shrink-0">{bequest.percentage}%</span>
+        <span className="tabular-nums shrink-0">{bequest.amount != null ? formatCurrency(bequest.amount) : `${bequest.percentage}%`}</span>
       </button>
     </li>
   );

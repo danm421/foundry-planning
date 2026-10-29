@@ -1,5 +1,10 @@
 import type { Account, Will, WillBequest, WillBequestRecipient } from "@/engine/types";
 
+/** Next free sortOrder after the highest existing one (list order, not length). */
+export function nextBequestSortOrder(bequests: ReadonlyArray<{ sortOrder: number }>): number {
+  return Math.max(-1, ...bequests.map((b) => b.sortOrder)) + 1;
+}
+
 export interface BuildWillUpdatesInput {
   account: Pick<Account, "id" | "name">;
   /** The will that receives the client's asset bequest (existing or owner default). */
@@ -56,7 +61,7 @@ function withAssetBequest(
     liabilityId: null,
     percentage: 100,
     condition,
-    sortOrder: will.bequests.length,
+    sortOrder: nextBequestSortOrder(will.bequests),
     recipients,
   };
   return { ...will, bequests: [...will.bequests, bequest] };

@@ -40,7 +40,6 @@ export function summarizeDeathWarnings(
   nameById: Map<string, string>,
 ): DeathWarningNote[] {
   const residual: string[] = [];
-  const overAllocated: string[] = [];
   const lifeInsurance: string[] = [];
   const trustIncomplete: string[] = [];
   let trustPourOutCount = 0;
@@ -56,9 +55,6 @@ export function summarizeDeathWarnings(
     switch (code) {
       case "residual_fallback_fired":
         addUnique(residual, nameFor(ref));
-        break;
-      case "over_allocation_in_will":
-        addUnique(overAllocated, nameFor(ref));
         break;
       case "life_insurance_no_beneficiaries":
         addUnique(lifeInsurance, nameFor(ref));
@@ -95,15 +91,6 @@ export function summarizeDeathWarnings(
       key: "residual_fallback_fired",
       message: `${n} ${plural(n, "asset has", "assets have")} no will or beneficiary instruction — distributed by default order`,
       items: residual,
-    });
-  }
-
-  if (overAllocated.length > 0) {
-    const n = overAllocated.length;
-    notes.push({
-      key: "over_allocation_in_will",
-      message: `Will distributes more than 100% of ${n} ${plural(n, "asset", "assets")} — shares pro-rated to fit`,
-      items: overAllocated,
     });
   }
 

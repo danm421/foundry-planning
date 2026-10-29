@@ -29,7 +29,8 @@ vi.mock("@clerk/nextjs/server", () => ({
 type DbState = {
   clients: Array<{ id: string; firmId: string }>;
   wills: Array<{ id: string; clientId: string; grantor: string; updatedAt?: Date }>;
-  accounts: Array<{ id: string; clientId: string }>;
+  accounts: Array<{ id: string; clientId: string; category?: string }>;
+  accountOwners: Array<{ accountId: string; entityId: string | null; familyMemberId?: string | null; percent?: string }>;
   familyMembers: Array<{ id: string; clientId: string }>;
   liabilities: Array<{
     id: string;
@@ -50,6 +51,8 @@ type DbState = {
     accountId: string | null;
     entityId: string | null;
     liabilityId: string | null;
+    dollarSource?: string | null;
+    fallbackToEstate?: boolean;
     percentage: string;
     condition: string;
     sortOrder: number;
@@ -59,7 +62,8 @@ type DbState = {
     bequestId: string;
     recipientKind: string;
     recipientId: string | null;
-    percentage: string;
+    percentage: string | null;
+    amount?: string | null;
     sortOrder: number;
   }>;
   willResiduaryRecipients: Array<{
@@ -83,6 +87,12 @@ const ACCT_B_ID = "10000000-0000-0000-0000-000000000022";
 const FM_A_ID = "10000000-0000-0000-0000-000000000031";
 // FM_B_ID not currently used in test assertions but kept as a reference constant.
 const WILL_EXISTING_ID = "10000000-0000-0000-0000-000000000041";
+const TRUST_ID = "10000000-0000-0000-0000-000000000098";
+
+const defaultAccounts: DbState["accounts"] = [
+  { id: ACCT_A_ID, clientId: CLIENT_A_ID },
+  { id: ACCT_B_ID, clientId: CLIENT_B_ID },
+];
 
 const dbState: DbState = {
   clients: [
@@ -97,6 +107,7 @@ const dbState: DbState = {
   // Only one family member so the count check (rows.length === requested.size)
   // passes when FM_A_ID is in the request.
   familyMembers: [{ id: FM_A_ID, clientId: CLIENT_A_ID }],
+  accountOwners: [],
   liabilities: [],
   liabilityOwners: [],
   willBequests: [],
@@ -109,6 +120,8 @@ function resetState(overrides: Partial<DbState> = {}) {
   dbState.willBequests = overrides.willBequests ?? [];
   dbState.willBequestRecipients = overrides.willBequestRecipients ?? [];
   dbState.willResiduaryRecipients = overrides.willResiduaryRecipients ?? [];
+  dbState.accounts = overrides.accounts ?? defaultAccounts;
+  dbState.accountOwners = overrides.accountOwners ?? [];
   dbState.liabilities = overrides.liabilities ?? [];
   dbState.liabilityOwners = overrides.liabilityOwners ?? [];
 }
@@ -128,6 +141,8 @@ vi.mock("@/db", async () => {
     if (t === schema.clients || getTableNameSafe(t) === "clients") return dbState.clients;
     if (t === schema.wills || getTableNameSafe(t) === "wills") return dbState.wills;
     if (t === schema.accounts || getTableNameSafe(t) === "accounts") return dbState.accounts;
+    if (t === schema.accountOwners || getTableNameSafe(t) === "account_owners")
+      return dbState.accountOwners;
     if (t === schema.familyMembers || getTableNameSafe(t) === "family_members")
       return dbState.familyMembers;
     if (t === schema.liabilities || getTableNameSafe(t) === "liabilities")
@@ -261,6 +276,25 @@ vi.mock("@/db", async () => {
             // willBequests insert
             if (t === schema.willBequests || tableName === "will_bequests") {
               for (const row of arr as Array<Record<string, unknown>>) {
+                if (row.kind === "dollar") {
+                  const bId = `b_${Date.now()}_${Math.random()}`;
+                  dbState.willBequests.push({
+                    id: bId,
+                    willId: (row.willId as string) ?? lastWillId,
+                    kind: "dollar",
+                    name: row.name as string,
+                    assetMode: null,
+                    accountId: (row.accountId as string | null) ?? null,
+                    entityId: null,
+                    liabilityId: null,
+                    dollarSource: row.dollarSource as string,
+                    fallbackToEstate: row.fallbackToEstate as boolean,
+                    percentage: row.percentage as string,
+                    condition: row.condition as string,
+                    sortOrder: row.sortOrder as number,
+                  });
+                  return { returning: () => Promise.resolve([{ id: bId }]) };
+                }
                 if (row.kind === "liability" && row.liabilityId) {
                   const willId = (row.willId as string) ?? lastWillId;
                   const liabId = row.liabilityId as string;
@@ -317,7 +351,23 @@ vi.mock("@/db", async () => {
               return { returning: () => Promise.resolve([{ id: "rr_new" }]) };
             }
 
-            // anything else (recipients, etc.)
+            // willBequestRecipients insert
+            if (t === schema.willBequestRecipients || tableName === "will_bequest_recipients") {
+              for (const row of arr as Array<Record<string, unknown>>) {
+                dbState.willBequestRecipients.push({
+                  id: `r_${Date.now()}_${Math.random()}`,
+                  bequestId: row.bequestId as string,
+                  recipientKind: row.recipientKind as string,
+                  recipientId: (row.recipientId as string | null) ?? null,
+                  percentage: (row.percentage as string | null) ?? null,
+                  amount: (row.amount as string | null) ?? null,
+                  sortOrder: row.sortOrder as number,
+                });
+              }
+              return { returning: () => Promise.resolve([{ id: "r_new" }]) };
+            }
+
+            // anything else
             return { returning: () => Promise.resolve([{ id: "r_new" }]) };
           },
         }),
@@ -939,5 +989,174 @@ describe("residuary recipients — GET / POST / PATCH", () => {
     );
     expect(contingent).toBeDefined();
     expect(contingent.tier).toBe("contingent");
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// Dollar bequests
+// ---------------------------------------------------------------------------
+
+describe("dollar bequests — POST / GET / PATCH", () => {
+  const dollarGift = (accountId: string | null, source: "estate" | "account" = "account") => ({
+    kind: "dollar",
+    name: "$20,000 to Charlie",
+    dollarSource: source,
+    accountId,
+    fallbackToEstate: source === "account",
+    condition: "always",
+    sortOrder: 3,
+    recipients: [{ recipientKind: "family_member", recipientId: FM_A_ID, amount: 20000, sortOrder: 0 }],
+  });
+
+  const call = async (method: "POST" | "PATCH", body: unknown) => {
+    if (method === "POST") {
+      const { POST } = await import("../route");
+      return POST(
+        new Request("http://x", { method, body: JSON.stringify(body) }) as unknown as Parameters<typeof POST>[0],
+        { params: Promise.resolve({ id: CLIENT_A_ID }) } as unknown as Parameters<typeof POST>[1],
+      );
+    }
+    const { PATCH } = await import("../[willId]/route");
+    return PATCH(
+      new Request("http://x", { method, body: JSON.stringify(body) }) as unknown as Parameters<typeof PATCH>[0],
+      { params: Promise.resolve({ id: CLIENT_A_ID, willId: WILL_EXISTING_ID }) } as unknown as Parameters<typeof PATCH>[1],
+    );
+  };
+
+  beforeEach(async () => {
+    const helpers = await import("@/lib/db-helpers");
+    vi.mocked(helpers.requireOrgId).mockReset();
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(FIRM_A_ID);
+    _liabilityWhereId = null;
+  });
+
+  it("POST then GET round-trips a dollar gift", async () => {
+    resetState({ accounts: [{ id: ACCT_A_ID, clientId: CLIENT_A_ID, category: "taxable" }] });
+    const res = await call("POST", { grantor: "client", bequests: [dollarGift(ACCT_A_ID)] });
+    expect(res.status).toBe(201);
+    expect(await res.json()).not.toHaveProperty("warnings");
+
+    const { GET } = await import("../route");
+    const got = await GET(
+      new Request("http://x") as unknown as Parameters<typeof GET>[0],
+      { params: Promise.resolve({ id: CLIENT_A_ID }) } as unknown as Parameters<typeof GET>[1],
+    );
+    const [will] = await got.json();
+    const [gift] = will.bequests;
+    expect(gift).toMatchObject({
+      kind: "dollar",
+      dollarSource: "account",
+      fallbackToEstate: true,
+      accountId: ACCT_A_ID,
+      sortOrder: 3,
+    });
+    expect(gift.recipients[0]).toMatchObject({ amount: 20000, percentage: null, sortOrder: 0 });
+  });
+
+  it("PATCH rejects a dollar gift paid from a real-estate account", async () => {
+    resetState({
+      wills: [{ id: WILL_EXISTING_ID, clientId: CLIENT_A_ID, grantor: "client" }],
+      accounts: [{ id: ACCT_A_ID, clientId: CLIENT_A_ID, category: "real_estate" }],
+    });
+    const res = await call("PATCH", { bequests: [dollarGift(ACCT_A_ID)] });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("dollar_bequest_source_not_cash");
+  });
+
+  it("PATCH rejects a dollar gift paid from an entity-owned account", async () => {
+    resetState({
+      wills: [{ id: WILL_EXISTING_ID, clientId: CLIENT_A_ID, grantor: "client" }],
+      accounts: [{ id: ACCT_A_ID, clientId: CLIENT_A_ID, category: "cash" }],
+      accountOwners: [{ accountId: ACCT_A_ID, entityId: TRUST_ID, percent: "1.0000" }],
+    });
+    const res = await call("PATCH", { bequests: [dollarGift(ACCT_A_ID)] });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("dollar_bequest_source_entity_owned");
+  });
+
+  it("PATCH accepts a part-trust-owned account: the engine pays from the household's share", async () => {
+    resetState({
+      wills: [{ id: WILL_EXISTING_ID, clientId: CLIENT_A_ID, grantor: "client" }],
+      accounts: [{ id: ACCT_A_ID, clientId: CLIENT_A_ID, category: "taxable" }],
+      accountOwners: [
+        { accountId: ACCT_A_ID, entityId: TRUST_ID, percent: "0.5000" },
+        { accountId: ACCT_A_ID, entityId: null, familyMemberId: FM_A_ID, percent: "0.5000" },
+      ],
+    });
+    const res = await call("PATCH", { bequests: [dollarGift(ACCT_A_ID)] });
+    expect(res.status).toBe(200);
+  });
+
+  describe("a stored gift's source is kept on re-save", () => {
+    /** The will already holds "$20,000 to Charlie from ACCT_A". */
+    const storedGift = (accountId: string | null, source: "estate" | "account" = "account") => ({
+      id: "10000000-0000-0000-0000-000000000051",
+      willId: WILL_EXISTING_ID,
+      kind: "dollar",
+      name: "$20,000 to Charlie",
+      assetMode: null,
+      accountId,
+      entityId: null,
+      liabilityId: null,
+      dollarSource: source,
+      fallbackToEstate: source === "account",
+      percentage: "100",
+      condition: "always",
+      sortOrder: 3,
+    });
+
+    it("re-saves an unchanged gift whose account has since moved into a trust", async () => {
+      resetState({
+        wills: [{ id: WILL_EXISTING_ID, clientId: CLIENT_A_ID, grantor: "client" }],
+        accounts: [{ id: ACCT_A_ID, clientId: CLIENT_A_ID, category: "taxable" }],
+        accountOwners: [{ accountId: ACCT_A_ID, entityId: TRUST_ID, percent: "1.0000" }],
+        willBequests: [storedGift(ACCT_A_ID)],
+      });
+      const res = await call("PATCH", { bequests: [dollarGift(ACCT_A_ID)] });
+      expect(res.status).toBe(200);
+    });
+
+    it("re-saves an unchanged gift whose account is no longer cash or brokerage", async () => {
+      resetState({
+        wills: [{ id: WILL_EXISTING_ID, clientId: CLIENT_A_ID, grantor: "client" }],
+        accounts: [{ id: ACCT_A_ID, clientId: CLIENT_A_ID, category: "real_estate" }],
+        willBequests: [storedGift(ACCT_A_ID)],
+      });
+      const res = await call("PATCH", { bequests: [dollarGift(ACCT_A_ID)] });
+      expect(res.status).toBe(200);
+    });
+
+    it("refuses changing a gift's source to a trust-owned account", async () => {
+      resetState({
+        wills: [{ id: WILL_EXISTING_ID, clientId: CLIENT_A_ID, grantor: "client" }],
+        accounts: [{ id: ACCT_A_ID, clientId: CLIENT_A_ID, category: "taxable" }],
+        accountOwners: [{ accountId: ACCT_A_ID, entityId: TRUST_ID, percent: "1.0000" }],
+        willBequests: [storedGift(null, "estate")],
+      });
+      const res = await call("PATCH", { bequests: [dollarGift(ACCT_A_ID)] });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe("dollar_bequest_source_entity_owned");
+    });
+
+    it("refuses changing a gift's source to an account that isn't cash or brokerage", async () => {
+      resetState({
+        wills: [{ id: WILL_EXISTING_ID, clientId: CLIENT_A_ID, grantor: "client" }],
+        accounts: [{ id: ACCT_A_ID, clientId: CLIENT_A_ID, category: "real_estate" }],
+        willBequests: [storedGift(null, "estate")],
+      });
+      const res = await call("PATCH", { bequests: [dollarGift(ACCT_A_ID)] });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe("dollar_bequest_source_not_cash");
+    });
+  });
+
+  it("PATCH returns no warnings", async () => {
+    resetState({
+      wills: [{ id: WILL_EXISTING_ID, clientId: CLIENT_A_ID, grantor: "client" }],
+    });
+    const res = await call("PATCH", { bequests: [dollarGift(null, "estate")] });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ id: WILL_EXISTING_ID });
   });
 });
