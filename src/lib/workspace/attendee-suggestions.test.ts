@@ -1,14 +1,49 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
-import { eq } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { crmHouseholdContacts, crmHouseholds } from "@/db/schema";
+import { clients, crmHouseholdContacts, crmHouseholds, firms } from "@/db/schema";
 
 vi.mock("@/lib/crm-tasks/members", () => ({ listFirmMembers: vi.fn() }));
 import { listFirmMembers } from "@/lib/crm-tasks/members";
 import { suggestAttendees } from "./attendee-suggestions";
 
 const FIRM = `org_wssuggest_${Date.now().toString(36)}`;
+const OPEN = `${FIRM}_open`;
+const FOREIGN = `${FIRM}_foreign`;
 const ME = "user_me";
+const OTHER = "user_other";
+
+async function seedContact(
+  firmId: string,
+  advisorId: string,
+  first: string,
+  email: string,
+  opts: { deleted?: boolean; isPrivate?: boolean } = {},
+) {
+  const [h] = await db
+    .insert(crmHouseholds)
+    .values({ firmId, advisorId, name: `${first} HH`, deletedAt: opts.deleted ? new Date() : null })
+    .returning();
+  await db.insert(crmHouseholdContacts).values({
+    householdId: h.id,
+    role: "primary",
+    firstName: first,
+    lastName: "Scope",
+    email,
+  });
+  if (opts.isPrivate !== undefined) {
+    await db.insert(clients).values({
+      firmId,
+      advisorId,
+      crmHouseholdId: h.id,
+      isPrivate: opts.isPrivate,
+      retirementAge: 65,
+      planEndAge: 95,
+      lifeExpectancy: 95,
+      filingStatus: "single",
+    });
+  }
+}
 
 const member = (userId: string, displayName: string, email: string | null) => ({
   userId,
@@ -20,6 +55,21 @@ const member = (userId: string, displayName: string, email: string | null) => ({
 });
 
 beforeAll(async () => {
+  await db.insert(firms).values([
+    { firmId: FIRM, bookSiloEnabled: true },
+    { firmId: OPEN, bookSiloEnabled: false },
+    { firmId: FOREIGN, bookSiloEnabled: false },
+  ]);
+  // Silo firm: the caller's own household is the only one a member may see.
+  await seedContact(FIRM, ME, "Pao", "pao@own.com", { isPrivate: false });
+  await seedContact(FIRM, OTHER, "Pax", "pax@otherbook.com", { isPrivate: false });
+  await seedContact(FIRM, OTHER, "Pak", "pak@otherprivate.com", { isPrivate: true });
+  await seedContact(FIRM, ME, "Pal", "pal@deleted.com", { deleted: true });
+  // Another firm, same advisor id: only the firmId clause can hide it.
+  await seedContact(FOREIGN, ME, "Pag", "pag@foreign.com", { isPrivate: false });
+  // Non-silo firm: the book rule shows every book, so only Private can hide.
+  await seedContact(OPEN, OTHER, "Pav", "pav@openpublic.com", { isPrivate: false });
+  await seedContact(OPEN, OTHER, "Pah", "pah@openprivate.com", { isPrivate: true });
   const [h] = await db
     .insert(crmHouseholds)
     .values({ firmId: FIRM, advisorId: ME, name: "Suggest HH" })
@@ -37,7 +87,10 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await db.delete(crmHouseholds).where(eq(crmHouseholds.firmId, FIRM));
+  const ids = [FIRM, OPEN, FOREIGN];
+  await db.delete(clients).where(inArray(clients.firmId, ids));
+  await db.delete(crmHouseholds).where(inArray(crmHouseholds.firmId, ids));
+  await db.delete(firms).where(inArray(firms.firmId, ids));
 });
 
 const suggest = (query: string) =>
@@ -75,5 +128,23 @@ describe("suggestAttendees", () => {
   it("treats % and _ literally", async () => {
     expect(await suggest("%%")).toEqual([]);
     expect((await suggest("p_a")).map((s) => s.email)).toEqual(["p_ablo@client.com"]);
+  });
+
+  it("a silo member sees only their own book, live households, in their own firm", async () => {
+    const r = await suggestAttendees({ firmId: FIRM, userId: ME, orgRole: "org:member", query: "sco" });
+    const clientEmails = r.filter((s) => s.kind === "client").map((s) => s.email);
+    expect(clientEmails).toEqual(["pao@own.com"]);
+  });
+
+  it("Private rule alone: a non-silo member sees another advisor's public contact, not their Private one", async () => {
+    const r = await suggestAttendees({ firmId: OPEN, userId: ME, orgRole: "org:member", query: "sco" });
+    expect(r.filter((s) => s.kind === "client").map((s) => s.email)).toEqual(["pav@openpublic.com"]);
+  });
+
+  it("an admin sees every live book in the firm", async () => {
+    const r = await suggestAttendees({ firmId: FIRM, userId: "user_admin", orgRole: "org:admin", query: "sco" });
+    expect(r.filter((s) => s.kind === "client").map((s) => s.email).sort()).toEqual(
+      ["pak@otherprivate.com", "pao@own.com", "pax@otherbook.com"],
+    );
   });
 });

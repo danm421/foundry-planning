@@ -13,6 +13,7 @@ const OTHER = "adv_other";
 
 let liveId: string;
 let privateSiloId: string;
+let publicOtherId: string;
 
 async function seedHousehold(
   firmId: string,
@@ -57,6 +58,10 @@ beforeAll(async () => {
   privateSiloId = await seedHousehold(SILO, OTHER, "Private Silo HH", "priv@example.com", {
     isPrivate: true,
   });
+  // Public household of another advisor: only the book rule can hide it.
+  publicOtherId = await seedHousehold(SILO, OTHER, "Public Other HH", "pubother@example.com", {
+    isPrivate: false,
+  });
   // Non-silo firm: members see every book, so only the Private rule can hide.
   await seedHousehold(OPEN, OTHER, "Private Open HH", "privopen@example.com", { isPrivate: true });
   await seedHousehold(OPEN, OTHER, "Public Open HH", "pubopen@example.com", { isPrivate: false });
@@ -97,6 +102,12 @@ describe("findHouseholdsByEmail", () => {
     expect((await find(SILO, "org:member", ["priv@example.com"])).size).toBe(0);
     const admin = await find(SILO, "org:admin", ["priv@example.com"], "adv_admin");
     expect(admin.get("priv@example.com")?.householdId).toBe(privateSiloId);
+  });
+
+  it("book rule alone: another advisor's PUBLIC household is hidden from a silo member, shown to admin", async () => {
+    expect((await find(SILO, "org:member", ["pubother@example.com"])).size).toBe(0);
+    const admin = await find(SILO, "org:admin", ["pubother@example.com"], "adv_admin");
+    expect(admin.get("pubother@example.com")?.householdId).toBe(publicOtherId);
   });
 
   it("Private rule alone hides it in a non-silo firm; a public household is still visible", async () => {
