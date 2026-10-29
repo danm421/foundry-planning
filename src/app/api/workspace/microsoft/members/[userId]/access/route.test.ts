@@ -4,6 +4,7 @@ import { ForbiddenError } from "@/lib/authz";
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
   requireOrgAdminOrOwner: vi.fn(),
+  requireActiveSubscription: vi.fn(),
   listFirmMembers: vi.fn(),
   setMemberAccess: vi.fn(),
   recordAudit: vi.fn(),
@@ -13,6 +14,7 @@ vi.mock("@clerk/nextjs/server", () => ({ auth: mocks.auth }));
 vi.mock("@/lib/authz", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/authz")>()),
   requireOrgAdminOrOwner: mocks.requireOrgAdminOrOwner,
+  requireActiveSubscription: mocks.requireActiveSubscription,
 }));
 vi.mock("@/lib/audit", () => ({ recordAudit: mocks.recordAudit }));
 vi.mock("@/lib/crm-tasks/members", () => ({ listFirmMembers: mocks.listFirmMembers }));
@@ -34,6 +36,7 @@ beforeEach(() => {
   vi.stubEnv("WORKSPACE_ENABLED", "true");
   mocks.auth.mockResolvedValue({ userId: "user_admin", orgId: "org_1", orgRole: "org:admin" });
   mocks.requireOrgAdminOrOwner.mockResolvedValue(undefined);
+  mocks.requireActiveSubscription.mockResolvedValue(undefined);
   mocks.listFirmMembers.mockResolvedValue([{ userId: "user_admin" }, { userId: "user_adv" }]);
   mocks.setMemberAccess.mockResolvedValue(undefined);
   mocks.recordAudit.mockResolvedValue(undefined);
@@ -84,6 +87,29 @@ describe("POST /api/workspace/microsoft/members/[userId]/access", () => {
         metadata: { userId: "user_adv", enabled: false },
       }),
     );
+  });
+
+  it("a lapsed firm can't switch an advisor ON: 403, nothing written", async () => {
+    mocks.requireActiveSubscription.mockRejectedValue(new ForbiddenError("Active subscription required"));
+    const res = await post("user_adv", { enabled: true });
+    expect(res.status).toBe(403);
+    expect(mocks.setMemberAccess).not.toHaveBeenCalled();
+    expect(mocks.recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("a lapsed firm CAN switch an advisor off, without consulting the subscription", async () => {
+    mocks.requireActiveSubscription.mockRejectedValue(new ForbiddenError("Active subscription required"));
+    const res = await post("user_adv", { enabled: false });
+    expect(res.status).toBe(200);
+    expect(mocks.requireActiveSubscription).not.toHaveBeenCalled();
+    expect(mocks.setMemberAccess).toHaveBeenCalledWith(expect.objectContaining({ userId: "user_adv", enabled: false }));
+  });
+
+  it("switching an advisor ON checks the subscription", async () => {
+    const res = await post("user_adv", { enabled: true });
+    expect(res.status).toBe(200);
+    expect(mocks.requireActiveSubscription).toHaveBeenCalledTimes(1);
+    expect(mocks.setMemberAccess).toHaveBeenCalledWith(expect.objectContaining({ userId: "user_adv", enabled: true }));
   });
 
   it.each([

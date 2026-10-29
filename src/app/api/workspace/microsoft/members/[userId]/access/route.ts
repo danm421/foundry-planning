@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { recordAudit } from "@/lib/audit";
-import { requireOrgAdminOrOwner } from "@/lib/authz";
+import { requireActiveSubscription, requireOrgAdminOrOwner } from "@/lib/authz";
 import { listFirmMembers } from "@/lib/crm-tasks/members";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { parseBody } from "@/lib/schemas/common";
@@ -30,6 +30,8 @@ export async function POST(
     const parsed = await parseBody(bodySchema, req);
     if (!parsed.ok) return parsed.response;
     const { enabled } = parsed.data;
+    // Only switching ON is gated: a lapsed firm must still be able to cut an advisor off.
+    if (enabled) await requireActiveSubscription();
 
     const { userId } = await params;
     const members = await listFirmMembers(firmId);

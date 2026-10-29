@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireOrgAdminOrOwner } from "@/lib/authz";
+import { requireActiveSubscription, requireOrgAdminOrOwner } from "@/lib/authz";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { checkIntegrationOauthLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { parseBody } from "@/lib/schemas/common";
@@ -25,6 +25,7 @@ export async function POST(req: Request): Promise<Response> {
   if (!isWorkspaceEnabled()) return new Response("Not found", { status: 404 });
   try {
     await requireOrgAdminOrOwner();
+    await requireActiveSubscription();
     const { orgId: firmId, userId } = await requireOrgAndUser();
 
     const parsed = await parseBody(bodySchema, req);

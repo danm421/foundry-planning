@@ -4,6 +4,7 @@ import { ForbiddenError } from "@/lib/authz";
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
   requireOrgAdminOrOwner: vi.fn(),
+  requireActiveSubscription: vi.fn(),
   checkIntegrationOauthLimit: vi.fn(),
   createWorkspaceOauthState: vi.fn(),
 }));
@@ -13,6 +14,7 @@ vi.mock("@clerk/nextjs/server", () => ({ auth: mocks.auth }));
 vi.mock("@/lib/authz", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/authz")>()),
   requireOrgAdminOrOwner: mocks.requireOrgAdminOrOwner,
+  requireActiveSubscription: mocks.requireActiveSubscription,
 }));
 vi.mock("@/lib/rate-limit", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/rate-limit")>()),
@@ -43,6 +45,7 @@ beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.test");
   mocks.auth.mockResolvedValue({ userId: "user_admin", orgId: "org_1", orgRole: "org:admin" });
   mocks.requireOrgAdminOrOwner.mockResolvedValue(undefined);
+  mocks.requireActiveSubscription.mockResolvedValue(undefined);
   mocks.checkIntegrationOauthLimit.mockResolvedValue({ allowed: true, remaining: 4, reset: 0 });
   mocks.createWorkspaceOauthState.mockResolvedValue("state-abc");
 });
@@ -65,6 +68,15 @@ describe("POST /api/workspace/microsoft/admin-consent/start", () => {
     mocks.requireOrgAdminOrOwner.mockRejectedValue(new ForbiddenError("Organization admin role required"));
     const res = await POST(post({ mode: "redirect" }));
     expect(res.status).toBe(403);
+    expect(mocks.createWorkspaceOauthState).not.toHaveBeenCalled();
+  });
+
+  it("refuses a lapsed firm with 403, after the admin check, and mints no state", async () => {
+    mocks.requireActiveSubscription.mockRejectedValue(new ForbiddenError("Active subscription required"));
+    const res = await POST(post({ mode: "redirect" }));
+    expect(res.status).toBe(403);
+    expect(mocks.requireOrgAdminOrOwner).toHaveBeenCalled();
+    expect(mocks.checkIntegrationOauthLimit).not.toHaveBeenCalled();
     expect(mocks.createWorkspaceOauthState).not.toHaveBeenCalled();
   });
 

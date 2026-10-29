@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { recordAudit } from "@/lib/audit";
-import { requireOrgAdminOrOwner } from "@/lib/authz";
+import { requireActiveSubscription, requireOrgAdminOrOwner } from "@/lib/authz";
 import { listFirmMembers } from "@/lib/crm-tasks/members";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { enableMembers } from "@/lib/workspace/access";
@@ -14,6 +14,7 @@ export async function POST(): Promise<Response> {
   if (!isWorkspaceEnabled()) return new Response("Not found", { status: 404 });
   try {
     await requireOrgAdminOrOwner();
+    await requireActiveSubscription();
     const { orgId: firmId, userId } = await requireOrgAndUser();
 
     const members = await listFirmMembers(firmId);
