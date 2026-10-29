@@ -49,10 +49,14 @@ function toWorkspaceEvent(e: GraphEvent): WorkspaceEvent {
 
 const eventPath = (id: string) => `/me/events/${encodeURIComponent(id)}`;
 
-/** The mailbox's own time zone name (Windows or IANA, as Graph reports it). */
+/**
+ * The mailbox's own time zone name (Windows or IANA, as Graph reports it). A
+ * mailbox never opened in Outlook has none yet and Graph answers 204; UTC is
+ * what Graph itself uses until one is set.
+ */
 export async function getMailboxTimeZone(ctx: GraphContext): Promise<string> {
-  const res = await graphJson<{ value: string }>(ctx, "/me/mailboxSettings/timeZone");
-  return res.value;
+  const res = await graphJson<{ value?: string } | undefined>(ctx, "/me/mailboxSettings/timeZone");
+  return res?.value || "UTC";
 }
 
 /** Non-cancelled events overlapping `[startDate, startDate + days)` local days, as wall-clock times in `timeZone`. */

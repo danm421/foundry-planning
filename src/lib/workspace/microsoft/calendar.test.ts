@@ -77,6 +77,11 @@ describe("getMailboxTimeZone", () => {
     await expect(getMailboxTimeZone(ctx)).resolves.toBe("Eastern Standard Time");
     expect(call(0).url).toBe("https://graph.microsoft.com/v1.0/me/mailboxSettings/timeZone");
   });
+
+  it("falls back to UTC for a mailbox that has no time zone yet (Graph answers 204)", async () => {
+    const { ctx } = setup(json(undefined, 204));
+    await expect(getMailboxTimeZone(ctx)).resolves.toBe("UTC");
+  });
 });
 
 describe("listEvents", () => {
