@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactElement } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import { useRouter } from "next/navigation";
 import DialogShell from "@/components/dialog-shell";
 import { SwitchControl } from "@/components/forms/switch-control";
@@ -61,13 +61,25 @@ async function post(path: string, body?: unknown): Promise<Response> {
 
 export function MicrosoftWorkspaceAdminCard({ approval, members, flash }: Props): ReactElement {
   const router = useRouter();
-  // Overrides only for switch requests still in flight; once one finishes the
-  // refreshed server props are the truth again.
+  // A switch shows its new value from the click until the refreshed props agree
+  // with it (dropped by the effect below, or at once if the request fails).
+  // `saving` is the rows whose request is still out: one request per row.
   const [pending, setPending] = useState<Record<string, boolean>>({});
+  const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<null | "connect" | "link" | "all">(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    setPending((s) => {
+      const caughtUp = members.filter((m) => m.userId in s && s[m.userId] === m.enabled);
+      if (caughtUp.length === 0) return s;
+      const rest = { ...s };
+      for (const m of caughtUp) delete rest[m.userId];
+      return rest;
+    });
+  }, [members]);
 
   async function connect() {
     setBusy("connect");
@@ -104,14 +116,20 @@ export function MicrosoftWorkspaceAdminCard({ approval, members, flash }: Props)
   async function toggle(m: Member, next: boolean) {
     setError(null);
     setPending((s) => ({ ...s, [m.userId]: next }));
+    setSaving((s) => ({ ...s, [m.userId]: true }));
     try {
       const res = await post(`members/${encodeURIComponent(m.userId)}/access`, { enabled: next });
       if (!res.ok) throw new Error();
       router.refresh();
     } catch {
+      setPending((s) => {
+        const rest = { ...s };
+        delete rest[m.userId];
+        return rest;
+      });
       setError(`Couldn't change access for ${m.displayName}. Try again.`);
     } finally {
-      setPending((s) => {
+      setSaving((s) => {
         const rest = { ...s };
         delete rest[m.userId];
         return rest;
@@ -214,6 +232,7 @@ export function MicrosoftWorkspaceAdminCard({ approval, members, flash }: Props)
                         <SwitchControl
                           checked={on}
                           onChange={(next) => toggle(m, next)}
+                          disabled={saving[m.userId] === true}
                           ariaLabel={`Microsoft 365 access for ${m.displayName}`}
                         />
                       </td>

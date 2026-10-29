@@ -185,4 +185,32 @@ describe("MicrosoftWorkspaceAdminCard — approved", () => {
     expect(screen.queryByText("dana@hartwell.com")).toBeNull();
     expect(screen.getAllByText("Hasn't connected yet")).toHaveLength(2);
   });
+
+  it("holds a flipped switch's new value between the response and the refreshed props", async () => {
+    fetchMock.mockReturnValue(ok());
+    const { rerender } = render(
+      <MicrosoftWorkspaceAdminCard approval={APPROVAL} members={MEMBERS} flash={null} />,
+    );
+    const priya = () => screen.getByRole("switch", { name: /Priya Raman/ }) as HTMLInputElement;
+
+    fireEvent.click(priya());
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    // Response is in, refreshed props have not landed: still the new value.
+    expect(priya().checked).toBe(true);
+    const row = priya().closest("tr")?.textContent ?? "";
+    expect(row).toContain("Hasn't connected yet");
+    expect(row).not.toContain("Off");
+
+    rerender(
+      <MicrosoftWorkspaceAdminCard
+        approval={APPROVAL}
+        members={MEMBERS.map((m) =>
+          m.userId === "u_priya" ? { ...m, enabled: true, status: "not_connected" as const } : m,
+        )}
+        flash={null}
+      />,
+    );
+    expect(priya().checked).toBe(true);
+    expect(priya().disabled).toBe(false);
+  });
 });
