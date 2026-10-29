@@ -47,7 +47,11 @@ export type WorkspaceEvent = {
   webLink: string;
 };
 
-/** One open Microsoft To Do task. `dueDate` is `YYYY-MM-DD`. */
+/**
+ * One open Microsoft To Do task. `dueDate` is `YYYY-MM-DD`. `notes` is the
+ * plain-text body; formatted (HTML) notes arrive as "" with `notesAreHtml`,
+ * and are edited in Outlook only.
+ */
 export type WorkspaceTodo = {
   source: "outlook";
   id: string;
@@ -55,10 +59,15 @@ export type WorkspaceTodo = {
   title: string;
   dueDate: string | null;
   notes: string;
+  notesAreHtml: boolean;
 };
 
-/** Why `GET /api/workspace/todos` came back without its Outlook half. */
-export type OutlookError = "needs_reconnect" | "throttled" | "not_connected";
+/**
+ * Why `GET /api/workspace/todos` came back without its Outlook half:
+ * `throttled` is Microsoft being busy; `unavailable` is any other Microsoft
+ * failure, which a retry may not fix.
+ */
+export type OutlookError = "needs_reconnect" | "throttled" | "unavailable" | "not_connected";
 
 /** One attendee type-ahead suggestion: a CRM contact or a teammate. */
 export type AttendeeSuggestion = { email: string; name: string; kind: "client" | "team" };

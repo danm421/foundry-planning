@@ -110,6 +110,13 @@ describe("workspaceErrorResponse", () => {
     expect(logged()).toContain("MicrosoftAuthError");
   });
 
+  it("(R7) an expired client secret logs Microsoft's short code, so it reads apart from an outage", async () => {
+    const res = workspaceErrorResponse(new MicrosoftAuthError("invalid_client", 401));
+
+    expect(await read(res)).toEqual({ status: 500, body: { error: "Internal server error" } });
+    expect(consoleError).toHaveBeenCalledWith(expect.any(String), { name: "MicrosoftAuthError", code: "invalid_client" });
+  });
+
   it("a thrown non-Error → 500 without crashing the mapper", async () => {
     expect(await read(workspaceErrorResponse("boom secret"))).toEqual({
       status: 500,

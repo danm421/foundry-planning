@@ -117,20 +117,35 @@ describe("GET /api/workspace/microsoft/connect", () => {
     );
   });
 
-  it("rate-limits per advisor and mints no state when limited", async () => {
+  // (M3) A browser follows the Connect link here: failures land back on
+  // Workspace's "Couldn't connect" banner, never raw JSON in the tab.
+  it("rate-limits per advisor: back to Workspace's banner, no state", async () => {
     mocks.checkIntegrationOauthLimit.mockResolvedValue({ allowed: false, reason: "exceeded", reset: Date.now() + 30_000 });
     const res = await GET(connect());
     expect(mocks.checkIntegrationOauthLimit).toHaveBeenCalledWith("ms_connect:user_ada");
-    expect(res.status).toBe(429);
+    expect(res.status).toBe(307);
+    expect(target(res)).toBe("/workspace?error=connect_failed");
     expect(mocks.createWorkspaceOauthState).not.toHaveBeenCalled();
   });
 
-  it("missing Microsoft app env is a generic 500 that logs no detail and mints no state", async () => {
+  it("missing Microsoft app env: back to Workspace's banner, logged without detail, no state", async () => {
     vi.stubEnv("MICROSOFT_CLIENT_ID", "");
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     const res = await GET(connect());
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(307);
+    expect(target(res)).toBe("/workspace?error=connect_failed");
     expect(mocks.createWorkspaceOauthState).not.toHaveBeenCalled();
+    expect(consoleError).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain("MICROSOFT_CLIENT_ID");
+  });
+
+  it("a database failure: back to Workspace's banner, logged by name only", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.createWorkspaceOauthState.mockRejectedValue(new Error("Failed query: insert params: secret-verifier"));
+    const res = await GET(connect());
+    expect(res.status).toBe(307);
+    expect(target(res)).toBe("/workspace?error=connect_failed");
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain("secret");
   });
 });

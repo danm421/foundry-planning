@@ -30,6 +30,7 @@ function todo(over: Partial<WorkspaceTodo> = {}): WorkspaceTodo {
     title: "Send Hartley the updated plan",
     dueDate: null,
     notes: "",
+    notesAreHtml: false,
     ...over,
   };
 }

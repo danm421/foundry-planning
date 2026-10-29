@@ -77,8 +77,10 @@ describe("GET /api/workspace/todos", () => {
     ["not connected", new WorkspaceNotConnectedError("member_off"), "not_connected"],
     ["reconnect", new WorkspaceReconnectRequiredError(), "needs_reconnect"],
     ["throttled", new GraphThrottledError("rid"), "throttled"],
-    ["other Graph error", new GraphRequestError(500, "boom", "rid"), "throttled"],
-    ["unknown error", new Error("secret detail"), "throttled"],
+    // (R24) Only throttling reads "busy"; any other Microsoft failure can't-load.
+    ["other Graph error", new GraphRequestError(500, "boom", "rid"), "unavailable"],
+    ["mailbox Graph can't serve", new GraphRequestError(404, "MailboxNotEnabledForRESTAPI", "rid"), "unavailable"],
+    ["unknown error", new Error("secret detail"), "unavailable"],
   ])("keeps Foundry tasks and sets outlookError when Microsoft fails (%s)", async (_n, err, outlookError) => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     mocks.resolveActingConnection.mockRejectedValue(err);
@@ -91,7 +93,7 @@ describe("GET /api/workspace/todos", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     mocks.listOpenTodos.mockRejectedValue(new Error("secret detail"));
     const res = await GET();
-    expect((await res.json()).outlookError).toBe("throttled");
+    expect((await res.json()).outlookError).toBe("unavailable");
     expect(JSON.stringify(spy.mock.calls)).not.toContain("secret detail");
   });
 

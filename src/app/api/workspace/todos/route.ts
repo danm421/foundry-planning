@@ -23,8 +23,9 @@ export const dynamic = "force-dynamic";
 
 /**
  * The Microsoft half of the list. Any failure here degrades to an
- * `outlookError` so the Foundry tasks still show; "throttled" ("Microsoft is
- * busy") is the catch-all, and only the error's name is ever logged.
+ * `outlookError` so the Foundry tasks still show: "throttled" ("Microsoft is
+ * busy") for throttling only, "unavailable" for any other failure, which is
+ * logged by name (plus Graph status / request-id) only.
  */
 async function loadOutlook(
   firmId: string,
@@ -36,10 +37,9 @@ async function loadOutlook(
   } catch (err) {
     if (err instanceof WorkspaceNotConnectedError) return { outlook: null, outlookError: "not_connected" };
     if (err instanceof WorkspaceReconnectRequiredError) return { outlook: null, outlookError: "needs_reconnect" };
-    if (!(err instanceof GraphThrottledError)) {
-      console.error("Workspace to-dos: Microsoft side failed:", safeErrorFields(err));
-    }
-    return { outlook: null, outlookError: "throttled" };
+    if (err instanceof GraphThrottledError) return { outlook: null, outlookError: "throttled" };
+    console.error("Workspace to-dos: Microsoft side failed:", safeErrorFields(err));
+    return { outlook: null, outlookError: "unavailable" };
   }
 }
 

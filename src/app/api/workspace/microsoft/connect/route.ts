@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { generatePkce } from "@/lib/integrations/pkce";
-import { checkIntegrationOauthLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
+import { checkIntegrationOauthLimit } from "@/lib/rate-limit";
 import { hasMemberAccess } from "@/lib/workspace/access";
 import { getFirmApproval } from "@/lib/workspace/approvals";
 import { isWorkspaceEnabled } from "@/lib/workspace/flag";
@@ -16,7 +16,9 @@ const STATE_TTL_MS = 10 * 60 * 1000;
 
 /**
  * Starts a switched-on advisor's own Microsoft sign-in (authorization code +
- * PKCE) on the firm's approved tenant. The Workspace page links here.
+ * PKCE) on the firm's approved tenant. The Workspace page links here, so a
+ * rate limit or a server failure (missing config, the database) redirects back
+ * to its "Couldn't connect" banner, never JSON in the advisor's tab.
  */
 export async function GET(req: Request): Promise<Response> {
   if (!isWorkspaceEnabled()) return new Response("Not found", { status: 404 });
@@ -30,9 +32,7 @@ export async function GET(req: Request): Promise<Response> {
     }
 
     const rl = await checkIntegrationOauthLimit(`ms_connect:${userId}`);
-    if (!rl.allowed) {
-      return rateLimitErrorResponse(rl, "Too many Microsoft 365 sign-in attempts. Please try again shortly.");
-    }
+    if (!rl.allowed) return redirectTo(req, "/workspace?error=connect_failed");
 
     // Throws before the state is written when the Microsoft app isn't
     // configured, so a misconfigured deploy leaves no orphan state rows.
@@ -48,6 +48,8 @@ export async function GET(req: Request): Promise<Response> {
     });
     return NextResponse.redirect(buildAuthorizeUrl({ tenantId: approval.tenantId, state, challenge }), 307);
   } catch (err) {
-    return workspaceErrorResponse(err);
+    // Logged (name only) by the mapper; a server failure goes back to the banner.
+    const res = workspaceErrorResponse(err);
+    return res.status >= 500 ? redirectTo(req, "/workspace?error=connect_failed") : res;
   }
 }

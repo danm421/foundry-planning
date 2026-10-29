@@ -7,6 +7,7 @@ import {
   WorkspaceNotConnectedError,
   WorkspaceReconnectRequiredError,
 } from "./errors";
+import { MicrosoftAuthError } from "./microsoft/oauth";
 
 /**
  * Shared error mapper for `/api/workspace/*` route handlers:
@@ -19,9 +20,10 @@ import {
  * - `GraphRequestError` 403 / 404 → the same status, `not_allowed` / `not_found`
  * - access denials → `authErrorResponse`
  * - anything else → 500, logging only the error's name plus, for a Graph
- *   error, its status and `request-id`. Never `err.message`: a rethrown DB
- *   error's message carries query parameters (encrypted tokens, email,
- *   Microsoft user id).
+ *   error, its status and `request-id`, and for a Microsoft sign-in error its
+ *   short code (`invalid_client` is an expired secret, not an outage). Never
+ *   `err.message`: a rethrown DB error's message carries query parameters
+ *   (encrypted tokens, email, Microsoft user id).
  */
 export function workspaceErrorResponse(err: unknown): Response {
   const denial = authErrorResponse(err);
@@ -47,11 +49,20 @@ export function workspaceErrorResponse(err: unknown): Response {
   return NextResponse.json({ error: "Internal server error" }, { status: 500 });
 }
 
-/** The error's name plus, for a Graph error, its status and `request-id`: all a log line may carry. */
-export function safeErrorFields(err: unknown): { name: string; status?: number; requestId?: string | null } {
+/**
+ * The error's name plus, for a Graph error, its status and `request-id`, and
+ * for a Microsoft sign-in error its short `code`: all a log line may carry.
+ */
+export function safeErrorFields(err: unknown): {
+  name: string;
+  status?: number;
+  requestId?: string | null;
+  code?: string;
+} {
   return {
     name: err instanceof Error ? err.name : typeof err,
     ...(err instanceof GraphRequestError ? { status: err.status, requestId: err.requestId } : {}),
+    ...(err instanceof MicrosoftAuthError ? { code: err.code } : {}),
   };
 }
 
