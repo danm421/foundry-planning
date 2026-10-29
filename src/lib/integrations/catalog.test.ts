@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { providerState, providerStateFromConnections, sortIntegrations } from "./catalog";
+import { INTEGRATION_INFO, providerState, providerStateFromConnections, sortIntegrations } from "./catalog";
 
 describe("providerState", () => {
   it("reads a switched-off provider as coming soon, even with a live connection", () => {
@@ -53,5 +53,11 @@ describe("sortIntegrations", () => {
     ];
     sortIntegrations(rows);
     expect(rows.map((r) => r.label)).toEqual(["B", "A"]);
+  });
+});
+
+describe("INTEGRATION_INFO", () => {
+  it("files Microsoft 365 under Calendar & to-dos", () => {
+    expect(INTEGRATION_INFO.microsoft_365.category).toBe("Calendar & to-dos");
   });
 });

@@ -8,7 +8,9 @@ import type { ProviderId } from "./types";
 /** Every integration with a page under /settings/integrations. Plaid is not a
  *  firm-level provider (each client links their own institutions), so it has no
  *  registry entry — but it still gets a row and a page. */
-export type IntegrationSlug = ProviderId | "plaid";
+export type IntegrationSlug = ProviderId | "plaid" | "microsoft_365";
+
+export const MICROSOFT_365_LABEL = "Microsoft 365";
 
 export const PLAID_LABEL = "Plaid";
 
@@ -28,6 +30,10 @@ export const INTEGRATION_INFO: Record<IntegrationSlug, { category: string; blurb
   plaid: {
     category: "Client accounts",
     blurb: "Clients link their own bank, investment and loan accounts from the client portal.",
+  },
+  microsoft_365: {
+    category: "Calendar & to-dos",
+    blurb: "Bring your advisors' Outlook calendars and Microsoft To Do lists into Workspace.",
   },
   azure_openai: {
     category: "AI",

@@ -5,6 +5,7 @@ import { getConnection, listOwnedConnections } from "@/lib/integrations/connecti
 import { listProviders } from "@/lib/integrations/registry";
 import {
   INTEGRATION_INFO,
+  MICROSOFT_365_LABEL,
   PLAID_LABEL,
   providerState,
   providerStateFromConnections,
@@ -13,6 +14,10 @@ import {
   type IntegrationState,
 } from "@/lib/integrations/catalog";
 import { getPlaidUsage } from "@/lib/integrations/plaid-usage";
+import { getFirmApproval } from "@/lib/workspace/approvals";
+import { listMemberAccess } from "@/lib/workspace/access";
+import { listFirmConnectionSummaries } from "@/lib/workspace/connections";
+import { isWorkspaceEnabled } from "@/lib/workspace/flag";
 import { isAzureOpenAiEnabled } from "@/lib/integrations/providers/azure-openai/flag";
 import { ChevronRightIcon } from "@/components/icons";
 import Forbidden from "../forbidden";
@@ -42,7 +47,10 @@ export default async function IntegrationsPage(): Promise<ReactElement> {
   const providers = listProviders().filter(
     (p) => p.id !== "azure_openai" || (isAdmin && isAzureOpenAiEnabled()),
   );
-  const [owned, providerRows, plaid] = await Promise.all([
+  // Microsoft 365 is firm-wide and flag-gated: no row, and no reads, unless an
+  // admin is looking with Workspace on.
+  const showMicrosoft = isAdmin && isWorkspaceEnabled();
+  const [owned, providerRows, plaid, microsoft] = await Promise.all([
     listOwnedConnections({ firmId, userId }),
     Promise.all(
       providers
@@ -53,6 +61,7 @@ export default async function IntegrationsPage(): Promise<ReactElement> {
         }),
     ),
     isAdmin ? getPlaidUsage(firmId) : null,
+    showMicrosoft ? loadMicrosoftRow(firmId) : null,
   ]);
 
   const syncingRows = providers
@@ -76,6 +85,7 @@ export default async function IntegrationsPage(): Promise<ReactElement> {
   const rows = sortIntegrations<Row>([
     ...providerRows,
     ...syncingRows,
+    ...(microsoft ? [microsoft] : []),
     ...(plaid
       ? [
           {
@@ -127,6 +137,22 @@ export default async function IntegrationsPage(): Promise<ReactElement> {
         ))}
     </div>
   );
+}
+
+/** Approved firm = in use; the count is advisors who are switched on and have signed in. */
+async function loadMicrosoftRow(firmId: string): Promise<Row> {
+  const [approval, access, summaries] = await Promise.all([
+    getFirmApproval(firmId, "microsoft"),
+    listMemberAccess(firmId, "microsoft"),
+    listFirmConnectionSummaries(firmId, "microsoft"),
+  ]);
+  const n = summaries.filter((c) => c.status === "connected" && access.get(c.userId) === true).length;
+  return {
+    slug: "microsoft_365",
+    label: MICROSOFT_365_LABEL,
+    state: approval ? "connected" : "available",
+    detail: n > 0 ? { label: "Advisors connected", value: String(n) } : null,
+  };
 }
 
 const STATUS: Record<Exclude<IntegrationState, "coming_soon">, { dot: string; label: string }> = {

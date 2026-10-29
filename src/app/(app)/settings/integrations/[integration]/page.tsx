@@ -4,9 +4,16 @@ import { notFound } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { getConnection, listOwnedConnections } from "@/lib/integrations/connections";
 import { getProvider, isProviderId } from "@/lib/integrations/registry";
-import { INTEGRATION_INFO, PLAID_LABEL, type IntegrationSlug } from "@/lib/integrations/catalog";
+import { INTEGRATION_INFO, MICROSOFT_365_LABEL, PLAID_LABEL, type IntegrationSlug } from "@/lib/integrations/catalog";
 import { getPlaidUsage } from "@/lib/integrations/plaid-usage";
 import { decodeAzureConfig, type AzureConfig } from "@/lib/ai/credentials";
+import { getFirmApproval } from "@/lib/workspace/approvals";
+import { listMemberAccess } from "@/lib/workspace/access";
+import { listFirmConnectionSummaries } from "@/lib/workspace/connections";
+import { isWorkspaceEnabled } from "@/lib/workspace/flag";
+import { memberStatus } from "@/lib/workspace/member-status";
+import { listFirmMembers } from "@/lib/crm-tasks/members";
+import { MicrosoftWorkspaceAdminCard } from "@/components/MicrosoftWorkspaceAdminCard";
 import { IntegrationConnectionList } from "@/components/IntegrationConnectionList";
 import { PlaidIntegrationTile } from "@/components/PlaidIntegrationTile";
 import { AzureOpenAiCard } from "@/components/AzureOpenAiCard";
@@ -15,14 +22,56 @@ import Forbidden from "../../forbidden";
 
 interface Props {
   params: Promise<{ integration: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }
 
-export default async function IntegrationDetailPage({ params }: Props): Promise<ReactElement> {
+function microsoftFlash(sp: Record<string, string | string[] | undefined>) {
+  if (sp.approved === "1") return "approved" as const;
+  if (sp.error === "consent_declined") return "consent_declined" as const;
+  if (sp.error === "consent_expired") return "consent_expired" as const;
+  return null;
+}
+
+export default async function IntegrationDetailPage({ params, searchParams }: Props): Promise<ReactElement> {
   const { orgId: firmId, userId, orgRole } = await auth();
   if (!firmId || !userId) return <Forbidden requiredRole="firm member" />;
   const isAdmin = orgRole === "org:admin";
 
   const { integration: slug } = await params;
+
+  // Microsoft 365 is firm-wide too. The flag is checked first so a switched-off
+  // Workspace has no page for anyone, then the admin gate, then the reads.
+  if (slug === "microsoft_365") {
+    if (!isWorkspaceEnabled()) notFound();
+    if (!isAdmin) return <Forbidden requiredRole="admin or owner" />;
+    const [approval, roster, access, summaries, sp] = await Promise.all([
+      getFirmApproval(firmId, "microsoft"),
+      listFirmMembers(firmId),
+      listMemberAccess(firmId, "microsoft"),
+      listFirmConnectionSummaries(firmId, "microsoft"),
+      searchParams ?? Promise.resolve({}),
+    ]);
+    const members = roster.map((m) => {
+      const enabled = access.get(m.userId) === true;
+      const summary = summaries.find((c) => c.userId === m.userId) ?? null;
+      return {
+        userId: m.userId,
+        displayName: m.displayName,
+        status: memberStatus({ enabled, connection: summary }),
+        connectedEmail: enabled && summary ? summary.externalEmail : null,
+        enabled,
+      };
+    });
+    return (
+      <DetailShell slug="microsoft_365" label={MICROSOFT_365_LABEL}>
+        <MicrosoftWorkspaceAdminCard
+          approval={approval ? { approvedAt: approval.approvedAt.toISOString() } : null}
+          members={members}
+          flash={microsoftFlash(sp)}
+        />
+      </DetailShell>
+    );
+  }
 
   // Plaid and Azure OpenAI are firm-wide: admins and owners only, checked
   // before any read. Addepar, Orion and Schwab are each advisor's own.
