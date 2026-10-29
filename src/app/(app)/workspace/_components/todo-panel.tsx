@@ -1,19 +1,15 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type FormEvent, type ReactElement } from "react";
+import { useEffect, useId, useRef, useState, type ReactElement } from "react";
 import Link from "next/link";
-import { checkboxClassName, inputClassName, selectClassName } from "@/components/forms/input-styles";
-import { SwitchControl } from "@/components/forms/switch-control";
+import { checkboxClassName } from "@/components/forms/input-styles";
 import type { TaskListRow } from "@/lib/crm-tasks/queries";
 import { groupTodos, toTodoItems, type TodoGroups, type TodoItem } from "@/lib/workspace/todo-groups";
-import type { WorkspaceTodo } from "@/lib/workspace/types";
+import type { OutlookError, WorkspaceTodo } from "@/lib/workspace/types";
 import { localToday, monthDay } from "@/lib/workspace/week";
+import { AddTodoRow, type HouseholdOption, type TodoDraft } from "./add-todo-row";
+import { CONNECT_URL } from "./calendar-pane-state";
 import { TodoEditorDialog, type TodoPatch } from "./todo-editor-dialog";
-
-export type HouseholdOption = { id: string; name: string };
-
-type OutlookError = "needs_reconnect" | "throttled" | "not_connected";
-type Priority = "low" | "med" | "high";
 
 type Loaded = {
   foundry: TaskListRow[];
@@ -23,17 +19,7 @@ type Loaded = {
 };
 type ListState = { kind: "loading" } | { kind: "error" } | ({ kind: "ready" } & Loaded);
 
-/** What the add row hands back: an Outlook to-do, or a Foundry task when `foundry` is set. */
-type TodoDraft = {
-  title: string;
-  dueDate: string | null;
-  foundry: { householdId: string | null; priority: Priority } | null;
-};
-
-// A plain anchor, never fetch(): the route answers with a redirect to Microsoft.
-const CONNECT_URL = "/api/workspace/microsoft/connect";
 const CHECK_FAILED = "Couldn't mark it done. Try again.";
-const ADD_FAILED = "Couldn't add the to-do. Try again.";
 
 const GROUPS: [keyof TodoGroups, string][] = [
   ["overdue", "Overdue"],
@@ -43,17 +29,6 @@ const GROUPS: [keyof TodoGroups, string][] = [
   ["noDate", "No date"],
 ];
 
-const PRIORITIES: [Priority, string][] = [
-  ["low", "Low"],
-  ["med", "Medium"],
-  ["high", "High"],
-];
-
-const LABEL = "mb-1 block text-[12px] font-medium text-ink-3";
-const ADD_BUTTON =
-  "inline-flex h-8 items-center rounded-[var(--radius-sm)] bg-accent px-3 text-[12px] font-semibold text-accent-on transition-colors hover:bg-accent-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
-const QUIET_BUTTON =
-  "inline-flex h-8 items-center rounded-[var(--radius-sm)] px-3 text-[12px] text-ink-2 transition-colors hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 const NOTICE = "mb-3 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-2.5 py-1.5 text-[12px] text-ink-2";
 const CHIP =
   "ml-1.5 inline-block rounded-full border border-hair-2 px-1.5 align-[1px] font-mono text-[9px] uppercase leading-[1.5] tracking-[0.08em] text-ink-3";
@@ -273,7 +248,7 @@ export function TodoPanel({
           ) : (
             GROUPS.map(([key, label]) =>
               groups[key].length > 0 ? (
-                <section key={key} aria-labelledby={`${ids}-${key}`} className="mt-3 first:mt-0">
+                <section key={key} aria-labelledby={`${ids}-${key}`} className="mt-3">
                   <h3
                     id={`${ids}-${key}`}
                     className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-3"
@@ -373,154 +348,5 @@ function TodoRow({
         ) : null}
       </div>
     </li>
-  );
-}
-
-/**
- * The inline add row. Off, the switch makes an Outlook to-do; on, a Foundry
- * task with a household and priority. With no working Outlook connection the
- * switch is locked on. A failed add keeps the row open with what was typed.
- */
-function AddTodoRow({
-  foundryOnly,
-  households,
-  onAdd,
-  onCancel,
-}: {
-  foundryOnly: boolean;
-  households: HouseholdOption[];
-  /** Rejects to keep the row open with an error; the caller closes it on success. */
-  onAdd: (draft: TodoDraft) => Promise<void>;
-  onCancel: () => void;
-}): ReactElement {
-  const ids = useId();
-  const [title, setTitle] = useState("");
-  const [due, setDue] = useState("");
-  const [asFoundry, setAsFoundry] = useState(false);
-  const [householdId, setHouseholdId] = useState("");
-  const [priority, setPriority] = useState<Priority>("med");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(false);
-
-  const titleRef = useRef<HTMLInputElement>(null);
-  useEffect(() => titleRef.current?.focus(), []);
-
-  const foundry = foundryOnly || asFoundry;
-  // createCrmTaskSchema caps a title at 200; createTodoSchema at 255.
-  const maxTitle = foundry ? 200 : 255;
-  const trimmed = title.trim();
-  const canAdd = trimmed !== "" && trimmed.length <= maxTitle && !busy;
-
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    if (!canAdd) return;
-    setBusy(true);
-    setError(false);
-    try {
-      await onAdd({
-        title: trimmed,
-        dueDate: due || null,
-        foundry: foundry ? { householdId: householdId || null, priority } : null,
-      });
-    } catch {
-      setError(true);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const field = (name: string) => `${ids}-${name}`;
-
-  return (
-    <form
-      noValidate
-      onSubmit={submit}
-      className="mb-3 flex flex-col gap-2.5 rounded-[var(--radius-sm)] border border-hair-2 bg-card-2 p-2.5"
-    >
-      <div>
-        <label htmlFor={field("title")} className={LABEL}>
-          Title
-        </label>
-        <input
-          ref={titleRef}
-          id={field("title")}
-          className={inputClassName}
-          value={title}
-          maxLength={maxTitle}
-          onChange={(e) => setTitle(e.target.value)}
-        />
-      </div>
-      <div>
-        <label htmlFor={field("due")} className={LABEL}>
-          Due date
-        </label>
-        <input
-          id={field("due")}
-          type="date"
-          className={`${inputClassName} tabular`}
-          value={due}
-          onChange={(e) => setDue(e.target.value)}
-        />
-      </div>
-      <SwitchControl
-        checked={foundry}
-        onChange={setAsFoundry}
-        disabled={foundryOnly}
-        ariaLabel="Make it a Foundry task"
-        stateLabel="Make it a Foundry task"
-      />
-      {foundry ? (
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-          <div className="min-w-0">
-            <label htmlFor={field("household")} className={LABEL}>
-              Household
-            </label>
-            <select
-              id={field("household")}
-              className={selectClassName}
-              value={householdId}
-              onChange={(e) => setHouseholdId(e.target.value)}
-            >
-              <option value="">No household</option>
-              {households.map((h) => (
-                <option key={h.id} value={h.id}>
-                  {h.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label htmlFor={field("priority")} className={LABEL}>
-              Priority
-            </label>
-            <select
-              id={field("priority")}
-              className={selectClassName}
-              value={priority}
-              onChange={(e) => setPriority(e.target.value as Priority)}
-            >
-              {PRIORITIES.map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      ) : null}
-      {error ? (
-        <p role="alert" className="text-[12px] text-crit">
-          {ADD_FAILED}
-        </p>
-      ) : null}
-      <div className="flex justify-end gap-1">
-        <button type="button" className={QUIET_BUTTON} onClick={onCancel}>
-          Cancel
-        </button>
-        <button type="submit" className={ADD_BUTTON} disabled={!canAdd}>
-          {busy ? "Adding…" : "Add"}
-        </button>
-      </div>
-    </form>
   );
 }

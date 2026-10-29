@@ -59,6 +59,19 @@ async function post(path: string, body?: unknown): Promise<Response> {
   });
 }
 
+/** A new single-use admin-consent URL; throws when the route refuses. */
+async function consentUrl(mode: "redirect" | "link"): Promise<string> {
+  const res = await post("admin-consent/start", { mode });
+  if (!res.ok) throw new Error();
+  return ((await res.json()) as { url: string }).url;
+}
+
+function without(s: Record<string, boolean>, key: string): Record<string, boolean> {
+  const rest = { ...s };
+  delete rest[key];
+  return rest;
+}
+
 export function MicrosoftWorkspaceAdminCard({ approval, members, flash }: Props): ReactElement {
   const router = useRouter();
   // A switch shows its new value from the click until the refreshed props agree
@@ -86,9 +99,7 @@ export function MicrosoftWorkspaceAdminCard({ approval, members, flash }: Props)
     setError(null);
     setNotice(null);
     try {
-      const res = await post("admin-consent/start", { mode: "redirect" });
-      if (!res.ok) throw new Error();
-      const { url } = (await res.json()) as { url: string };
+      const url = await consentUrl("redirect");
       window.location.assign(url);
     } catch {
       setError("Couldn't start the Microsoft approval. Try again.");
@@ -101,9 +112,7 @@ export function MicrosoftWorkspaceAdminCard({ approval, members, flash }: Props)
     setError(null);
     setNotice(null);
     try {
-      const res = await post("admin-consent/start", { mode: "link" });
-      if (!res.ok) throw new Error();
-      const { url } = (await res.json()) as { url: string };
+      const url = await consentUrl("link");
       await navigator.clipboard.writeText(url);
       setNotice("Link copied — it works once and expires in 7 days.");
     } catch {
@@ -122,18 +131,10 @@ export function MicrosoftWorkspaceAdminCard({ approval, members, flash }: Props)
       if (!res.ok) throw new Error();
       router.refresh();
     } catch {
-      setPending((s) => {
-        const rest = { ...s };
-        delete rest[m.userId];
-        return rest;
-      });
+      setPending((s) => without(s, m.userId));
       setError(`Couldn't change access for ${m.displayName}. Try again.`);
     } finally {
-      setSaving((s) => {
-        const rest = { ...s };
-        delete rest[m.userId];
-        return rest;
-      });
+      setSaving((s) => without(s, m.userId));
     }
   }
 

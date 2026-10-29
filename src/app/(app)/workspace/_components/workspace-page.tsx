@@ -7,9 +7,10 @@ import { SwitchControl } from "@/components/forms/switch-control";
 import { useToast } from "@/components/toast";
 import type { CalendarPaneState as PaneState, WallClock } from "@/lib/workspace/types";
 import { addDays, formatWeekRange, localToday, mondayOf, newEventSlot } from "@/lib/workspace/week";
+import type { HouseholdOption } from "./add-todo-row";
 import { CalendarPaneState, type PaneView } from "./calendar-pane-state";
 import { EventEditorDialog, type EventDraft } from "./event-editor-dialog";
-import { TodoPanel, type HouseholdOption } from "./todo-panel";
+import { TodoPanel } from "./todo-panel";
 import { WeekCalendar, type WeekEvent } from "./week-calendar";
 
 const WEEKENDS_KEY = "workspace.showWeekends";

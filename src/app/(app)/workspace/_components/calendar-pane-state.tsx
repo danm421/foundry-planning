@@ -6,7 +6,7 @@ import type { CalendarPaneState as PaneState } from "@/lib/workspace/types";
 export type PaneView = Exclude<PaneState, "ready"> | "throttled";
 
 // A plain anchor, never fetch(): the route answers with a redirect to Microsoft.
-const CONNECT_URL = "/api/workspace/microsoft/connect";
+export const CONNECT_URL = "/api/workspace/microsoft/connect";
 const SETTINGS_URL = "/settings/integrations/microsoft_365";
 const INTRO = "Bring in your Outlook calendar";
 

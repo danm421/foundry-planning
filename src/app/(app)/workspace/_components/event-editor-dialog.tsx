@@ -5,8 +5,8 @@ import { z } from "zod";
 import DialogShell from "@/components/dialog-shell";
 import { checkboxClassName, fieldLabelClassName, inputClassName } from "@/components/forms/input-styles";
 import { ExternalLinkIcon, XIcon } from "@/components/icons";
-import type { WallClock } from "@/lib/workspace/types";
-import { addDays, daysBetween, monthDay, toWallClock } from "@/lib/workspace/week";
+import type { AttendeeSuggestion, WallClock } from "@/lib/workspace/types";
+import { addDays, daysBetween, minutesOfTime, monthDay, timeOf, toWallClock } from "@/lib/workspace/week";
 
 /** What Save hands back — exactly `POST /api/workspace/events`'s body. */
 export type EventDraft = {
@@ -16,8 +16,6 @@ export type EventDraft = {
   attendees: string[];
   teams: boolean;
 };
-
-type Suggestion = { email: string; name: string; kind: "client" | "team" };
 
 const FORM_ID = "workspace-event-editor";
 const MAX_ATTENDEES = 50; // createEventSchema's cap
@@ -33,18 +31,9 @@ const TIME_RE = /^\d{2}:\d{2}$/;
 // The same check the route's schema runs, so a chip never fails on save.
 const isEmail = (v: string) => z.email().safeParse(v).success;
 
-function minutesOfTime(t: string): number {
-  return Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
-}
-
 /** An end time of 00:00 is the end of the day, so it counts as 1440. */
 function endMinutes(t: string): number {
   return t === "00:00" ? 1440 : minutesOfTime(t);
-}
-
-function timeOf(minutes: number): string {
-  const m = minutes % 1440;
-  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 }
 
 /**
@@ -401,7 +390,7 @@ function AttendeePicker({
 }): ReactElement {
   const query = typed.trim();
   // Keyed by the query they answer, so a stale answer never shows.
-  const [found, setFound] = useState<{ query: string; list: Suggestion[] } | null>(null);
+  const [found, setFound] = useState<{ query: string; list: AttendeeSuggestion[] } | null>(null);
   useEffect(() => {
     if (query.length < 2) return;
     const ctrl = new AbortController();
@@ -409,7 +398,7 @@ function AttendeePicker({
       fetch(`/api/workspace/attendee-suggestions?q=${encodeURIComponent(query)}`, { signal: ctrl.signal })
         .then((res) => (res.ok ? (res.json() as Promise<{ suggestions?: unknown }>) : null))
         .then((body) => {
-          const list = Array.isArray(body?.suggestions) ? (body.suggestions as Suggestion[]) : [];
+          const list = Array.isArray(body?.suggestions) ? (body.suggestions as AttendeeSuggestion[]) : [];
           if (!ctrl.signal.aborted) setFound({ query, list });
         })
         .catch(() => {
@@ -424,7 +413,7 @@ function AttendeePicker({
 
   const full = attendees.length >= MAX_ATTENDEES;
   const suggestions =
-    found && found.query === query && query.length >= 2
+    found && found.query === query
       ? found.list.filter((s) => !hasEmail(attendees, s.email))
       : [];
 
