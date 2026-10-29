@@ -61,9 +61,9 @@ async function post(path: string, body?: unknown): Promise<Response> {
 
 export function MicrosoftWorkspaceAdminCard({ approval, members, flash }: Props): ReactElement {
   const router = useRouter();
-  const [enabled, setEnabled] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(members.map((m) => [m.userId, m.enabled])),
-  );
+  // Overrides only for switch requests still in flight; once one finishes the
+  // refreshed server props are the truth again.
+  const [pending, setPending] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<null | "connect" | "link" | "all">(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -103,13 +103,19 @@ export function MicrosoftWorkspaceAdminCard({ approval, members, flash }: Props)
 
   async function toggle(m: Member, next: boolean) {
     setError(null);
-    setEnabled((s) => ({ ...s, [m.userId]: next }));
+    setPending((s) => ({ ...s, [m.userId]: next }));
     try {
       const res = await post(`members/${encodeURIComponent(m.userId)}/access`, { enabled: next });
       if (!res.ok) throw new Error();
+      router.refresh();
     } catch {
-      setEnabled((s) => ({ ...s, [m.userId]: !next }));
       setError(`Couldn't change access for ${m.displayName}. Try again.`);
+    } finally {
+      setPending((s) => {
+        const rest = { ...s };
+        delete rest[m.userId];
+        return rest;
+      });
     }
   }
 
@@ -185,8 +191,12 @@ export function MicrosoftWorkspaceAdminCard({ approval, members, flash }: Props)
               </thead>
               <tbody className="divide-y divide-hair">
                 {members.map((m) => {
-                  const on = enabled[m.userId] ?? m.enabled;
-                  const st = STATUS[on ? (m.status === "off" ? "not_connected" : m.status) : "off"];
+                  const on = pending[m.userId] ?? m.enabled;
+                  // Mid-flip, show where the row is heading: off is Off, and a
+                  // freshly switched-on row has not connected yet.
+                  const shown: MemberStatus =
+                    m.userId in pending ? (on ? (m.enabled ? m.status : "not_connected") : "off") : m.status;
+                  const st = STATUS[shown];
                   const email = on ? m.connectedEmail : null;
                   return (
                     <tr key={m.userId}>

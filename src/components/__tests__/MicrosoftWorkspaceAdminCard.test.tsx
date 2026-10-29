@@ -131,4 +131,58 @@ describe("MicrosoftWorkspaceAdminCard — approved", () => {
     await waitFor(() => expect(refresh).toHaveBeenCalled());
     expect(fetchMock.mock.calls[0][0]).toBe("/api/workspace/microsoft/disconnect");
   });
+
+  it("follows refreshed server props after Turn on for everyone", async () => {
+    fetchMock.mockReturnValue(ok({ enabled: 4 }));
+    const { rerender } = render(
+      <MicrosoftWorkspaceAdminCard approval={APPROVAL} members={MEMBERS} flash={null} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Turn on for everyone" }));
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+
+    const refreshed = MEMBERS.map((m) =>
+      m.userId === "u_priya" ? { ...m, enabled: true, status: "not_connected" as const } : m,
+    );
+    rerender(<MicrosoftWorkspaceAdminCard approval={APPROVAL} members={refreshed} flash={null} />);
+
+    expect((screen.getByRole("switch", { name: /Priya Raman/ }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.queryByText("Off")).toBeNull();
+  });
+
+  it("after a successful flip, shows the refreshed status, not a stale Connected", async () => {
+    fetchMock.mockReturnValue(ok());
+    const { rerender } = render(
+      <MicrosoftWorkspaceAdminCard approval={APPROVAL} members={MEMBERS} flash={null} />,
+    );
+    const dana = () => screen.getByRole("switch", { name: /Dana Whitfield/ }) as HTMLInputElement;
+
+    fireEvent.click(dana()); // off
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    rerender(
+      <MicrosoftWorkspaceAdminCard
+        approval={APPROVAL}
+        members={MEMBERS.map((m) =>
+          m.userId === "u_dana" ? { ...m, enabled: false, status: "off" as const, connectedEmail: null } : m,
+        )}
+        flash={null}
+      />,
+    );
+    fireEvent.click(dana()); // on again
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(2));
+    rerender(
+      <MicrosoftWorkspaceAdminCard
+        approval={APPROVAL}
+        members={MEMBERS.map((m) =>
+          m.userId === "u_dana"
+            ? { ...m, enabled: true, status: "not_connected" as const, connectedEmail: null }
+            : m,
+        )}
+        flash={null}
+      />,
+    );
+
+    expect(dana().checked).toBe(true);
+    expect(screen.queryByText("dana@hartwell.com")).toBeNull();
+    expect(screen.getAllByText("Hasn't connected yet")).toHaveLength(2);
+  });
 });
