@@ -296,3 +296,103 @@ describe("EventEditorDialog — edit", () => {
     expect(await screen.findByText("Couldn't cancel the meeting. Try again.")).toBeInTheDocument();
   });
 });
+
+describe("EventEditorDialog — meetings that run past a day", () => {
+  const edit = (start: string, end: string, onSave = vi.fn(async () => {})) => {
+    render(
+      <EventEditorDialog mode="edit" initial={{ ...REVIEW, start, end }} onSave={onSave} onClose={() => {}} />,
+    );
+    return onSave;
+  };
+
+  it("a Monday-to-Wednesday meeting opens without an error and saves unchanged", async () => {
+    const user = userEvent.setup();
+    const onSave = edit("2026-10-26T09:00", "2026-10-28T17:00");
+    expect(screen.queryByText("End time must be after the start time.")).toBeNull();
+    expect(screen.getByText("Oct 28")).toBeInTheDocument();
+    await user.click(save());
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ start: "2026-10-26T09:00", end: "2026-10-28T17:00" }),
+    );
+  });
+
+  it("an overnight meeting opens without an error and saves unchanged", async () => {
+    const user = userEvent.setup();
+    const onSave = edit("2026-10-27T22:00", "2026-10-28T02:00");
+    expect(screen.queryByText("End time must be after the start time.")).toBeNull();
+    await user.click(save());
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ start: "2026-10-27T22:00", end: "2026-10-28T02:00" }),
+    );
+  });
+
+  it("a meeting ending at midnight saves unchanged", async () => {
+    const user = userEvent.setup();
+    const onSave = edit("2026-10-27T23:00", "2026-10-28T00:00");
+    await user.click(save());
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ start: "2026-10-27T23:00", end: "2026-10-28T00:00" }),
+    );
+  });
+
+  it("moving a multi-day meeting's start or date keeps its length", async () => {
+    const user = userEvent.setup();
+    const onSave = edit("2026-10-26T09:00", "2026-10-28T17:00");
+    fireEvent.change(screen.getByLabelText("Start"), { target: { value: "10:00" } });
+    fireEvent.change(screen.getByLabelText("Date"), { target: { value: "2026-10-27" } });
+    await user.click(save());
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ start: "2026-10-27T10:00", end: "2026-10-29T18:00" }),
+    );
+  });
+
+  it("a later start can carry a same-day meeting past midnight", async () => {
+    const user = userEvent.setup();
+    const onSave = edit("2026-10-27T10:00", "2026-10-27T11:30");
+    fireEvent.change(screen.getByLabelText("Start"), { target: { value: "23:30" } });
+    expect(screen.getByLabelText("End")).toHaveValue("01:00");
+    await user.click(save());
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ start: "2026-10-27T23:30", end: "2026-10-28T01:00" }),
+    );
+  });
+});
+
+describe("EventEditorDialog — the cancel confirmation", () => {
+  const CONFIRM = "Cancel this meeting? Everyone invited gets a cancellation from Outlook.";
+  const renderEdit = (onCancelMeeting = vi.fn(async () => {})) => {
+    render(
+      <EventEditorDialog
+        mode="edit"
+        initial={REVIEW}
+        onSave={vi.fn()}
+        onCancelMeeting={onCancelMeeting}
+        onClose={() => {}}
+      />,
+    );
+    return onCancelMeeting;
+  };
+
+  it("is announced and takes focus, so a second Enter keeps the meeting", async () => {
+    const user = userEvent.setup();
+    const onCancelMeeting = renderEdit();
+    screen.getByRole("button", { name: "Cancel meeting" }).focus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("alert")).toHaveTextContent(CONFIRM);
+    expect(screen.getByRole("button", { name: "Keep meeting" })).toHaveFocus();
+
+    await user.keyboard("{Enter}");
+    expect(onCancelMeeting).not.toHaveBeenCalled();
+    expect(save()).toBeInTheDocument();
+    expect(screen.getByLabelText("Start")).toHaveFocus();
+  });
+
+  it("a double click on Cancel meeting only asks", async () => {
+    const user = userEvent.setup();
+    const onCancelMeeting = renderEdit();
+    await user.dblClick(screen.getByRole("button", { name: "Cancel meeting" }));
+    expect(onCancelMeeting).not.toHaveBeenCalled();
+    expect(screen.getByText(CONFIRM)).toBeInTheDocument();
+  });
+});
+

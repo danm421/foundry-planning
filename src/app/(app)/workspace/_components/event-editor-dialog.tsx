@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useId, useState, type FormEvent, type KeyboardEvent, type ReactElement } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactElement } from "react";
 import { z } from "zod";
 import DialogShell from "@/components/dialog-shell";
 import { checkboxClassName, fieldLabelClassName, inputClassName } from "@/components/forms/input-styles";
 import { ExternalLinkIcon, XIcon } from "@/components/icons";
 import type { WallClock } from "@/lib/workspace/types";
-import { addDays } from "@/lib/workspace/week";
+import { addDays, daysBetween, monthDay, toWallClock } from "@/lib/workspace/week";
 
 /** What Save hands back — exactly `POST /api/workspace/events`'s body. */
 export type EventDraft = {
@@ -47,6 +47,20 @@ function timeOf(minutes: number): string {
   return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 }
 
+/**
+ * Whole days from the start's date to the day the meeting ends on, with an end
+ * at 00:00 counted as the close of the day before. With the end time, it
+ * rebuilds the end exactly, so a meeting that runs overnight or for days
+ * saves unchanged.
+ */
+function spanOf(start: WallClock, end: WallClock): number {
+  const days = daysBetween(start.slice(0, 10), end.slice(0, 10));
+  return end.slice(11, 16) === "00:00" ? Math.max(0, days - 1) : days;
+}
+
+const BUTTON =
+  "h-9 rounded-[var(--radius-sm)] px-4 text-[13px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+
 const hasEmail = (list: string[], email: string) => list.some((a) => a.toLowerCase() === email.toLowerCase());
 
 export function EventEditorDialog({
@@ -75,6 +89,8 @@ export function EventEditorDialog({
   const [date, setDate] = useState(initial.start.slice(0, 10));
   const [startTime, setStartTime] = useState(initial.start.slice(11, 16));
   const [endTime, setEndTime] = useState(initial.end.slice(11, 16));
+  // The end falls this many days after the date; editing the times never shortens a multi-day meeting.
+  const [span, setSpan] = useState(() => spanOf(initial.start, initial.end));
   const [attendees, setAttendees] = useState(initial.attendees);
   const [typed, setTyped] = useState("");
   const [teams, setTeams] = useState(false);
@@ -83,18 +99,33 @@ export function EventEditorDialog({
   const [error, setError] = useState<string | null>(null);
 
   const complete = DATE_RE.test(date) && TIME_RE.test(startTime) && TIME_RE.test(endTime);
-  const badTimes = complete && endMinutes(endTime) <= minutesOfTime(startTime);
+  // Minutes past the date's midnight.
+  const endAt = span * 1440 + endMinutes(endTime);
+  const badTimes = complete && endAt <= minutesOfTime(startTime);
   const creating = mode === "create";
   const canSave = complete && !badTimes && (!creating || subject.trim() !== "") && !busy;
 
   function changeStart(next: string) {
-    // Moving the start keeps the meeting's length (up to the end of the day).
+    // Moving the start keeps the meeting's length, past midnight if it has to.
     if (TIME_RE.test(next) && TIME_RE.test(startTime) && TIME_RE.test(endTime) && !badTimes) {
-      const length = endMinutes(endTime) - minutesOfTime(startTime);
-      setEndTime(timeOf(Math.min(minutesOfTime(next) + length, 1440)));
+      const end = minutesOfTime(next) + endAt - minutesOfTime(startTime);
+      const days = Math.floor((end - 1) / 1440);
+      setSpan(days);
+      setEndTime(timeOf(end - days * 1440));
     }
     setStartTime(next);
   }
+
+  // The confirmation takes focus, so a second Enter or click can't land on the
+  // button that asked; backing out returns focus to the form.
+  const keepRef = useRef<HTMLButtonElement>(null);
+  const startRef = useRef<HTMLInputElement>(null);
+  const wasConfirming = useRef(false);
+  useEffect(() => {
+    if (confirming) keepRef.current?.focus();
+    else if (wasConfirming.current) startRef.current?.focus();
+    wasConfirming.current = confirming;
+  }, [confirming]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -111,7 +142,7 @@ export function EventEditorDialog({
       await onSave({
         subject: subject.trim(),
         start: `${date}T${startTime}`,
-        end: endTime === "00:00" ? `${addDays(date, 1)}T00:00` : `${date}T${endTime}`,
+        end: toWallClock(date, endAt),
         attendees: invite,
         teams: creating && teams,
       });
@@ -142,26 +173,34 @@ export function EventEditorDialog({
   ) : null;
 
   if (confirming) {
+    // Its own buttons, in the body and away from the footer's "Cancel meeting",
+    // so they are new elements in a new place.
     return (
-      <DialogShell
-        open
-        onOpenChange={(open) => !open && onClose()}
-        title="Edit event"
-        size="sm"
-        secondaryAction={{
-          label: "Keep meeting",
-          onClick: () => setConfirming(false),
-          disabled: busy,
-        }}
-        destructiveAction={{
-          label: "Cancel meeting",
-          onClick: cancelMeeting,
-          loading: busy,
-        }}
-      >
-        <div className="flex flex-col gap-3">
-          <p className="text-[14px] text-ink-2">{CONFIRM_CANCEL}</p>
+      <DialogShell open onOpenChange={(open) => !open && onClose()} title="Edit event" size="sm">
+        <div className="flex flex-col gap-4">
+          <p role="alert" className="text-[14px] text-ink-2">
+            {CONFIRM_CANCEL}
+          </p>
           {errorLine}
+          <div className="flex justify-end gap-2">
+            <button
+              ref={keepRef}
+              type="button"
+              disabled={busy}
+              className={`${BUTTON} border border-transparent text-ink-2 hover:border-hair hover:bg-card-hover hover:text-ink`}
+              onClick={() => setConfirming(false)}
+            >
+              Keep meeting
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              className={`${BUTTON} border border-crit/40 text-crit hover:bg-card-hover`}
+              onClick={cancelMeeting}
+            >
+              {busy ? "Cancelling…" : "Cancel meeting"}
+            </button>
+          </div>
         </div>
       </DialogShell>
     );
@@ -233,6 +272,7 @@ export function EventEditorDialog({
               Start
             </label>
             <input
+              ref={startRef}
               id={field("start")}
               type="time"
               step={900}
@@ -252,7 +292,7 @@ export function EventEditorDialog({
               className={timeInput}
               value={endTime}
               aria-invalid={badTimes || undefined}
-              aria-describedby={badTimes ? field("times-error") : undefined}
+              aria-describedby={badTimes ? field("times-error") : span > 0 ? field("ends-on") : undefined}
               onChange={(e) => setEndTime(e.target.value)}
             />
           </div>
@@ -260,6 +300,10 @@ export function EventEditorDialog({
         {badTimes ? (
           <p id={field("times-error")} role="alert" className="-mt-2 text-[13px] text-crit">
             {BAD_TIMES}
+          </p>
+        ) : complete && span > 0 ? (
+          <p id={field("ends-on")} className="-mt-2 text-[13px] text-ink-3">
+            Ends <span className="tabular">{monthDay(addDays(date, span))}</span>
           </p>
         ) : null}
 

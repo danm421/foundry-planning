@@ -35,6 +35,11 @@ export function addDays(date: string, n: number): string {
   return fromUtcMs(toUtcMs(date) + n * DAY_MS);
 }
 
+/** Whole calendar days from `from` to `to` (negative when `to` is earlier). */
+export function daysBetween(from: string, to: string): number {
+  return Math.round((toUtcMs(to) - toUtcMs(from)) / DAY_MS);
+}
+
 /** The Monday of the week `date` falls in (weeks run Monday–Sunday). */
 export function mondayOf(date: string): string {
   const weekday = new Date(toUtcMs(date)).getUTCDay(); // 0 = Sunday
@@ -105,7 +110,8 @@ export function newEventSlot(
   return { start, end: shift(start, 30) };
 }
 
-function monthDay(date: string): string {
+/** `Oct 28`. */
+export function monthDay(date: string): string {
   return `${MONTHS[Number(date.slice(5, 7)) - 1]} ${Number(date.slice(8, 10))}`;
 }
 

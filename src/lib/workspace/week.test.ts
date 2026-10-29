@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { WorkspaceEvent } from "./types";
 import {
   addDays,
+  daysBetween,
   dropTarget,
   formatWeekRange,
   layoutDay,
@@ -38,6 +39,13 @@ describe("week date math", () => {
   it("addDays crosses a month end", () => {
     expect(addDays("2026-10-30", 3)).toBe("2026-11-02");
     expect(addDays("2026-11-02", -7)).toBe("2026-10-26");
+  });
+
+  it("daysBetween counts calendar days, across a month end and the DST change", () => {
+    expect(daysBetween("2026-10-26", "2026-10-28")).toBe(2);
+    expect(daysBetween("2026-10-30", "2026-11-02")).toBe(3);
+    expect(daysBetween("2026-10-28", "2026-10-28")).toBe(0);
+    expect(daysBetween("2026-11-02", "2026-10-26")).toBe(-7);
   });
 
   it("snapMinutes rounds to the nearest 15 by default", () => {

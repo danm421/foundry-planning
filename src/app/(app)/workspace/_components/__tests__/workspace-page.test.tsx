@@ -73,6 +73,17 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+/** What Outlook holds: reads of the week answer with it unless a test queues its own answer. */
+let serverEvents: (typeof WEEK)["events"] = [];
+let readQueue: Promise<FakeResponse>[] = [];
+const serverWeek = () => respond(200, { ...WEEK, events: serverEvents.map((e) => ({ ...e })) });
+
+/** A PATCH that Outlook accepted: the server now holds the new times. */
+function accepted(start: string, end: string): FakeResponse {
+  serverEvents = serverEvents.map((e, i) => (i === 0 ? { ...e, start, end } : e));
+  return respond(200, { event: { ...serverEvents[0] } });
+}
+
 const weekReads = () =>
   fetchMock.mock.calls.filter(([url]) => url.startsWith("/api/workspace/events?start="));
 
@@ -83,8 +94,10 @@ beforeEach(() => {
   replaceMock.mockReset();
   fetchMock.mockReset();
   writeMock.mockReset();
+  serverEvents = WEEK.events.map((e) => ({ ...e }));
+  readQueue = [];
   fetchMock.mockImplementation((url, init) =>
-    init?.method ? writeMock(url, init) : Promise.resolve(respond(200, WEEK)),
+    init?.method ? writeMock(url, init) : (readQueue.shift() ?? Promise.resolve(serverWeek())),
   );
   vi.stubGlobal("fetch", fetchMock);
   localStorage.clear();
@@ -296,14 +309,17 @@ describe("WorkspacePage — loading guard", () => {
 describe("WorkspacePage — moving a meeting", () => {
   const MOVE_FAILED = "Couldn't move the meeting — it's back where it was.";
 
-  async function moveReviewTo1pm() {
+  /** Opens the review and saves it at a new start (it's 90 minutes long). */
+  async function moveReviewTo(start: string) {
     const user = userEvent.setup();
-    renderPage();
     await user.click(await screen.findByRole("button", { name: /Annual review/ }));
-    fireEvent.change(screen.getByLabelText("Start"), {
-      target: { value: "13:00" },
-    });
+    fireEvent.change(screen.getByLabelText("Start"), { target: { value: start } });
     await user.click(screen.getByRole("button", { name: "Save" }));
+  }
+
+  async function moveReviewTo1pm() {
+    renderPage();
+    await moveReviewTo("13:00");
   }
 
   it("moves at once, sends exactly the new times, and keeps the move", async () => {
@@ -321,19 +337,89 @@ describe("WorkspacePage — moving a meeting", () => {
       end: "2026-10-27T14:30",
     });
 
-    await act(async () =>
-      patch.resolve(
-        respond(200, {
-          event: {
-            ...WEEK.events[0],
-            start: "2026-10-27T13:00",
-            end: "2026-10-27T14:30",
-          },
-        }),
-      ),
-    );
+    await act(async () => patch.resolve(accepted("2026-10-27T13:00", "2026-10-27T14:30")));
+    expect(screen.getByText("1:00 – 2:30")).toBeInTheDocument();
+    // Then it re-reads, so the screen settles on what Outlook holds.
+    await waitFor(() => expect(weekReads()).toHaveLength(2));
     expect(screen.getByText("1:00 – 2:30")).toBeInTheDocument();
     expect(screen.queryByText(MOVE_FAILED)).toBeNull();
+  });
+
+  it("two moves in flight that both fail: one toast, and the screen settles on Outlook's time", async () => {
+    const first = deferred<FakeResponse>();
+    const second = deferred<FakeResponse>();
+    writeMock.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    renderPage();
+    await moveReviewTo("13:00");
+    await moveReviewTo("15:00");
+    expect(screen.getByText("3:00 – 4:30")).toBeInTheDocument();
+
+    // The older move is superseded: its failure says and undoes nothing.
+    await act(async () => first.resolve(respond(503, { error: "throttled" })));
+    expect(screen.queryByText(MOVE_FAILED)).toBeNull();
+    expect(screen.getByText("3:00 – 4:30")).toBeInTheDocument();
+
+    await act(async () => second.resolve(respond(503, { error: "throttled" })));
+    expect(screen.getAllByText(MOVE_FAILED)).toHaveLength(1);
+    // Outlook never took either move: the re-read shows 10:00, not the 1:00 guess.
+    await waitFor(() => expect(screen.getByText("10:00 – 11:30")).toBeInTheDocument());
+    expect(screen.queryByText("1:00 – 2:30")).toBeNull();
+  });
+
+  it("a superseded move's late answer never overwrites the newer move", async () => {
+    const first = deferred<FakeResponse>();
+    const second = deferred<FakeResponse>();
+    writeMock.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    renderPage();
+    await moveReviewTo("13:00");
+    await moveReviewTo("15:00");
+
+    await act(async () => second.resolve(accepted("2026-10-27T15:00", "2026-10-27T16:30")));
+    await waitFor(() => expect(weekReads()).toHaveLength(2));
+    await act(async () =>
+      first.resolve(respond(200, { event: { ...WEEK.events[0], start: "2026-10-27T13:00", end: "2026-10-27T14:30" } })),
+    );
+    expect(screen.getByText("3:00 – 4:30")).toBeInTheDocument();
+    expect(screen.queryByText("1:00 – 2:30")).toBeNull();
+  });
+
+  it("a re-read sent before a move lands never puts the old time back", async () => {
+    renderPage();
+    // A failed move asks for a re-read; hold that read's (pre-move) answer back.
+    const staleRead = deferred<FakeResponse>();
+    readQueue.push(staleRead.promise);
+    writeMock.mockResolvedValueOnce(respond(503, { error: "throttled" }));
+    await moveReviewTo("13:00");
+    await waitFor(() => expect(weekReads()).toHaveLength(2));
+
+    const patch = deferred<FakeResponse>();
+    writeMock.mockReturnValueOnce(patch.promise);
+    await moveReviewTo("15:00");
+    await act(async () => patch.resolve(accepted("2026-10-27T15:00", "2026-10-27T16:30")));
+    await act(async () => staleRead.resolve(respond(200, WEEK)));
+
+    await waitFor(() => expect(weekReads()).toHaveLength(3));
+    expect(screen.getByText("3:00 – 4:30")).toBeInTheDocument();
+    expect(screen.queryByText("10:00 – 11:30")).toBeNull();
+  });
+
+  it("a re-read that lands mid-move keeps the meeting where it was dragged", async () => {
+    renderPage();
+    const read = deferred<FakeResponse>();
+    readQueue.push(read.promise);
+    writeMock.mockResolvedValueOnce(respond(503, { error: "throttled" }));
+    await moveReviewTo("13:00"); // fails, so the week is re-read (held back)
+    await waitFor(() => expect(weekReads()).toHaveLength(2));
+
+    const patch = deferred<FakeResponse>();
+    writeMock.mockReturnValueOnce(patch.promise);
+    await moveReviewTo("15:00");
+    await act(async () => read.resolve(serverWeek())); // Outlook still says 10:00
+    expect(screen.getByText("3:00 – 4:30")).toBeInTheDocument();
+
+    await act(async () => patch.resolve(accepted("2026-10-27T15:00", "2026-10-27T16:30")));
+    await waitFor(() => expect(weekReads()).toHaveLength(3));
+    expect(screen.getByText("3:00 – 4:30")).toBeInTheDocument();
   });
 
   it.each([

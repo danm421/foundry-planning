@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
 import { SwitchControl } from "@/components/forms/switch-control";
@@ -145,10 +145,16 @@ export function WorkspacePage({
     }
   }
 
+  // The latest move of each meeting still waiting on Outlook. Moves are
+  // numbered across the page, so a superseded move can tell it's been overtaken.
+  const moveSeq = useRef(0);
+  const movesInFlight = useRef(new Map<string, { seq: number } & Times>());
+
   // A result counts only for the request it answered: a new week or a Retry
   // changes the key, and the pane shows "loading" until that answer lands.
-  // A refresh (after a create or cancel) re-reads under the same key, so the
-  // week stays on screen until the new answer replaces it.
+  // A refresh (after a create, a cancel or a move) re-reads under the same key,
+  // so the week stays on screen until the new answer replaces it; starting one
+  // aborts a read already out, whose answer may predate the write.
   const [attempt, setAttempt] = useState(0);
   const [refresh, setRefresh] = useState(0);
   const requestKey = `${weekStart}#${attempt}`;
@@ -157,7 +163,19 @@ export function WorkspacePage({
     if (paneState !== "ready") return;
     const ctrl = new AbortController();
     void loadWeek(weekStart, ctrl.signal).then((r) => {
-      if (!ctrl.signal.aborted) setResult({ ...r, key: requestKey, today: localToday() });
+      if (ctrl.signal.aborted) return;
+      // A meeting mid-move stays where it was dragged; its own answer settles it.
+      const moving = movesInFlight.current;
+      const read =
+        "events" in r && moving.size > 0
+          ? {
+              events: r.events.map((e) => {
+                const m = moving.get(e.id);
+                return m ? { ...e, start: m.start, end: m.end } : e;
+              }),
+            }
+          : r;
+      setResult({ ...read, key: requestKey, today: localToday() });
     });
     return () => ctrl.abort();
   }, [paneState, weekStart, requestKey, refresh]);
@@ -179,30 +197,38 @@ export function WorkspacePage({
     setResult((r) => (r ? { blocked: pane, key: r.key, today: r.today } : r));
   }
 
-  // Optimistic: the meeting moves now and goes back (with a toast) if Outlook refuses.
+  /**
+   * Optimistic: the meeting moves now. Only the latest move of a meeting acts
+   * on its answer (a newer move owns the outcome); a refusal puts it back with
+   * a toast, and either way the week is re-read so the screen ends on what
+   * Outlook holds.
+   */
   async function moveMeeting(id: string, start: WallClock, end: WallClock): Promise<void> {
     const before = week?.find((e) => e.id === id);
     if (!before) return;
-    const setTimes = (from: Times | null, to: Times) =>
-      updateEvents((events) =>
-        events.map((e) =>
-          e.id === id && (!from || (e.start === from.start && e.end === from.end)) ? { ...e, ...to } : e,
-        ),
-      );
-    setTimes(null, { start, end });
+    const setTimes = (to: Times) =>
+      updateEvents((events) => events.map((e) => (e.id === id ? { ...e, ...to } : e)));
+    const seq = ++moveSeq.current;
+    movesInFlight.current.set(id, { seq, start, end });
+    setTimes({ start, end });
+
     const r = await write(eventUrl(id), "PATCH", { start, end });
+    if (movesInFlight.current.get(id)?.seq !== seq) return;
+    movesInFlight.current.delete(id);
+    if (!r.ok && r.pane) {
+      showPane(r.pane);
+      return;
+    }
     if (r.ok) {
       const moved = (r.body as { event?: { start?: unknown; end?: unknown } } | null)?.event;
       if (typeof moved?.start === "string" && typeof moved.end === "string") {
-        setTimes(null, { start: moved.start, end: moved.end });
+        setTimes({ start: moved.start, end: moved.end });
       }
-    } else if (r.pane) {
-      showPane(r.pane);
     } else {
-      // Only if nothing has moved it since (a later drag, a refresh).
-      setTimes({ start, end }, { start: before.start, end: before.end });
+      setTimes({ start: before.start, end: before.end });
       showToast({ message: MOVE_FAILED });
     }
+    setRefresh((n) => n + 1);
   }
 
   /** The editor's Save on an existing meeting is a move like a drag: optimistic, closed at once. */
