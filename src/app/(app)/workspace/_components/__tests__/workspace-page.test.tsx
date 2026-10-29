@@ -2,26 +2,34 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { hydrateRoot } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { ToastProvider } from "@/components/toast";
 import { WorkspacePage } from "../workspace-page";
 
 let mockSearch = "";
 const replaceMock = vi.fn();
+const refreshMock = vi.fn();
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: replaceMock, push: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({ replace: replaceMock, push: vi.fn(), refresh: refreshMock }),
   useSearchParams: () => new URLSearchParams(mockSearch),
 }));
 
 // The to-do panel reads its own route; todo-panel.test.tsx covers it. Here it
 // only has to be there, so the week's fetch assertions see the week alone.
 const todoPanelProps = vi.fn();
-vi.mock("../todo-panel", () => ({
-  TodoPanel: (props: unknown) => {
-    todoPanelProps(props);
-    return <aside aria-label="To-dos" />;
-  },
-}));
+const todoPanelMounts = vi.fn();
+vi.mock("../todo-panel", async () => {
+  const { useEffect } = await import("react");
+  return {
+    TodoPanel: (props: unknown) => {
+      todoPanelProps(props);
+      useEffect(() => todoPanelMounts(), []);
+      return <aside aria-label="To-dos" />;
+    },
+  };
+});
 
 type FakeResponse = { ok: boolean; status: number; json: () => Promise<unknown> };
 
@@ -71,8 +79,10 @@ const writeMock = vi.fn<(url: string, init: RequestInit) => Promise<FakeResponse
 
 const HOUSEHOLDS = [{ id: "hh-1", name: "Hartley" }];
 
-function renderPage(paneState: Parameters<typeof WorkspacePage>[0]["paneState"] = "ready") {
-  return render(
+type PageProps = Parameters<typeof WorkspacePage>[0];
+
+function page(paneState: PageProps["paneState"] = "ready", connectedEmail: string | null = null) {
+  return (
     <ToastProvider>
       <WorkspacePage
         paneState={paneState}
@@ -80,9 +90,14 @@ function renderPage(paneState: Parameters<typeof WorkspacePage>[0]["paneState"] 
         initialWeek="2026-10-26"
         userId="user_me"
         households={HOUSEHOLDS}
+        connectedEmail={connectedEmail}
       />
-    </ToastProvider>,
+    </ToastProvider>
   );
+}
+
+function renderPage(paneState: PageProps["paneState"] = "ready", connectedEmail: string | null = null) {
+  return render(page(paneState, connectedEmail));
 }
 
 function deferred<T>() {
@@ -110,7 +125,9 @@ const grid = () => screen.queryByRole("region", { name: "Week calendar" });
 beforeEach(() => {
   mockSearch = "";
   replaceMock.mockReset();
+  refreshMock.mockReset();
   todoPanelProps.mockReset();
+  todoPanelMounts.mockReset();
   fetchMock.mockReset();
   writeMock.mockReset();
   serverEvents = WEEK.events.map((e) => ({ ...e }));
@@ -235,17 +252,173 @@ describe("WorkspacePage — the week", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  // (R24) Only throttling reads "busy": a failure a retry may not fix points to the admin.
   it.each([
     ["a 500", () => Promise.resolve(respond(500, { error: "Internal server error" }))],
+    ["a mailbox Microsoft can't serve (403)", () => Promise.resolve(respond(403, { error: "not_allowed" }))],
+    ["a 404", () => Promise.resolve(respond(404, { error: "not_found" }))],
+    ["a 400", () => Promise.resolve(respond(400, { error: "start must be a Monday (YYYY-MM-DD)" }))],
     ["a network failure", () => Promise.reject(new TypeError("Failed to fetch"))],
     ["an unknown 409", () => Promise.resolve(respond(409, { error: "something_new" }))],
-  ])("%s shows the busy pane, not an empty week", async (_label, impl) => {
-    fetchMock.mockImplementation(impl);
+  ])("%s says it couldn't load the calendar, not 'busy', never an empty week", async (_label, impl) => {
+    fetchMock.mockImplementationOnce(impl);
     renderPage();
-    expect(
-      await screen.findByText("Microsoft is busy right now — try again in a minute."),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Couldn't load your calendar from Microsoft.")).toBeInTheDocument();
+    expect(screen.getByText("If this keeps happening, ask your firm's admin.")).toBeInTheDocument();
+    expect(screen.queryByText(/Microsoft is busy/)).toBeNull();
     expect(grid()).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("Annual review")).toBeInTheDocument();
+  });
+});
+
+describe("WorkspacePage — changing weeks (F9)", () => {
+  const nov = {
+    ...WEEK,
+    events: [{ ...WEEK.events[0], id: "nov", subject: "November check-in", start: "2026-11-03T09:00", end: "2026-11-03T09:30" }],
+  };
+
+  it("keeps the calendar in place under a loading cover while the next week loads", async () => {
+    renderPage();
+    await screen.findByText("Annual review");
+    const calendar = grid()!;
+    const next = deferred<FakeResponse>();
+    fetchMock.mockReturnValueOnce(next.promise);
+
+    fireEvent.click(screen.getByRole("button", { name: "Next week" }));
+    // The same grid, not a swap to a smaller "Loading" box: its scroll position stays.
+    expect(grid()).toBe(calendar);
+    expect(calendar.closest("[aria-busy]")).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("status")).toHaveTextContent("Loading your week…");
+    expect(screen.getByRole("button", { name: "+ New event" })).toBeDisabled();
+
+    await act(async () => next.resolve(respond(200, nov)));
+    expect(grid()).toBe(calendar);
+    expect(screen.getByText("November check-in")).toBeInTheDocument();
+    expect(screen.queryByText("Annual review")).toBeNull();
+    expect(screen.queryByText("Loading your week…")).toBeNull();
+    expect(calendar.closest("[aria-busy]")).toHaveAttribute("aria-busy", "false");
+  });
+
+  it("keeps the scroll position across a week change (only the first load scrolls to 7am)", async () => {
+    renderPage();
+    await screen.findByText("Annual review");
+    const scroller = () => grid()!.firstElementChild as HTMLElement;
+    expect(scroller().scrollTop).toBe(7 * 48);
+    scroller().scrollTop = 700;
+
+    fireEvent.click(screen.getByRole("button", { name: "Next week" }));
+    await screen.findByText("Nov 2 – Nov 6, 2026");
+    await waitFor(() => expect(screen.queryByText("Loading your week…")).toBeNull());
+    expect(scroller().scrollTop).toBe(700);
+  });
+
+  it("the first load, with nothing to keep in place, shows the loading box", () => {
+    fetchMock.mockReturnValueOnce(new Promise(() => {}));
+    renderPage();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading your week…");
+    expect(grid()).toBeNull();
+  });
+});
+
+describe("WorkspacePage — disconnecting your Microsoft account (I5)", () => {
+  const DISCONNECT_URL = "/api/workspace/microsoft/connection/disconnect";
+
+  it("names the connected account under the calendar", async () => {
+    renderPage("ready", "dana@hartwell.com");
+    await screen.findByText("Annual review");
+    expect(screen.getByText(/Connected as/)).toHaveTextContent("Connected as dana@hartwell.com");
+    expect(screen.getByRole("button", { name: "Disconnect" })).toBeInTheDocument();
+  });
+
+  it.each(["connect", "needs_reconnect", "member_off"] as const)("isn't offered in the %s state", (state) => {
+    renderPage(state, null);
+    expect(screen.queryByText(/Connected as/)).toBeNull();
+  });
+
+  it("asks first, then drops the connection and refreshes the page", async () => {
+    writeMock.mockResolvedValueOnce(respond(200, { ok: true }));
+    const user = userEvent.setup();
+    renderPage("ready", "dana@hartwell.com");
+    await screen.findByText("Annual review");
+
+    await user.click(screen.getByRole("button", { name: "Disconnect" }));
+    const dialog = screen.getByRole("dialog", { name: "Disconnect Microsoft 365?" });
+    expect(writeMock).not.toHaveBeenCalled();
+    expect(within(dialog).getByText(/Your Outlook calendar and to-dos leave Workspace/)).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Disconnect" }));
+    const [url, init] = writeMock.mock.calls[0];
+    expect(url).toBe(DISCONNECT_URL);
+    expect(init.method).toBe("POST");
+    await waitFor(() => expect(refreshMock).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("can't send twice while the disconnect is out", async () => {
+    const answer = deferred<FakeResponse>();
+    writeMock.mockReturnValueOnce(answer.promise);
+    renderPage("ready", "dana@hartwell.com");
+    await screen.findByText("Annual review");
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
+    const confirm = within(screen.getByRole("dialog")).getByRole("button", { name: "Disconnect" });
+    fireEvent.click(confirm);
+    expect(confirm).toBeDisabled();
+    fireEvent.click(confirm);
+    expect(writeMock).toHaveBeenCalledTimes(1);
+    await act(async () => answer.resolve(respond(200, { ok: true })));
+  });
+
+  it("the refreshed page (now Connect) reads the to-dos afresh, without the Outlook half", async () => {
+    const view = renderPage("ready", "dana@hartwell.com");
+    await screen.findByText("Annual review");
+    expect(todoPanelMounts).toHaveBeenCalledTimes(1);
+    view.rerender(page("connect", null));
+    expect(screen.queryByText(/Connected as/)).toBeNull();
+    expect(screen.getByRole("link", { name: "Connect Microsoft 365" })).toBeInTheDocument();
+    expect(todoPanelMounts).toHaveBeenCalledTimes(2);
+  });
+
+  it("a failed disconnect says so and leaves the connection", async () => {
+    writeMock.mockResolvedValueOnce(respond(500, { error: "Internal server error" }));
+    const user = userEvent.setup();
+    renderPage("ready", "dana@hartwell.com");
+    await screen.findByText("Annual review");
+    await user.click(screen.getByRole("button", { name: "Disconnect" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Disconnect" }));
+    expect(await screen.findByText("Couldn't disconnect Microsoft 365. Try again.")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(refreshMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("WorkspacePage — hydration (F4)", () => {
+  it("hydrates without a mismatch after the password-manager guard has marked its fields", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const container = document.createElement("div");
+    container.innerHTML = renderToString(page());
+    document.body.appendChild(container);
+    // What src/components/password-manager-guard.tsx stamps on every field
+    // before a streamed segment like this one hydrates.
+    container.querySelectorAll("input").forEach((field) => {
+      field.setAttribute("data-1p-ignore", "");
+      field.setAttribute("data-lpignore", "true");
+      field.setAttribute("data-bwignore", "");
+      field.setAttribute("data-form-type", "other");
+      field.setAttribute("data-protonpass-ignore", "true");
+      field.setAttribute("autocomplete", "off");
+    });
+    expect(container.querySelector('input[role="switch"]')).not.toBeNull();
+
+    const root = await act(async () => hydrateRoot(container, page()));
+    try {
+      await screen.findByText("Annual review");
+      expect(errors.mock.calls.flat().join("\n")).not.toMatch(/hydrat|didn't match/i);
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
   });
 });
 

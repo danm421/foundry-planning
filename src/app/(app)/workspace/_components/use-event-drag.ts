@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type MouseEvent, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
 import type { WallClock } from "@/lib/workspace/types";
 import { dropTarget } from "@/lib/workspace/week";
 
@@ -23,6 +23,8 @@ type Press = {
   col: number;
   min: number;
   dragging: boolean;
+  /** Escape dropped the drag: the release sends nothing. */
+  cancelled: boolean;
 };
 
 /**
@@ -32,6 +34,9 @@ type Press = {
  * re-rendering into another day's column. Positions are read off the hour
  * grid's box (`gridRef`): `gutterPx` of hour labels, then `days` equal columns,
  * `pxPerMin` down. Times come from `dropTarget`, never from a `Date`.
+ *
+ * Mouse and pen only: a finger on a meeting scrolls the week, and a tap opens
+ * the editor, which is the touch way to move it. Escape drops a drag.
  */
 export function useEventDrag({
   days,
@@ -48,6 +53,20 @@ export function useEventDrag({
   const press = useRef<Press | null>(null);
   const justDropped = useRef(false);
   const [preview, setPreview] = useState<DragPreview | null>(null);
+
+  // A drag is on screen: Escape puts the meeting back, and the release sends nothing.
+  const dragging = preview !== null;
+  useEffect(() => {
+    if (!dragging) return;
+    function onKey(e: KeyboardEvent) {
+      const p = press.current;
+      if (e.key !== "Escape" || !p?.dragging) return;
+      p.cancelled = true;
+      setPreview(null);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [dragging]);
 
   function locate(grid: HTMLElement, clientX: number, clientY: number): { col: number; min: number } {
     const box = grid.getBoundingClientRect();
@@ -72,7 +91,7 @@ export function useEventDrag({
     mode: DragMode,
     target: { id: string; event: Press["event"]; piece: Press["piece"] },
   ) {
-    if (e.button !== 0 || !gridRef.current) return;
+    if (e.button !== 0 || e.pointerType === "touch" || !gridRef.current) return;
     const at = locate(gridRef.current, e.clientX, e.clientY);
     press.current = {
       ...target,
@@ -82,12 +101,13 @@ export function useEventDrag({
       y: e.clientY,
       ...at,
       dragging: false,
+      cancelled: false,
     };
   }
 
   function onPointerMove(e: PointerEvent<HTMLElement>) {
     const p = press.current;
-    if (!p || e.pointerId !== p.pointerId) return;
+    if (!p || e.pointerId !== p.pointerId || p.cancelled) return;
     if (!p.dragging) {
       // Released somewhere this never heard about: it's not a press any more.
       if (e.buttons === 0) {
@@ -107,7 +127,7 @@ export function useEventDrag({
     if (!p || e.pointerId !== p.pointerId) return;
     press.current = null;
     if (!p.dragging) return; // a click: the meeting's own handler opens it
-    const drop = dropOf(p, e);
+    const drop = p.cancelled ? null : dropOf(p, e);
     setPreview(null);
     // The click a browser may send after the release belongs to the drag.
     justDropped.current = true;

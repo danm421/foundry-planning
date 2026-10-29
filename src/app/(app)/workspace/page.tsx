@@ -42,6 +42,7 @@ export default async function WorkspaceRoute(): Promise<ReactElement> {
       initialWeek={mondayOf(new Date().toISOString().slice(0, 10))}
       userId={userId}
       households={households}
+      connectedEmail={connection?.externalEmail ?? null}
     />
   );
 }

@@ -214,6 +214,25 @@ describe("WeekCalendar", () => {
     expect(onOpen).not.toHaveBeenCalled();
   });
 
+  it("(F5) a narrow calendar gets one-letter day names over the date, by the calendar's own width", () => {
+    const { rerender } = render(
+      <WeekCalendar {...noop} weekStart="2026-10-26" days={5} events={[]} today="2026-10-28" />,
+    );
+    const calendar = screen.getByRole("region", { name: "Week calendar" });
+    expect(calendar).toHaveClass("@container");
+    // Full names need ~52px a day: 44px of hours + 5 × 52 = 304px.
+    expect(screen.getByText("Wed")).toHaveClass("hidden", "@min-[304px]:inline");
+    expect(screen.getAllByText("W")[0]).toHaveClass("@min-[304px]:hidden");
+    // Narrow, the letter sits over the date; wide, beside it.
+    expect(screen.getByText("Wed").parentElement).toHaveClass("flex-col", "@min-[304px]:flex-row");
+
+    // Seven days need 44 + 7 × 52 = 408px.
+    rerender(<WeekCalendar {...noop} weekStart="2026-10-26" days={7} events={[]} today="2026-10-28" />);
+    expect(screen.getByText("Sun")).toHaveClass("hidden", "@min-[408px]:inline");
+    expect(screen.getAllByText("S")).toHaveLength(2);
+    expect(screen.getAllByText("S")[1]).toHaveClass("@min-[408px]:hidden");
+  });
+
   it("a household link inside an organized meeting stays a link, outside the button", () => {
     render(
       <WeekCalendar
@@ -235,6 +254,115 @@ describe("WeekCalendar", () => {
     const button = screen.getByRole("button", { name: /Annual review/ });
     expect(within(button).queryByRole("link")).toBeNull();
     expect(screen.getByRole("link", { name: "Hartley" })).toBeInTheDocument();
+  });
+
+  it("clicking the household link goes to the household, not the editor", () => {
+    const onOpen = vi.fn();
+    render(
+      <WeekCalendar
+        {...noop}
+        onOpen={onOpen}
+        weekStart="2026-10-26"
+        days={5}
+        today="2026-10-28"
+        events={[
+          row({
+            id: "review",
+            start: "2026-10-27T10:00",
+            end: "2026-10-27T11:30",
+            household: { householdId: "hh-1", householdName: "Hartley" },
+          }),
+        ]}
+      />,
+    );
+    fireEvent.click(screen.getByRole("link", { name: "Hartley" }));
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+});
+
+/** The positioned box a timed meeting is drawn in. */
+const boxOf = (subject: string) => screen.getByText(subject).closest<HTMLElement>("[style]")!;
+
+describe("WeekCalendar — short meetings (F1, F2, F10)", () => {
+  function renderOne(over: Partial<Row> & Pick<Row, "start" | "end">, onOpen = vi.fn()) {
+    render(
+      <WeekCalendar
+        {...noop}
+        onOpen={onOpen}
+        weekStart="2026-10-26"
+        days={5}
+        today="2026-10-28"
+        events={[row({ id: "m", subject: "Quick sync", ...over })]}
+      />,
+    );
+    return onOpen;
+  }
+
+  it("the subject is the box's first line and can't be squeezed out (no flex column to shrink it)", () => {
+    renderOne({ start: "2026-10-26T09:00", end: "2026-10-26T10:00" });
+    const box = boxOf("Quick sync");
+    const button = screen.getByRole("button", { name: /Quick sync/ });
+    expect(box).not.toHaveClass("flex");
+    expect(box.firstElementChild).toBe(button);
+    expect(button.firstElementChild).toHaveTextContent("Quick sync");
+    expect(button.firstElementChild).toHaveClass("block", "truncate");
+    // An hour has room for the time too.
+    expect(screen.getByText("9:00 – 10:00")).not.toHaveClass("sr-only");
+  });
+
+  it.each([
+    ["15", "2026-10-26T09:15"],
+    ["30", "2026-10-26T09:30"],
+  ])("a %s-minute box shows only its subject: the time is for screen readers, the household link is left off", (_min, end) => {
+    renderOne({
+      start: "2026-10-26T09:00",
+      end,
+      household: { householdId: "hh-1", householdName: "Hartley" },
+    });
+    expect(screen.getByText(/^9:00 – 9:(15|30)$/)).toHaveClass("sr-only");
+    expect(screen.queryByRole("link", { name: "Hartley" })).toBeNull();
+    expect(boxOf("Quick sync")).toHaveClass("py-0.5");
+  });
+
+  it("a 45-minute box has room for the time and the household", () => {
+    renderOne({
+      start: "2026-10-26T09:00",
+      end: "2026-10-26T09:45",
+      household: { householdId: "hh-1", householdName: "Hartley" },
+    });
+    expect(screen.getByText("9:00 – 9:45")).not.toHaveClass("sr-only");
+    expect(screen.getByRole("link", { name: "Hartley" })).toBeInTheDocument();
+  });
+
+  it("a click on the box's padding opens the editor", () => {
+    const onOpen = renderOne({ start: "2026-10-26T09:00", end: "2026-10-26T09:15" });
+    fireEvent.click(boxOf("Quick sync"));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("a press on the resize handle that doesn't move opens the editor", () => {
+    const onOpen = renderOne({ start: "2026-10-26T09:00", end: "2026-10-26T09:15" });
+    const handle = boxOf("Quick sync").querySelector("[data-resize-handle]")!;
+    fireEvent.pointerDown(handle, { pointerId: 1, button: 0, buttons: 1, clientX: 50, clientY: 50 });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 50, clientY: 50 });
+    fireEvent.click(handle);
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("a short box's resize handle is a thin edge, so it can't take most presses", () => {
+    renderOne({ start: "2026-10-26T09:00", end: "2026-10-26T09:15" });
+    expect(boxOf("Quick sync").querySelector("[data-resize-handle]")).toHaveClass("h-[3px]");
+  });
+
+  it("(F10) a meeting just before midnight stops at the bottom of the grid", () => {
+    renderOne({ start: "2026-10-26T23:45", end: "2026-10-26T23:55" });
+    const box = boxOf("Quick sync");
+    const top = parseFloat(box.style.top);
+    const height = parseFloat(box.style.height);
+    expect(top).toBe(1425 * 0.8);
+    // 15 minutes to midnight, not the 20-minute minimum: 12px less the 2px gap.
+    expect(height).toBe(10);
+    expect(top + height).toBeLessThanOrEqual(24 * 48);
   });
 });
 
@@ -322,6 +450,69 @@ describe("WeekCalendar — dragging", () => {
     release(0, 600);
     fireEvent.click(block);
     expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it("dragging the resize handle resizes; it doesn't open the editor", () => {
+    const onMove = vi.fn(async () => {});
+    const onOpen = vi.fn();
+    const block = renderHuddle({ onMove, onOpen });
+    const handle = block.parentElement!.querySelector("[data-resize-handle]")!;
+    press(handle, 0, 570);
+    moveTo(handle, 0, 600);
+    release(0, 600);
+    fireEvent.click(handle);
+    expect(onMove).toHaveBeenCalledWith("huddle", "2026-10-26T09:00", "2026-10-26T10:00");
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it("(F8) Escape mid-drag puts the meeting back and sends nothing", () => {
+    const onMove = vi.fn(async () => {});
+    const onOpen = vi.fn();
+    const block = renderHuddle({ onMove, onOpen });
+    press(block, 0, 540);
+    moveTo(block, 1, 600);
+    // Mid-drag it's drawn in Tuesday's column at 10:00.
+    expect(screen.getByRole("button", { name: /Team huddle/ }).parentElement!.style.top).toBe(`${600 * 0.8}px`);
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    const back = screen.getByRole("button", { name: /Team huddle/ }).parentElement!;
+    expect(back.style.top).toBe(`${540 * 0.8}px`);
+
+    moveTo(calendar(), 2, 660); // further moves are ignored
+    release(2, 660);
+    fireEvent.click(back);
+    expect(onMove).not.toHaveBeenCalled();
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(back.style.top).toBe(`${540 * 0.8}px`);
+  });
+
+  it("(F3) a touch press never starts a drag, so the calendar can scroll; a tap still opens it", () => {
+    const onMove = vi.fn(async () => {});
+    const onOpen = vi.fn();
+    const block = renderHuddle({ onMove, onOpen });
+    const box = block.parentElement!;
+    // No `touch-action: none`: a swipe that starts on a meeting scrolls the week.
+    expect(box).not.toHaveClass("touch-none");
+
+    fireEvent.pointerDown(block, { pointerId: 7, pointerType: "touch", button: 0, buttons: 1, clientX: x(0), clientY: y(540) });
+    fireEvent.pointerMove(block, { pointerId: 7, pointerType: "touch", buttons: 1, clientX: x(1), clientY: y(600) });
+    fireEvent.pointerUp(calendar(), { pointerId: 7, pointerType: "touch", clientX: x(1), clientY: y(600) });
+    expect(Element.prototype.setPointerCapture).not.toHaveBeenCalled();
+    expect(onMove).not.toHaveBeenCalled();
+
+    fireEvent.pointerDown(block, { pointerId: 8, pointerType: "touch", button: 0, buttons: 1, clientX: x(0), clientY: y(545) });
+    fireEvent.pointerUp(block, { pointerId: 8, pointerType: "touch", clientX: x(0), clientY: y(545) });
+    fireEvent.click(block);
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("a pen still drags like a mouse", () => {
+    const onMove = vi.fn(async () => {});
+    const block = renderHuddle({ onMove });
+    fireEvent.pointerDown(block, { pointerId: 3, pointerType: "pen", button: 0, buttons: 1, clientX: x(0), clientY: y(540) });
+    fireEvent.pointerMove(block, { pointerId: 3, pointerType: "pen", buttons: 1, clientX: x(1), clientY: y(600) });
+    fireEvent.pointerUp(calendar(), { pointerId: 3, pointerType: "pen", clientX: x(1), clientY: y(600) });
+    expect(onMove).toHaveBeenCalledWith("huddle", "2026-10-27T10:00", "2026-10-27T10:30");
   });
 
   it("a move after a release it never heard about starts no drag", () => {

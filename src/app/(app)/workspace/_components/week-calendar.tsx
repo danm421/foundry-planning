@@ -24,6 +24,25 @@ const GUTTER_PX = 44;
 const SCROLL_TO_HOUR = 7;
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+/**
+ * "Mon 26" needs ~52px a day; below that ("WED 28THU 29" on a phone) the
+ * header drops to one letter over the date. Read off the calendar's own width
+ * (a container query): 44px of hours plus 5 × 52 = 304px, or 7 × 52 = 408px.
+ */
+const DAY_HEADER = {
+  5: {
+    cell: "@min-[304px]:flex-row @min-[304px]:gap-1.5",
+    full: "hidden @min-[304px]:inline",
+    short: "@min-[304px]:hidden",
+  },
+  7: {
+    cell: "@min-[408px]:flex-row @min-[408px]:gap-1.5",
+    full: "hidden @min-[408px]:inline",
+    short: "@min-[408px]:hidden",
+  },
+} as const;
+/** Boxes shorter than this (under ~40 minutes) show only their subject. */
+const COMPACT_PX = 30;
 const LOCKED_TITLE = "You didn't organize this meeting — open it in Outlook to change it.";
 
 function hourLabel(h: number): string {
@@ -82,7 +101,7 @@ export function WeekCalendar({
 
   return (
     // Holds pointer capture during a drag, so the drag outlives the meeting's re-render.
-    <section aria-label="Week calendar" {...captureProps}>
+    <section aria-label="Week calendar" className="@container" {...captureProps}>
       <div
         ref={scrollRef}
         className="relative h-[min(720px,calc(100dvh-16rem))] min-h-[360px] overflow-y-auto"
@@ -98,9 +117,10 @@ export function WeekCalendar({
                 <div
                   key={date}
                   aria-current={isToday ? "date" : undefined}
-                  className={`flex items-center justify-center gap-1.5 py-2 text-[11px] ${isToday ? "text-ink" : "text-ink-3"}`}
+                  className={`flex flex-col items-center justify-center gap-0.5 py-2 text-[11px] ${DAY_HEADER[days].cell} ${isToday ? "text-ink" : "text-ink-3"}`}
                 >
-                  <span className="uppercase tracking-[0.06em]">{WEEKDAYS[i]}</span>
+                  <span className={`uppercase tracking-[0.06em] ${DAY_HEADER[days].full}`}>{WEEKDAYS[i]}</span>
+                  <span className={`uppercase ${DAY_HEADER[days].short}`}>{WEEKDAYS[i][0]}</span>
                   <span
                     className={`tabular ${isToday ? "rounded-full bg-accent px-1.5 font-semibold text-accent-on" : ""}`}
                   >
@@ -181,40 +201,60 @@ export function WeekCalendar({
 }
 
 const EVENT_BOX =
-  "absolute overflow-hidden rounded-[var(--radius-sm)] border-l-[3px] px-1.5 py-1 text-[11px] leading-[1.3]";
+  "absolute overflow-hidden rounded-[var(--radius-sm)] border-l-[3px] px-1.5 text-[11px] leading-[1.3]";
 
-/** Where a timed meeting's piece sits in its day column. */
-function boxStyle({ topMin, endMin, column, columns }: PositionedEvent<WeekEvent>) {
+/**
+ * Where a timed meeting's piece sits in its day column, drawn no shorter than
+ * `MIN_EVENT_MINUTES` and never past midnight. Its lines stack top down, the
+ * subject first, and the box clips whatever doesn't fit; a `compact` box has
+ * room for the subject alone.
+ */
+function boxLayout({ topMin, endMin, column, columns }: PositionedEvent<WeekEvent>) {
   const width = 100 / columns;
+  const height = Math.min(Math.max(endMin - topMin, MIN_EVENT_MINUTES), 1440 - topMin) * PX_PER_MIN - 2;
+  const compact = height < COMPACT_PX;
   return {
-    top: topMin * PX_PER_MIN,
-    height: Math.max(endMin - topMin, MIN_EVENT_MINUTES) * PX_PER_MIN - 2,
-    left: `calc(${column * width}% + 2px)`,
-    width: `calc(${width}% - 4px)`,
+    compact,
+    className: `${EVENT_BOX} ${compact ? "py-0.5" : "py-1"}`,
+    style: {
+      top: topMin * PX_PER_MIN,
+      height,
+      left: `calc(${column * width}% + 2px)`,
+      width: `calc(${width}% - 4px)`,
+    },
   };
+}
+
+/** The meeting's times: drawn when there's room, always read out. */
+function TimeLine({ event: e, compact }: { event: WeekEvent; compact: boolean }): ReactElement {
+  return (
+    <span className={compact ? "sr-only" : "tabular block truncate text-ink-3"}>
+      {clock(e.start)} – {clock(e.end)}
+    </span>
+  );
 }
 
 /** Someone else's meeting: read-only, with the lock and a link to Outlook. */
 function LockedEvent({ placed }: { placed: PositionedEvent<WeekEvent> }): ReactElement {
   const e = placed.event;
+  const box = boxLayout(placed);
   return (
-    <div title={LOCKED_TITLE} className={`${EVENT_BOX} ${tone(e)}`} style={boxStyle(placed)}>
+    <div title={LOCKED_TITLE} className={`${box.className} ${tone(e)}`} style={box.style}>
       <div className="flex min-w-0 items-center gap-1">
         <EventTitle event={e} />
       </div>
-      <div className="tabular text-ink-3">
-        {clock(e.start)} – {clock(e.end)}
-      </div>
-      {e.household ? <HouseholdName household={e.household} /> : null}
+      <TimeLine event={e} compact={box.compact} />
+      {e.household && !box.compact ? <HouseholdName household={e.household} /> : null}
     </div>
   );
 }
 
 /**
- * A meeting the advisor organizes: a button that opens the editor (click or
- * Enter — the keyboard path for moving it), draggable to new times, with a
- * 6px bottom edge that resizes it. The household link sits beside the button,
- * never inside it.
+ * A meeting the advisor organizes, draggable to new times, with a bottom edge
+ * that resizes it. A click anywhere on it that isn't a drag opens the editor;
+ * the button inside is the keyboard path (Enter), whose click bubbles up to
+ * the same handler. The household link sits beside the button, never inside
+ * it, and leaves the click to itself.
  */
 function EditableEvent({
   placed,
@@ -232,33 +272,30 @@ function EditableEvent({
   onOpen: () => void;
 }): ReactElement {
   const e = placed.event;
+  const box = boxLayout(placed);
   // Only the piece holding the real end resizes; a day the meeting merely runs through doesn't.
   const endsHere = e.end <= toWallClock(date, 1440);
   return (
     <div
-      className={`${EVENT_BOX} ${tone(e)} flex touch-none select-none flex-col has-[button:focus-visible]:outline has-[button:focus-visible]:outline-2 has-[button:focus-visible]:outline-accent ${dragging ? "z-20 outline outline-1 outline-ink-3" : ""}`}
-      style={boxStyle(placed)}
+      // No `touch-none`: a swipe that starts on a meeting scrolls the week (touch never drags).
+      className={`${box.className} ${tone(e)} cursor-pointer select-none has-[button:focus-visible]:outline has-[button:focus-visible]:outline-2 has-[button:focus-visible]:outline-accent ${dragging ? "z-20 outline outline-1 outline-ink-3" : ""}`}
+      style={box.style}
       onPointerDown={(ev) => onPress(ev, "move")}
       onClickCapture={onClickCapture}
+      onClick={onOpen}
       // A link or text inside would otherwise start the browser's own drag.
       onDragStart={(ev) => ev.preventDefault()}
     >
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex min-h-0 w-full min-w-0 flex-1 cursor-pointer flex-col items-start text-left focus-visible:outline-none"
-      >
-        <span className="w-full truncate font-medium text-ink">{e.subject || "(No title)"}</span>{" "}
-        <span className="tabular text-ink-3">
-          {clock(e.start)} – {clock(e.end)}
-        </span>
+      <button type="button" className="block w-full min-w-0 cursor-pointer text-left focus-visible:outline-none">
+        <span className="block truncate font-medium text-ink">{e.subject || "(No title)"}</span>{" "}
+        <TimeLine event={e} compact={box.compact} />
       </button>
-      {e.household ? <HouseholdName household={e.household} /> : null}
+      {e.household && !box.compact ? <HouseholdName household={e.household} /> : null}
       {endsHere ? (
         <div
           aria-hidden
           data-resize-handle=""
-          className="absolute inset-x-0 bottom-0 h-1.5 cursor-ns-resize"
+          className={`absolute inset-x-0 bottom-0 cursor-ns-resize ${box.compact ? "h-[3px]" : "h-1.5"}`}
           onPointerDown={(ev) => {
             ev.stopPropagation();
             onPress(ev, "resize");
@@ -304,6 +341,8 @@ function HouseholdName({ household }: { household: HouseholdLink }): ReactElemen
     <Link
       href={`/crm/households/${household.householdId}`}
       className="block min-w-0 truncate text-ink-2 hover:text-ink hover:underline"
+      // Inside a meeting you organize, a click opens the editor; this one is the link's.
+      onClick={(ev) => ev.stopPropagation()}
     >
       {household.householdName}
     </Link>

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import DialogShell from "@/components/dialog-shell";
 import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
 import { SwitchControl } from "@/components/forms/switch-control";
 import { useToast } from "@/components/toast";
@@ -27,7 +28,10 @@ const ERROR_BANNERS = new Map([
 /** The pane states a 409 from the events routes can name. */
 const CONFLICT_PANES = new Set<PaneView>(["firm_not_approved", "member_off", "connect", "needs_reconnect"]);
 
+const DISCONNECT_URL = "/api/workspace/microsoft/connection/disconnect";
+
 const MOVE_FAILED = "Couldn't move the meeting — it's back where it was.";
+const DISCONNECT_FAILED = "Couldn't disconnect Microsoft 365. Try again.";
 const TEAMS_FAILED =
   "Meeting saved without a Teams link — your Microsoft account can't create Teams meetings.";
 
@@ -43,9 +47,9 @@ async function conflictPane(res: Response): Promise<PaneView | null> {
 
 /**
  * Reads one week. Anything but the week itself becomes a pane, never an empty
- * grid: a 409 names its pane (an expired sign-in, a switched-off advisor) and
- * every other failure — Microsoft throttling, a 500, the network — reads as
- * "busy", whose Retry asks again.
+ * grid: a 409 names its pane (an expired sign-in, a switched-off advisor), a
+ * 503 is Microsoft being busy, and every other failure — a 500, a mailbox
+ * Microsoft can't serve, the network — can't load. Both have a Retry.
  */
 async function loadWeek(start: string, signal: AbortSignal): Promise<WeekResult> {
   try {
@@ -53,14 +57,16 @@ async function loadWeek(start: string, signal: AbortSignal): Promise<WeekResult>
     if (res.ok) {
       const body = (await res.json()) as { events?: unknown };
       if (Array.isArray(body.events)) return { events: body.events as WeekEvent[] };
+    } else if (res.status === 503) {
+      return { blocked: "throttled" };
     } else {
       const pane = await conflictPane(res);
       if (pane) return { blocked: pane };
     }
   } catch {
-    // Falls through to "busy".
+    // Falls through to "can't load".
   }
-  return { blocked: "throttled" };
+  return { blocked: "unavailable" };
 }
 
 type WriteResult = { ok: true; body: unknown } | { ok: false; pane: PaneView | null };
@@ -98,6 +104,7 @@ export function WorkspacePage({
   initialWeek,
   userId,
   households,
+  connectedEmail,
 }: {
   paneState: PaneState;
   isAdmin: boolean;
@@ -105,6 +112,8 @@ export function WorkspacePage({
   /** The signed-in advisor: new Foundry tasks from the to-do panel are theirs. */
   userId: string;
   households: HouseholdOption[];
+  /** The Microsoft account the advisor connected, shown with its Disconnect. */
+  connectedEmail: string | null;
 }): ReactElement {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -158,7 +167,7 @@ export function WorkspacePage({
   const [attempt, setAttempt] = useState(0);
   const [refresh, setRefresh] = useState(0);
   const requestKey = `${weekStart}#${attempt}`;
-  const [result, setResult] = useState<(WeekResult & { key: string; today: string }) | null>(null);
+  const [result, setResult] = useState<(WeekResult & { key: string; weekStart: string; today: string }) | null>(null);
   useEffect(() => {
     if (paneState !== "ready") return;
     const ctrl = new AbortController();
@@ -175,7 +184,7 @@ export function WorkspacePage({
               }),
             }
           : r;
-      setResult({ ...read, key: requestKey, today: localToday() });
+      setResult({ ...read, key: requestKey, weekStart, today: localToday() });
     });
     return () => ctrl.abort();
   }, [paneState, weekStart, requestKey, refresh]);
@@ -184,6 +193,10 @@ export function WorkspacePage({
   const week = current && "events" in current ? current.events : null;
   const blocked: PaneView | null =
     paneState !== "ready" ? paneState : current && "blocked" in current ? current.blocked : null;
+  // While another week loads, the last one stays mounted under a cover, so
+  // the grid (and where it's scrolled to) isn't swapped for a loading box.
+  const onScreen = current ?? result;
+  const shownWeek = onScreen && "events" in onScreen ? onScreen : null;
   const days = showWeekends ? 7 : 5;
 
   const [editor, setEditor] = useState<Editor | null>(null);
@@ -194,7 +207,20 @@ export function WorkspacePage({
   /** A write's 409 named a pane: the calendar shows it in place of the week. */
   function showPane(pane: PaneView) {
     setEditor(null);
-    setResult((r) => (r ? { blocked: pane, key: r.key, today: r.today } : r));
+    setResult((r) => (r ? { blocked: pane, key: r.key, weekStart: r.weekStart, today: r.today } : r));
+  }
+
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  /** Drops the advisor's own Microsoft connection; the refreshed page shows Connect. */
+  async function disconnectMicrosoft(): Promise<void> {
+    setDisconnecting(true);
+    const r = await write(DISCONNECT_URL, "POST");
+    setDisconnecting(false);
+    setConfirmDisconnect(false);
+    if (r.ok) router.refresh();
+    else showToast({ message: DISCONNECT_FAILED });
   }
 
   /**
@@ -315,6 +341,9 @@ export function WorkspacePage({
             onChange={toggleWeekends}
             ariaLabel="Show weekends"
             stateLabel="Show weekends"
+            // This segment streams in, and the app's password-manager guard
+            // marks its input before it hydrates: those attributes are expected.
+            suppressHydrationWarning
           />
           <button
             type="button"
@@ -334,29 +363,65 @@ export function WorkspacePage({
       ) : null}
 
       <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="min-w-0 overflow-hidden rounded-xl border border-hair bg-card">
-          {blocked ? (
-            <CalendarPaneState state={blocked} isAdmin={isAdmin} onRetry={() => setAttempt((a) => a + 1)} />
-          ) : week && current ? (
-            <WeekCalendar
-              weekStart={weekStart}
-              days={days}
-              events={week}
-              today={current.today}
-              onMove={moveMeeting}
-              onOpen={openMeeting}
-            />
-          ) : (
-            <div className="flex min-h-[360px] items-center justify-center">
-              <p role="status" className="text-sm text-ink-3">
-                Loading your week…
-              </p>
-            </div>
-          )}
+        <div className="min-w-0">
+          <div className="overflow-hidden rounded-xl border border-hair bg-card">
+            {blocked ? (
+              <CalendarPaneState state={blocked} isAdmin={isAdmin} onRetry={() => setAttempt((a) => a + 1)} />
+            ) : shownWeek ? (
+              <div className="relative" aria-busy={current === null}>
+                <WeekCalendar
+                  weekStart={shownWeek.weekStart}
+                  days={days}
+                  events={shownWeek.events}
+                  today={shownWeek.today}
+                  onMove={moveMeeting}
+                  onOpen={openMeeting}
+                />
+                {current === null ? (
+                  <div className="absolute inset-0 z-30 flex items-center justify-center bg-card/70">
+                    <p role="status" className="text-sm text-ink-3">
+                      Loading your week…
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="flex min-h-[360px] items-center justify-center">
+                <p role="status" className="text-sm text-ink-3">
+                  Loading your week…
+                </p>
+              </div>
+            )}
+          </div>
+          {paneState === "ready" && connectedEmail ? (
+            <p className="mt-2 text-[12px] text-ink-3">
+              Connected as <span className="text-ink-2">{connectedEmail}</span> ·{" "}
+              <button
+                type="button"
+                onClick={() => setConfirmDisconnect(true)}
+                className="underline underline-offset-2 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              >
+                Disconnect
+              </button>
+            </p>
+          ) : null}
         </div>
-        {/* Beside every calendar state: Foundry tasks don't wait on Microsoft. */}
-        <TodoPanel userId={userId} households={households} />
+        {/* Beside every calendar state: Foundry tasks don't wait on Microsoft.
+            A new connection state (after Disconnect) reads the to-dos afresh. */}
+        <TodoPanel key={paneState} userId={userId} households={households} />
       </div>
+
+      <DialogShell
+        open={confirmDisconnect}
+        onOpenChange={setConfirmDisconnect}
+        title="Disconnect Microsoft 365?"
+        size="sm"
+        destructiveAction={{ label: "Disconnect", onClick: disconnectMicrosoft, loading: disconnecting }}
+      >
+        <p className="text-[14px] text-ink-2">
+          Your Outlook calendar and to-dos leave Workspace. You can connect again any time.
+        </p>
+      </DialogShell>
 
       {editor?.mode === "create" ? (
         <EventEditorDialog

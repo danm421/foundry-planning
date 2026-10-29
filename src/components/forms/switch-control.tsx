@@ -14,6 +14,7 @@ export function SwitchControl({
   disabled,
   ariaLabel,
   stateLabel,
+  suppressHydrationWarning,
 }: {
   checked: boolean;
   onChange: (next: boolean) => void;
@@ -21,6 +22,8 @@ export function SwitchControl({
   ariaLabel: string;
   /** Short label rendered left of the switch, e.g. "Allowed" / "Off". */
   stateLabel?: string;
+  /** For a switch in a streamed segment: attributes stamped on the input before it hydrates are expected. */
+  suppressHydrationWarning?: boolean;
 }) {
   return (
     <label
@@ -37,6 +40,7 @@ export function SwitchControl({
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
         className="peer sr-only"
+        suppressHydrationWarning={suppressHydrationWarning}
       />
       <span className="relative h-5 w-9 rounded-full bg-hair-2 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-ink after:shadow-sm after:transition-transform after:content-[''] peer-checked:bg-accent peer-checked:after:translate-x-4 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent peer-disabled:opacity-50" />
     </label>

@@ -60,4 +60,14 @@ describe("CalendarPaneState", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
+
+  it("unavailable: a failure that isn't throttling points to the admin, not 'busy'", () => {
+    const onRetry = vi.fn();
+    render(<CalendarPaneState state="unavailable" isAdmin={false} onRetry={onRetry} />);
+    expect(screen.getByText("Couldn't load your calendar from Microsoft.")).toBeInTheDocument();
+    expect(screen.getByText("If this keeps happening, ask your firm's admin.")).toBeInTheDocument();
+    expect(screen.queryByText(/busy/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
 });

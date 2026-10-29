@@ -2,8 +2,11 @@ import type { ReactElement, ReactNode } from "react";
 import Link from "next/link";
 import type { CalendarPaneState as PaneState } from "@/lib/workspace/types";
 
-/** Every calendar pane that isn't the week itself. */
-export type PaneView = Exclude<PaneState, "ready"> | "throttled";
+/**
+ * Every calendar pane that isn't the week itself. `throttled` is Microsoft
+ * being busy; `unavailable` is any other failure, which a retry may not fix.
+ */
+export type PaneView = Exclude<PaneState, "ready"> | "throttled" | "unavailable";
 
 // A plain anchor, never fetch(): the route answers with a redirect to Microsoft.
 export const CONNECT_URL = "/api/workspace/microsoft/connect";
@@ -19,6 +22,11 @@ export function CalendarPaneState({
   isAdmin: boolean;
   onRetry?: () => void;
 }): ReactElement {
+  const retry = (
+    <button type="button" className="btn-ghost text-sm" onClick={onRetry}>
+      Retry
+    </button>
+  );
   switch (state) {
     case "firm_not_approved":
       return isAdmin ? (
@@ -61,14 +69,13 @@ export function CalendarPaneState({
         />
       );
     case "throttled":
+      return <Pane title="Microsoft is busy right now — try again in a minute." action={retry} />;
+    case "unavailable":
       return (
         <Pane
-          title="Microsoft is busy right now — try again in a minute."
-          action={
-            <button type="button" className="btn-ghost text-sm" onClick={onRetry}>
-              Retry
-            </button>
-          }
+          title="Couldn't load your calendar from Microsoft."
+          body="If this keeps happening, ask your firm's admin."
+          action={retry}
         />
       );
   }
