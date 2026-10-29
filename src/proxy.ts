@@ -43,6 +43,10 @@ const isPublicRoute = createRouteMatcher([
   // reachable without a Clerk session.
   "/risk-questionnaire/(.*)",
   "/api/risk-questionnaire/(.*)",
+  // the firm's Microsoft admin (an IT person) may have no Foundry account; the
+  // callback self-protects with a single-use state.
+  "/api/workspace/microsoft/admin-consent/callback",
+  "/microsoft-approval",
   // AASA / assetlinks — Apple's universal-links crawler and Google's Digital
   // Asset Links fetcher hit these paths with no session cookie. The AASA file
   // has no extension (Apple requires that), so clerkMiddleware's

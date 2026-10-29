@@ -78,6 +78,43 @@ describe("firm approval", () => {
     expect(rows).toHaveLength(1);
     expect((await getFirmApproval(firmId, "microsoft"))?.tenantId).toBe("t2");
   });
+
+  // Ruling R8: an advisor's sign-in belongs to the tenant the firm approved. A
+  // re-approval from a DIFFERENT tenant must not leave old-tenant connections
+  // live; the access switches are the firm's own decision and survive.
+  describe("re-approval and advisor connections", () => {
+    const approve = (firmId: string, tenantId: string) =>
+      upsertFirmApproval({ firmId, provider: "microsoft", tenantId, approvedScopes: "s", approvedByUserId: "admin" });
+
+    async function approvedFirmWithConnectedAdvisor(): Promise<string> {
+      const firmId = freshFirmId();
+      await approve(firmId, "t1");
+      await setMemberAccess({ firmId, provider: "microsoft", userId: "u1", enabled: true, updatedByUserId: "admin" });
+      expect((await connect(firmId, "u1", "oid-1")).ok).toBe(true);
+      return firmId;
+    }
+
+    it("the SAME tenant keeps the advisor's connection", async () => {
+      const firmId = await approvedFirmWithConnectedAdvisor();
+      await approve(firmId, "t1");
+      expect(await getUserConnection(firmId, "u1", "microsoft")).not.toBeNull();
+    });
+
+    it("a DIFFERENT tenant drops the connection and keeps the access switch", async () => {
+      const firmId = await approvedFirmWithConnectedAdvisor();
+      await approve(firmId, "t2");
+      expect(await getUserConnection(firmId, "u1", "microsoft")).toBeNull();
+      expect(await hasMemberAccess(firmId, "u1", "microsoft")).toBe(true);
+      expect((await getFirmApproval(firmId, "microsoft"))?.tenantId).toBe("t2");
+    });
+
+    it("another firm's connection is untouched by a tenant change", async () => {
+      const firmId = await approvedFirmWithConnectedAdvisor();
+      const otherFirmId = await approvedFirmWithConnectedAdvisor();
+      await approve(firmId, "t2");
+      expect(await getUserConnection(otherFirmId, "u1", "microsoft")).not.toBeNull();
+    });
+  });
 });
 
 describe("member access + connections", () => {

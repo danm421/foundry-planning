@@ -24,6 +24,12 @@ export async function getFirmApproval(
   return row ?? null;
 }
 
+/**
+ * An advisor's sign-in belongs to the tenant the firm approved, so a
+ * re-approval from a DIFFERENT tenant drops the firm's advisor connections in
+ * the same write; they sign in again against the new tenant. The access
+ * switches are the firm's own choice and survive.
+ */
 export async function upsertFirmApproval(input: {
   firmId: string;
   provider: WorkspaceProvider;
@@ -31,18 +37,30 @@ export async function upsertFirmApproval(input: {
   approvedScopes: string;
   approvedByUserId: string;
 }): Promise<void> {
-  await db
-    .insert(workspaceFirmApprovals)
-    .values(input)
-    .onConflictDoUpdate({
-      target: [workspaceFirmApprovals.firmId, workspaceFirmApprovals.provider],
-      set: {
-        tenantId: input.tenantId,
-        approvedScopes: input.approvedScopes,
-        approvedByUserId: input.approvedByUserId,
-        approvedAt: new Date(),
-      },
-    });
+  await db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select({ tenantId: workspaceFirmApprovals.tenantId })
+      .from(workspaceFirmApprovals)
+      .where(and(eq(workspaceFirmApprovals.firmId, input.firmId), eq(workspaceFirmApprovals.provider, input.provider)))
+      .for("update");
+    if (existing && existing.tenantId !== input.tenantId) {
+      await tx
+        .delete(workspaceConnections)
+        .where(and(eq(workspaceConnections.firmId, input.firmId), eq(workspaceConnections.provider, input.provider)));
+    }
+    await tx
+      .insert(workspaceFirmApprovals)
+      .values(input)
+      .onConflictDoUpdate({
+        target: [workspaceFirmApprovals.firmId, workspaceFirmApprovals.provider],
+        set: {
+          tenantId: input.tenantId,
+          approvedScopes: input.approvedScopes,
+          approvedByUserId: input.approvedByUserId,
+          approvedAt: new Date(),
+        },
+      });
+  });
 }
 
 /** Disconnecting a firm removes the approval and everything hanging off it, atomically. */
