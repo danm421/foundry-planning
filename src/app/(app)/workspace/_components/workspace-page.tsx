@@ -6,9 +6,10 @@ import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
 import { SwitchControl } from "@/components/forms/switch-control";
 import { useToast } from "@/components/toast";
 import type { CalendarPaneState as PaneState, WallClock } from "@/lib/workspace/types";
-import { addDays, formatWeekRange, mondayOf, newEventSlot } from "@/lib/workspace/week";
+import { addDays, formatWeekRange, localToday, mondayOf, newEventSlot } from "@/lib/workspace/week";
 import { CalendarPaneState, type PaneView } from "./calendar-pane-state";
 import { EventEditorDialog, type EventDraft } from "./event-editor-dialog";
+import { TodoPanel, type HouseholdOption } from "./todo-panel";
 import { WeekCalendar, type WeekEvent } from "./week-calendar";
 
 const WEEKENDS_KEY = "workspace.showWeekends";
@@ -84,13 +85,6 @@ async function write(url: string, method: "POST" | "PATCH", body?: unknown): Pro
 
 const eventUrl = (id: string) => `/api/workspace/events/${encodeURIComponent(id)}`;
 
-/** Today in the browser's zone. The mailbox zone's "today" isn't derivable
- *  from Outlook's Windows zone names, so this is the accepted stand-in. */
-function localToday(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
 type Times = { start: WallClock; end: WallClock };
 type Editor = ({ mode: "create" } & Times) | { mode: "edit"; event: WeekEvent };
 
@@ -101,10 +95,15 @@ export function WorkspacePage({
   paneState,
   isAdmin,
   initialWeek,
+  userId,
+  households,
 }: {
   paneState: PaneState;
   isAdmin: boolean;
   initialWeek: string;
+  /** The signed-in advisor: new Foundry tasks from the to-do panel are theirs. */
+  userId: string;
+  households: HouseholdOption[];
 }): ReactElement {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -354,10 +353,8 @@ export function WorkspacePage({
             </div>
           )}
         </div>
-        {/* The to-do list mounts here. */}
-        <aside aria-label="To-dos" className="rounded-xl border border-hair bg-card p-4">
-          <h2 className="text-sm font-semibold text-ink">To-dos</h2>
-        </aside>
+        {/* Beside every calendar state: Foundry tasks don't wait on Microsoft. */}
+        <TodoPanel userId={userId} households={households} />
       </div>
 
       {editor?.mode === "create" ? (

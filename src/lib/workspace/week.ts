@@ -110,6 +110,14 @@ export function newEventSlot(
   return { start, end: shift(start, 30) };
 }
 
+/** Today in the browser's zone. The mailbox zone's "today" isn't derivable
+ *  from Outlook's Windows zone names, so this is the accepted stand-in. The one
+ *  thing here that reads the clock. */
+export function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
 /** `Oct 28`. */
 export function monthDay(date: string): string {
   return `${MONTHS[Number(date.slice(5, 7)) - 1]} ${Number(date.slice(8, 10))}`;

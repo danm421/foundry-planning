@@ -13,6 +13,16 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(mockSearch),
 }));
 
+// The to-do panel reads its own route; todo-panel.test.tsx covers it. Here it
+// only has to be there, so the week's fetch assertions see the week alone.
+const todoPanelProps = vi.fn();
+vi.mock("../todo-panel", () => ({
+  TodoPanel: (props: unknown) => {
+    todoPanelProps(props);
+    return <aside aria-label="To-dos" />;
+  },
+}));
+
 type FakeResponse = { ok: boolean; status: number; json: () => Promise<unknown> };
 
 function respond(status: number, body: unknown): FakeResponse {
@@ -59,10 +69,18 @@ const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<FakeRespons
 /** Every write (POST/PATCH); reads of the week answer with WEEK. */
 const writeMock = vi.fn<(url: string, init: RequestInit) => Promise<FakeResponse>>();
 
+const HOUSEHOLDS = [{ id: "hh-1", name: "Hartley" }];
+
 function renderPage(paneState: Parameters<typeof WorkspacePage>[0]["paneState"] = "ready") {
   return render(
     <ToastProvider>
-      <WorkspacePage paneState={paneState} isAdmin={false} initialWeek="2026-10-26" />
+      <WorkspacePage
+        paneState={paneState}
+        isAdmin={false}
+        initialWeek="2026-10-26"
+        userId="user_me"
+        households={HOUSEHOLDS}
+      />
     </ToastProvider>,
   );
 }
@@ -92,6 +110,7 @@ const grid = () => screen.queryByRole("region", { name: "Week calendar" });
 beforeEach(() => {
   mockSearch = "";
   replaceMock.mockReset();
+  todoPanelProps.mockReset();
   fetchMock.mockReset();
   writeMock.mockReset();
   serverEvents = WEEK.events.map((e) => ({ ...e }));
@@ -227,6 +246,26 @@ describe("WorkspacePage — the week", () => {
       await screen.findByText("Microsoft is busy right now — try again in a minute."),
     ).toBeInTheDocument();
     expect(grid()).toBeNull();
+  });
+});
+
+describe("WorkspacePage — the to-do panel", () => {
+  it.each(["connect", "member_off", "firm_not_approved", "needs_reconnect", "ready"] as const)(
+    "mounts beside the %s calendar pane, with the advisor and their households",
+    (paneState) => {
+      renderPage(paneState);
+      expect(screen.getByRole("complementary", { name: "To-dos" })).toBeInTheDocument();
+      expect(todoPanelProps).toHaveBeenLastCalledWith({ userId: "user_me", households: HOUSEHOLDS });
+    },
+  );
+
+  it("stays beside the busy pane when Microsoft is throttled", async () => {
+    fetchMock.mockResolvedValue(respond(503, { error: "throttled" }));
+    renderPage();
+    expect(
+      await screen.findByText("Microsoft is busy right now — try again in a minute."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "To-dos" })).toBeInTheDocument();
   });
 });
 
