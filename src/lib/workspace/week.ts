@@ -50,8 +50,59 @@ export function snapMinutes(m: number, step = 15): number {
   return Math.round(m / step) * step;
 }
 
+/** `minutes` past `date`'s midnight as a wall clock; past 24:00 (or before 00:00) rolls the day. */
 export function toWallClock(date: string, minutes: number): WallClock {
-  return `${date}T${pad2(Math.floor(minutes / 60))}:${pad2(minutes % 60)}`;
+  const days = Math.floor(minutes / 1440);
+  const m = minutes - days * 1440;
+  return `${days ? addDays(date, days) : date}T${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`;
+}
+
+function shift(w: WallClock, minutes: number): WallClock {
+  return toWallClock(w.slice(0, 10), minutesOf(w) + minutes);
+}
+
+/** A resize never leaves a meeting shorter than this. */
+const MIN_RESIZE_MINUTES = 15;
+
+/**
+ * Where a drag drops a meeting. `move` shifts both ends by whole days plus the
+ * snapped minutes, keeping the piece drawn in the grabbed column (`topMin` to
+ * `endMin`) inside its day; `resize` moves only the end, up to that day's
+ * midnight and never closer than 15 minutes to the start. Null when the drop
+ * is where the meeting already is.
+ */
+export function dropTarget(
+  event: { start: WallClock; end: WallClock },
+  piece: { topMin: number; endMin: number },
+  drag: { mode: "move" | "resize"; days: number; minutes: number },
+): { start: WallClock; end: WallClock } | null {
+  const snapped = snapMinutes(drag.minutes);
+  if (drag.mode === "move") {
+    const minutes = Math.min(Math.max(snapped, -piece.topMin), 1440 - piece.endMin);
+    if (drag.days === 0 && minutes === 0) return null;
+    const by = drag.days * 1440 + minutes;
+    return { start: shift(event.start, by), end: shift(event.end, by) };
+  }
+  const moved = shift(event.end, Math.min(snapped, 1440 - piece.endMin));
+  const shortest = shift(event.start, MIN_RESIZE_MINUTES);
+  // Fixed-width strings compare in time order.
+  const end = moved < shortest ? shortest : moved;
+  return end === event.end ? null : { start: event.start, end };
+}
+
+/**
+ * A new meeting's default slot, 30 minutes long: today's next full hour when
+ * today is one of the shown days, otherwise the shown Monday at 9:00.
+ */
+export function newEventSlot(
+  weekStart: string,
+  days: number,
+  today: string,
+  nowMinutes: number,
+): { start: WallClock; end: WallClock } {
+  const shown = today >= weekStart && today < addDays(weekStart, days);
+  const start = shown ? toWallClock(today, (Math.floor(nowMinutes / 60) + 1) * 60) : `${weekStart}T09:00`;
+  return { start, end: shift(start, 30) };
 }
 
 function monthDay(date: string): string {
