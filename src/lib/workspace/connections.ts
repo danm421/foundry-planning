@@ -135,3 +135,15 @@ export async function markNeedsReconnect(connectionId: string, reason: string): 
     .set({ status: "needs_reconnect", lastError: reason, updatedAt: new Date() })
     .where(eq(workspaceConnections.id, connectionId));
 }
+
+export async function deleteUserConnection(firmId: string, userId: string, provider: WorkspaceProvider): Promise<void> {
+  await db
+    .delete(workspaceConnections)
+    .where(
+      and(
+        eq(workspaceConnections.firmId, firmId),
+        eq(workspaceConnections.userId, userId),
+        eq(workspaceConnections.provider, provider),
+      ),
+    );
+}
