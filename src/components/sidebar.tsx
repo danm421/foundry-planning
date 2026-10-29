@@ -11,6 +11,7 @@ interface SidebarProps {
   clientsCount: number;
   unreadCount: number;
   isOpsAdmin: boolean;
+  workspaceEnabled: boolean;
 }
 
 export default function Sidebar({
@@ -18,6 +19,7 @@ export default function Sidebar({
   clientsCount,
   unreadCount,
   isOpsAdmin,
+  workspaceEnabled,
 }: SidebarProps): ReactElement {
   const { collapsed } = useSidebar();
   return (
@@ -26,7 +28,11 @@ export default function Sidebar({
       className="flex h-full w-full flex-col overflow-hidden border-r border-hair bg-card-2 shadow-lg"
     >
       <BrandHeader firmName={firmName} />
-      <SidebarNav clientsCount={clientsCount} unreadCount={unreadCount} />
+      <SidebarNav
+        clientsCount={clientsCount}
+        unreadCount={unreadCount}
+        workspaceEnabled={workspaceEnabled}
+      />
       <div className="mt-auto border-t border-hair">
         <UserMenu isOpsAdmin={isOpsAdmin} />
       </div>

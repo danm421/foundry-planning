@@ -17,6 +17,7 @@ import { getOpsAdmin } from "@/lib/ops/ops-auth";
 import { GlobalForgeMount } from "@/components/forge/global-forge-mount";
 import { WalkthroughProvider } from "@/components/forge/walkthrough-provider";
 import { isForgeEnabled } from "@/domain/forge/flag";
+import { isWorkspaceEnabled } from "@/lib/workspace/flag";
 
 export default async function AppLayout({
   children,
@@ -65,7 +66,12 @@ export default async function AppLayout({
       <SidebarProvider initialCollapsed={collapsed}>
         <AppShell>
           <SidebarFrame>
-            <Sidebar clientsCount={clientsCount} unreadCount={unreadCount} isOpsAdmin={isOpsAdmin} />
+            <Sidebar
+              clientsCount={clientsCount}
+              unreadCount={unreadCount}
+              isOpsAdmin={isOpsAdmin}
+              workspaceEnabled={isWorkspaceEnabled()}
+            />
           </SidebarFrame>
           <BackNavProvider>
             {/* A route opts into an app-like, viewport-filling surface (the

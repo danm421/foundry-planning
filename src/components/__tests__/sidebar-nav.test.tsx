@@ -109,6 +109,20 @@ describe("SidebarNav", () => {
     expect(clientsLink?.getAttribute("aria-current")).toBeNull();
   });
 
+  it("hides Workspace while its flag is off", () => {
+    (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/home");
+    const { container } = render(<SidebarNav clientsCount={0} unreadCount={0} workspaceEnabled={false} />);
+    expect(container.querySelector('a[href="/workspace"]')).toBeNull();
+  });
+
+  it("shows Workspace directly after Home when its flag is on", () => {
+    (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/workspace");
+    const { container } = render(<SidebarNav clientsCount={0} unreadCount={0} workspaceEnabled />);
+    const hrefs = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"));
+    expect(hrefs.slice(0, 3)).toEqual(["/home", "/workspace", "/clients"]);
+    expect(container.querySelector('a[href="/workspace"]')?.getAttribute("aria-current")).toBe("page");
+  });
+
   it("does not render a CRM nav item", () => {
     (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/clients");
     const { container } = render(<SidebarNav clientsCount={0} unreadCount={0} />);

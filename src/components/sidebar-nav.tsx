@@ -6,6 +6,7 @@ import SidebarNavItem from "./sidebar-nav-item";
 import { useSidebar } from "./sidebar-provider";
 import {
   BellIcon,
+  CalendarIcon,
   ClientsIcon,
   DataCollectionIcon,
   FolderIcon,
@@ -20,6 +21,8 @@ interface NavItemSpec {
   label: string;
   href?: string;
   placeholder?: boolean;
+  /** Shown only while the Workspace flag is on. */
+  workspaceOnly?: boolean;
 }
 
 interface NavGroup {
@@ -35,6 +38,7 @@ const NAV_GROUPS: NavGroup[] = [
     key: "workspace",
     items: [
       { icon: <HomeIcon />, label: "Home", href: "/home" },
+      { icon: <CalendarIcon />, label: "Workspace", href: "/workspace", workspaceOnly: true },
       { icon: <ClientsIcon />, label: "Clients", href: "/clients" },
       { icon: <RiskIcon />, label: "Risk", href: "/risk" },
       { icon: <FolderIcon />, label: "Models", href: "/cma" },
@@ -59,11 +63,14 @@ export function isActivePath(pathname: string, href: string): boolean {
 interface SidebarNavProps {
   clientsCount: number;
   unreadCount: number;
+  /** `isWorkspaceEnabled()`, read on the server; off hides the Workspace item. */
+  workspaceEnabled?: boolean;
 }
 
 export default function SidebarNav({
   clientsCount,
   unreadCount,
+  workspaceEnabled = false,
 }: SidebarNavProps): ReactElement {
   const pathname = usePathname();
   const { collapsed, setCollapsed } = useSidebar();
@@ -91,7 +98,7 @@ export default function SidebarNav({
             <div aria-hidden className="mx-3 mb-2 border-t border-hair" />
           ) : null}
           <ul className="flex flex-col">
-            {group.items.map((item) => {
+            {group.items.filter((item) => workspaceEnabled || !item.workspaceOnly).map((item) => {
               const active = !item.placeholder && item.href
                 ? isActivePath(pathname, item.href)
                 : false;
