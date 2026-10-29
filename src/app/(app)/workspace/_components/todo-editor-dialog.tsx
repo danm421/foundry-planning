@@ -12,9 +12,10 @@ const FORM_ID = "workspace-todo-editor";
 const SAVE_FAILED = "Couldn't save the to-do. Try again.";
 
 /**
- * Edits one Outlook to-do. Save sends only the fields the advisor changed: a
- * to-do whose Outlook body is HTML arrives with `notes` "", so sending the
- * notes untouched would wipe the real body. Nothing changed, Save just closes.
+ * Edits one Outlook to-do. Save sends only the fields the advisor changed;
+ * nothing changed, Save just closes. Formatted (HTML) notes can't be shown in
+ * a plain-text box, so they aren't offered at all — typing into an empty box
+ * would replace notes the advisor never saw — and Save never sends `notes`.
  */
 export function TodoEditorDialog({
   todo,
@@ -41,7 +42,7 @@ export function TodoEditorDialog({
     const patch: TodoPatch = {};
     if (title.trim() !== todo.title) patch.title = title.trim();
     if ((due || null) !== todo.dueDate) patch.dueDate = due || null;
-    if (notes !== todo.notes) patch.notes = notes;
+    if (!todo.notesAreHtml && notes !== todo.notes) patch.notes = notes;
     if (Object.keys(patch).length === 0) {
       onClose();
       return;
@@ -93,19 +94,26 @@ export function TodoEditorDialog({
             onChange={(e) => setDue(e.target.value)}
           />
         </div>
-        <div>
-          <label htmlFor={field("notes")} className={fieldLabelClassName}>
-            Notes
-          </label>
-          <textarea
-            id={field("notes")}
-            rows={4}
-            className={textareaClassName}
-            value={notes}
-            maxLength={10000}
-            onChange={(e) => setNotes(e.target.value)}
-          />
-        </div>
+        {todo.notesAreHtml ? (
+          <div>
+            <p className={fieldLabelClassName}>Notes</p>
+            <p className="text-[13px] text-ink-3">This to-do has formatted notes. Edit them in Outlook.</p>
+          </div>
+        ) : (
+          <div>
+            <label htmlFor={field("notes")} className={fieldLabelClassName}>
+              Notes
+            </label>
+            <textarea
+              id={field("notes")}
+              rows={4}
+              className={textareaClassName}
+              value={notes}
+              maxLength={10000}
+              onChange={(e) => setNotes(e.target.value)}
+            />
+          </div>
+        )}
         {error ? (
           <p role="alert" className="text-[13px] text-crit">
             {error}

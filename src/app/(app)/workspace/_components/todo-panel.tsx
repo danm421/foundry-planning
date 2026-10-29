@@ -148,8 +148,9 @@ export function TodoPanel({
       return;
     }
     setDone((s) => withKey(s, item.key));
-    // A recurring Foundry task now has its next one, which only a re-read shows.
-    if ((r.body as { followOnId?: unknown } | null)?.followOnId) reread();
+    // A repeating to-do now has its next one, which only a re-read shows:
+    // Microsoft makes it for any Outlook to-do; Foundry says so with `followOnId`.
+    if (item.outlook || (r.body as { followOnId?: unknown } | null)?.followOnId) reread();
   }
 
   async function addTodo(d: TodoDraft): Promise<void> {
@@ -224,6 +225,11 @@ export function TodoPanel({
             </p>
           ) : ready.outlookError === "throttled" ? (
             <p className={NOTICE}>Outlook to-dos are unavailable right now.</p>
+          ) : ready.outlookError === "unavailable" ? (
+            <p className={NOTICE}>
+              Couldn&apos;t load your Outlook to-dos from Microsoft. If this keeps happening, ask your
+              firm&apos;s admin.
+            </p>
           ) : null}
 
           {adding ? (

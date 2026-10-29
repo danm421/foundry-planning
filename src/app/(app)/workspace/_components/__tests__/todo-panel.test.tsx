@@ -37,6 +37,7 @@ const OUTLOOK_TODO = {
   title: "Send Hartley the updated plan",
   dueDate: "2026-10-28",
   notes: "Attach the Monte Carlo page",
+  notesAreHtml: false,
 };
 
 const TODOS = { foundry: [FOUNDRY_TASK], outlook: [OUTLOOK_TODO], outlookError: null };
@@ -153,6 +154,18 @@ describe("TodoPanel — Outlook's side", () => {
     expect(screen.getByText("Prep Nguyen proposal")).toBeInTheDocument();
   });
 
+  it("unavailable: a failure that isn't throttling points to the admin", async () => {
+    serverTodos = { foundry: [FOUNDRY_TASK], outlook: null, outlookError: "unavailable" };
+    renderPanel();
+    expect(
+      await screen.findByText(
+        "Couldn't load your Outlook to-dos from Microsoft. If this keeps happening, ask your firm's admin.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Outlook to-dos are unavailable right now.")).toBeNull();
+    expect(screen.getByText("Prep Nguyen proposal")).toBeInTheDocument();
+  });
+
   it("not_connected: no notice, and new to-dos can only be Foundry tasks", async () => {
     serverTodos = { foundry: [FOUNDRY_TASK], outlook: null, outlookError: "not_connected" };
     const user = userEvent.setup();
@@ -177,6 +190,21 @@ describe("TodoPanel — checking one off", () => {
     expect(sent()).toEqual({ url: OUTLOOK_URL, method: "PATCH", body: { completed: true } });
     await waitFor(() => expect(screen.queryByText("Send Hartley the updated plan")).toBeNull());
     expect(screen.getByText("1 open")).toBeInTheDocument();
+  });
+
+  it("(M2) a repeating Outlook to-do re-reads the list, so its next occurrence shows and the done one stays gone", async () => {
+    writeMock.mockResolvedValueOnce(respond(200, { ok: true }));
+    // Microsoft adds the next occurrence; this read still (briefly) lists the finished one.
+    const next = { ...OUTLOOK_TODO, id: "AAMk/task-next=", dueDate: "2026-10-30" };
+    renderPanel();
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Mark Send Hartley the updated plan done" }));
+    serverTodos = { ...TODOS, outlook: [OUTLOOK_TODO, next] };
+
+    await waitFor(() => expect(reads()).toHaveLength(2));
+    const thisWeek = await screen.findByRole("region", { name: "This week" });
+    expect(within(thisWeek).getByText("Send Hartley the updated plan")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Today" })).toBeNull();
+    expect(screen.getByText("2 open")).toBeInTheDocument();
   });
 
   it("a Foundry task POSTs its status route with done", async () => {
@@ -382,6 +410,21 @@ describe("TodoPanel — editing an Outlook to-do", () => {
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(writeMock).not.toHaveBeenCalled();
+  });
+
+  it("(I1) formatted Outlook notes are never offered as a blank box, and Save never sends notes", async () => {
+    serverTodos = { ...TODOS, outlook: [{ ...OUTLOOK_TODO, notes: "", notesAreHtml: true }] };
+    writeMock.mockResolvedValueOnce(respond(200, { ok: true }));
+    const { user, dialog } = await openEditor();
+
+    expect(within(dialog).queryByRole("textbox", { name: "Notes" })).toBeNull();
+    expect(
+      within(dialog).getByText("This to-do has formatted notes. Edit them in Outlook."),
+    ).toBeInTheDocument();
+
+    await user.type(within(dialog).getByLabelText("Title"), "!");
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(sent().body).toEqual({ title: "Send Hartley the updated plan!" });
   });
 
   it("a failed save keeps the dialog open and says so", async () => {
