@@ -75,7 +75,10 @@ export interface BequestSummaryRow {
   willGrantor: "client" | "spouse";
   assetName: string;
   condition: "if_spouse_survives" | "if_spouse_predeceased" | "always";
+  /** Share of the asset. 0 on a dollar gift, which carries `amount` instead. */
   percentage: number;
+  /** Nominal dollars; set on a dollar gift's rows only. */
+  amount?: number;
 }
 
 export interface HeirCardData {
@@ -266,10 +269,13 @@ const matchingRecipientRows = (
 ): BequestSummaryRow[] => {
   const rows: BequestSummaryRow[] = [];
   for (const b of bequests) {
-    if (b.kind !== "asset") continue;
+    if (b.kind === "liability") continue;
+    const isDollar = b.kind === "dollar";
     const acct = accounts.find((a) => a.id === b.accountId);
-    const assetName =
-      acct?.name ?? (b.assetMode === "all_assets" ? "All assets" : "(deleted asset)");
+    const assetName = isDollar
+      ? "Cash gift"
+      : (acct?.name ??
+        (b.assetMode === "all_assets" ? "Estate (what's left at this point)" : "(deleted asset)"));
     for (const r of b.recipients) {
       if (matcher(r.recipientKind, r.recipientId)) {
         rows.push({
@@ -278,7 +284,8 @@ const matchingRecipientRows = (
           willGrantor,
           assetName,
           condition: b.condition,
-          percentage: r.percentage,
+          percentage: isDollar ? 0 : r.percentage,
+          ...(isDollar ? { amount: r.amount ?? 0 } : {}),
         });
       }
     }

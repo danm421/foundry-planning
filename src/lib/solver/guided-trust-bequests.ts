@@ -15,16 +15,15 @@ import type { SolverMutation } from "./types";
 
 // The guided trust wizard's "at death" funding: each bequest answer becomes a
 // clause in the grantor's will naming the trust, and a one-line note says when
-// that clause competes with what the will already does. The note describes the
-// death-event engine's will steps (death-event/shared.ts) and nothing more.
+// that clause competes with what the will already does. The engine pays every
+// will gift top to bottom in list order (`sortOrder`), each from what is left
+// at its turn, and the new clause is appended at the bottom — so the note only
+// says what the gifts above it have already taken.
 
 type BequestItem = Extract<FundingItem, { kind: "bequest" }>;
 type Grantor = "client" | "spouse";
 type Condition = WillBequest["condition"];
 type Recipient = WillBequestRecipient | WillResiduaryRecipient;
-
-/** Engine percentages are 0-100; over-allocation is a strict "> 100". */
-const PCT_EPS = 1e-7;
 
 /** The wills an item writes and the condition each clause carries. A
  *  second-death bequest goes in BOTH wills, firing only once the other spouse
@@ -97,14 +96,14 @@ export function buildBequestMutations(
         { id: newId(), grantor, bequests: [] };
       const bequest: WillBequest = {
         id: newId(),
-        name: specific ? accountName(specific.accountId, tree, "Asset bequest") : "Remaining Estate Value",
+        name: specific ? accountName(specific.accountId, tree, "Asset bequest") : "Estate (what's left at this point)",
         kind: "asset",
         assetMode: what.mode,
         accountId: specific?.accountId ?? null,
         entityId: null,
         liabilityId: null,
-        // "Everything" carries no editable %: the engine weighs all_assets
-        // clauses against each other, so 100 is just this clause's weight.
+        // "Everything" carries no editable %: 100 means all of what's left at
+        // this clause's turn in the list.
         percentage: specific?.percentage ?? 100,
         condition,
         sortOrder: Math.max(-1, ...will.bequests.map((b) => b.sortOrder)) + 1,
@@ -139,8 +138,6 @@ function firingDeaths(condition: Condition, married: boolean): (1 | 2)[] {
   return deaths.filter((d) => firesAtDeath({ condition } as WillBequest, d));
 }
 
-const totalPct = (bs: { percentage: number }[]) => bs.reduce((s, b) => s + b.percentage, 0);
-
 /** recipientHasLapsed: a "spouse" recipient takes nothing when no spouse
  *  survives the grantor — always so at the final death (survivorFmId null). */
 function lapses(r: Recipient, d: 1 | 2, grantor: Grantor, tree: ClientData): boolean {
@@ -153,42 +150,40 @@ function takers<R extends Recipient>(rs: R[], d: 1 | 2, grantor: Grantor, tree: 
   return rs.filter((r) => r.percentage > 0 && !lapses(r, d, grantor, tree));
 }
 
-/** The percent of a clause its takers claim at `d` (100 = all of it). */
-const claimedPct = (b: WillBequest, d: 1 | 2, grantor: Grantor, tree: ClientData) =>
-  totalPct(takers(b.recipients, d, grantor, tree));
-
 /**
- * True when the residuary still receives something at death `d` even with an
- * all_assets clause in force: an account that firing specific clauses claim
- * only part of (applyWillAllAssetsResidual skips any account a specific clause
- * claimed anything of, so the rest — a lapsed recipient's share included —
- * falls to the residuary), or a business interest the will doesn't name
- * (business succession goes specific → residuary and never consults
- * all_assets clauses).
+ * True when the residuary still receives something at death `d` even with a
+ * 100% estate clause at the bottom of the list: a business interest the will
+ * doesn't name (business succession goes specific → residuary and never
+ * consults the estate-percentage clauses). Everything else is swept.
  */
 function residuaryStillReceives(will: Will, d: 1 | 2, tree: ClientData): boolean {
-  const specifics = will.bequests.filter((b) => b.assetMode === "specific" && firesAtDeath(b, d));
-  const byAccount = new Map<string, WillBequest[]>();
-  for (const b of specifics) {
-    if (b.accountId) byAccount.set(b.accountId, [...(byAccount.get(b.accountId) ?? []), b]);
-  }
-  for (const clauses of byAccount.values()) {
-    // applyWillSpecificBequests: pro-rate past 100%, then pay only the takers.
-    const scale = Math.min(1, 100 / totalPct(clauses));
-    const claimed = clauses.reduce(
-      (s, b) => s + (b.percentage / 100) * scale * (claimedPct(b, d, will.grantor, tree) / 100),
-      0,
-    );
-    if (claimed > PCT_EPS && claimed < 1 - PCT_EPS) return true;
-  }
+  const named = will.bequests.filter((b) => b.assetMode === "specific" && firesAtDeath(b, d));
   const grantorFmId = tree.familyMembers?.find((f) => f.role === will.grantor)?.id;
   return tree.accounts.some(
     (a) =>
       a.category === "business" &&
       a.parentAccountId == null &&
       a.owners.some((o) => o.kind === "family_member" && o.familyMemberId === grantorFmId) &&
-      !specifics.some((b) => b.entityId === a.id),
+      !named.some((b) => b.entityId === a.id),
   );
+}
+
+/** Cash and taxable accounts are the only ones a dollar gift is paid from. */
+const isCashLike = (a: Account | undefined) => a?.category === "cash" || a?.category === "taxable";
+
+/** True when a gift already on the will could take from `accountId` ahead of a
+ *  new clause: a specific gift of that account, an estate-percentage gift, or
+ *  a dollar gift drawn estate-wide (cash/taxable only) or from that account.
+ *  A named-account dollar gift that falls back to the estate counts too when
+ *  the account is cash-like, since it may draw there. */
+function drawsOn(b: WillBequest, accountId: string, tree: ClientData): boolean {
+  if (b.kind === "dollar") {
+    const cashLike = isCashLike(tree.accounts.find((a) => a.id === accountId));
+    if (b.dollarSource === "account") return b.accountId === accountId || (!!b.fallbackToEstate && cashLike);
+    return b.dollarSource === "estate" && cashLike;
+  }
+  if (b.kind !== "asset") return false;
+  return b.assetMode === "all_assets" || (b.assetMode === "specific" && b.accountId === accountId);
 }
 
 function noteFor(will: Will, what: BequestItem["what"], condition: Condition, tree: ClientData): string | null {
@@ -196,46 +191,18 @@ function noteFor(will: Will, what: BequestItem["what"], condition: Condition, tr
   const married = tree.client.spouseDob != null;
   const deaths = firingDeaths(condition, married);
   const first = roleFirstName(grantor, tree);
-  const nameList = (rs: Recipient[]) =>
-    formatNameList([...new Set(rs.map((r) => recipientName(r, grantor, tree)))]);
-  // Only recipients who actually take something are ever named.
-  const names = (rs: Recipient[], d: 1 | 2) => nameList(takers(rs, d, grantor, tree));
   const firingAt = (d: 1 | 2) => will.bequests.filter((b) => firesAtDeath(b, d));
 
   if (what.mode === "specific") {
-    // applyWillSpecificBequests pro-rates every firing clause on the account
-    // once their percentages pass 100 — lapsed recipients' clauses included.
-    // Silent when the other clause pays no one at that death.
-    for (const d of deaths) {
-      const same = firingAt(d).filter((b) => b.assetMode === "specific" && b.accountId === what.accountId);
-      const others = names(same.flatMap((b) => b.recipients), d);
-      if (others && what.percentage + totalPct(same) > 100 + PCT_EPS) {
-        return `With the existing bequest of ${accountName(what.accountId, tree)} to ${others}, this is over 100%, so both are scaled down.`;
-      }
-    }
-    return null;
+    const { accountId } = what;
+    if (!deaths.some((d) => firingAt(d).some((b) => drawsOn(b, accountId, tree)))) return null;
+    return `Gifts listed above this one in ${first}'s will are paid first, so this trust gets ${what.percentage}% of what's left of ${accountName(accountId, tree)}.`;
   }
 
-  // applyWillAllAssetsResidual splits the residual across firing all_assets
-  // clauses by their percentage weights; this clause weighs 100. The weight of
-  // a clause whose recipient has lapsed still counts against this trust, but
-  // its share goes on down the chain rather than to that recipient — so name
-  // recipients only when every competing clause pays its takers in full.
-  for (const d of deaths) {
-    const others = firingAt(d).filter((b) => b.assetMode === "all_assets");
-    if (others.length === 0) continue;
-    // A 0% clause can't be split (splitAccount throws on a 0 share; the will
-    // schema rejects it), so there is no outcome to describe.
-    if (others.some((b) => b.percentage <= 0)) return null;
-    const share = Math.round((100 * 100) / (100 + totalPct(others)));
-    const paidInFull = others.every((b) => Math.abs(claimedPct(b, d, grantor, tree) - 100) < PCT_EPS);
-    return paidInFull
-      ? `${first}'s will already leaves everything to ${names(others.flatMap((b) => b.recipients), d)} at that death; this trust shares it — ${share}% to this trust.`
-      : `${first}'s will has another clause leaving everything at that death, so this trust gets only ${share}%.`;
-  }
-
-  // No other all_assets clause fires, so this one sweeps what the residuary
-  // step would have taken — from the tier that governs each death.
+  // Everything: this clause sits last and takes all that's left, so anything
+  // the residuary step would have taken goes to the trust instead — from the
+  // tier that governs each death.
+  const hasAbove = deaths.some((d) => firingAt(d).some((b) => b.kind !== "liability"));
   const heirs = deaths
     .filter((d) => !residuaryStillReceives(will, d, tree))
     .flatMap((d) => {
@@ -243,8 +210,15 @@ function noteFor(will: Will, what: BequestItem["what"], condition: Condition, tr
       const tierHeirs = (will.residuaryRecipients ?? []).filter((r) => (r.tier ?? "primary") === tier);
       return takers(tierHeirs, d, grantor, tree);
     });
-  if (heirs.length === 0) return null;
-  return `This takes everything a specific bequest doesn't, so ${first}'s residuary heirs (${nameList(heirs)}) get nothing at that death.`;
+  const nothing =
+    heirs.length > 0
+      ? `${first}'s residuary heirs (${formatNameList([...new Set(heirs.map((r) => recipientName(r, grantor, tree)))])}) get nothing at that death.`
+      : null;
+  if (hasAbove) {
+    const above = `Gifts listed above this one in ${first}'s will are paid first; this trust gets everything left after them`;
+    return nothing ? `${above}, so ${nothing}` : `${above}.`;
+  }
+  return nothing ? `This trust gets everything left, so ${nothing}` : null;
 }
 
 /** A one-line warning when the bequest competes with what the grantor's will

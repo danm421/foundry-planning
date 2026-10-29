@@ -956,6 +956,59 @@ describe("writeWillChildren", () => {
     expect((residuaryRow!.values as Record<string, unknown>).recipientId).toBe("fm4");
   });
 
+  it("keeps a dollar gift: source, fallback, per-recipient amounts, and its position", async () => {
+    const inserted: { table: unknown; values: unknown }[] = [];
+    const tx = {
+      insert: (table: unknown) => ({
+        values: (values: unknown) => {
+          inserted.push({ table, values });
+          const result = Promise.resolve(undefined);
+          (result as unknown as Record<string, unknown>).returning = async () => [{ id: "bequest-db-id" }];
+          return result;
+        },
+      }),
+    };
+    const raw = {
+      bequests: [
+        {
+          name: "Grandchildren",
+          kind: "dollar",
+          dollarSource: "estate",
+          fallbackToEstate: false,
+          assetMode: null,
+          percentage: 100,
+          condition: "always",
+          sortOrder: 0,
+          recipients: [
+            { recipientKind: "family_member", recipientId: "fm-a", percentage: 0, amount: 20000, sortOrder: 0 },
+            { recipientKind: "family_member", recipientId: "fm-b", percentage: 0, amount: 20000, sortOrder: 1 },
+          ],
+        },
+        {
+          name: "House",
+          kind: "asset",
+          assetMode: "specific",
+          accountId: "acc-house",
+          percentage: 100,
+          condition: "always",
+          sortOrder: 1,
+          recipients: [{ recipientKind: "family_member", recipientId: "fm-a", percentage: 100, sortOrder: 0 }],
+        },
+      ],
+    };
+    await writeWillChildren(tx as never, "will-db-id", raw, makeCtx());
+
+    const bequestRows = rowsIn(inserted, willBequests);
+    expect(bequestRows[0]).toMatchObject({
+      kind: "dollar", dollarSource: "estate", fallbackToEstate: false, sortOrder: 0,
+    });
+    expect(bequestRows[1]).toMatchObject({ kind: "asset", sortOrder: 1 });
+    const recipientRows = rowsIn(inserted, willBequestRecipients);
+    expect(recipientRows[0]).toMatchObject({ amount: "20000", percentage: null });
+    expect(recipientRows[1]).toMatchObject({ amount: "20000", percentage: null });
+    expect(recipientRows[2]).toMatchObject({ percentage: "100", amount: null });
+  });
+
   it("skips bequests and residuary when arrays are empty/absent", async () => {
     const inserted: { table: unknown; values: unknown }[] = [];
     const tx = {

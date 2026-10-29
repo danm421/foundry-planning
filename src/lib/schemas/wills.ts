@@ -5,34 +5,52 @@ const uuidRegex =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const uuidSchema = z.string().regex(uuidRegex, "Invalid UUID format");
 
+const recipientKindSchema = z.enum([
+  "family_member",
+  "external_beneficiary",
+  "entity",
+  "spouse",
+  "other_heirs",
+]);
+
+/** The co-client and Other Heirs carry no recipientId; every other kind needs one. */
+function refineRecipientId(
+  r: { recipientKind: z.infer<typeof recipientKindSchema>; recipientId: string | null },
+  ctx: z.RefinementCtx,
+) {
+  const nullIdKind = takesNoRecipientId(r.recipientKind);
+  if (nullIdKind && r.recipientId !== null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "recipientId must be null when the recipient is the co-client or Other Heirs",
+    });
+  }
+  if (!nullIdKind && r.recipientId === null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "recipientId is required unless the recipient is the co-client or Other Heirs",
+    });
+  }
+}
+
 export const willBequestRecipientSchema = z
   .object({
-    recipientKind: z.enum([
-      "family_member",
-      "external_beneficiary",
-      "entity",
-      "spouse",
-      "other_heirs",
-    ]),
+    recipientKind: recipientKindSchema,
     recipientId: uuidSchema.nullable(),
     percentage: z.number().gt(0).lte(100),
     sortOrder: z.number().int().min(0),
   })
-  .superRefine((r, ctx) => {
-    const nullIdKind = takesNoRecipientId(r.recipientKind);
-    if (nullIdKind && r.recipientId !== null) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "recipientId must be null when the recipient is the co-client or Other Heirs",
-      });
-    }
-    if (!nullIdKind && r.recipientId === null) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "recipientId is required unless the recipient is the co-client or Other Heirs",
-      });
-    }
-  });
+  .superRefine(refineRecipientId);
+
+/** A dollar gift's recipient: a dollar amount each, no percentage. */
+export const willDollarRecipientSchema = z
+  .object({
+    recipientKind: recipientKindSchema,
+    recipientId: uuidSchema.nullable(),
+    amount: z.number().gt(0).lte(999_999_999_999.99),
+    sortOrder: z.number().int().min(0),
+  })
+  .superRefine(refineRecipientId);
 
 const LIABILITY_ALLOWED_RECIPIENT_KINDS = ["family_member", "entity"] as const;
 
@@ -118,9 +136,45 @@ export const willBequestLiabilitySchema = z
     }
   });
 
+export const willBequestDollarSchema = z
+  .object({
+    kind: z.literal("dollar"),
+    name: z.string().trim().min(1).max(200),
+    dollarSource: z.enum(["estate", "account"]),
+    // Omitted = null, so an estate-source gift needn't send it.
+    accountId: uuidSchema.nullable().default(null),
+    fallbackToEstate: z.boolean().default(false),
+    assetMode: z.null().optional(),
+    entityId: z.null().optional(),
+    liabilityId: z.null().optional(),
+    condition: z.enum([
+      "if_spouse_survives",
+      "if_spouse_predeceased",
+      "always",
+    ]),
+    sortOrder: z.number().int().min(0),
+    recipients: z.array(willDollarRecipientSchema).min(1),
+  })
+  .superRefine((b, ctx) => {
+    // account + null accountId is legal: the named account was deleted.
+    if (b.dollarSource === "estate" && b.accountId !== null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "accountId must be null when dollarSource='estate'",
+      });
+    }
+    if (b.dollarSource === "estate" && b.fallbackToEstate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "fallbackToEstate only applies when dollarSource='account'",
+      });
+    }
+  });
+
 export const willBequestSchema = z.discriminatedUnion("kind", [
   willBequestAssetSchema,
   willBequestLiabilitySchema,
+  willBequestDollarSchema,
 ]);
 
 export const willResiduaryRecipientSchema = z
@@ -192,6 +246,7 @@ export const willUpdateSchema = z
   .superRefine(residuarySumRefiner);
 
 export type WillBequestRecipientInput = z.infer<typeof willBequestRecipientSchema>;
+export type WillDollarRecipientInput = z.infer<typeof willDollarRecipientSchema>;
 export type WillBequestInput = z.infer<typeof willBequestSchema>;
 export type WillResiduaryRecipientInput = z.infer<typeof willResiduaryRecipientSchema>;
 export type WillCreateInput = z.infer<typeof willCreateSchema>;

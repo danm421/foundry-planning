@@ -1,5 +1,6 @@
 import { addRow, removeRow, editRow } from "../generic";
 import { nameFor } from "../format";
+import { formatCurrency } from "@/lib/cell-drill/format";
 import { money, label, pct, toNum } from "../labels";
 import { SPEC } from "../specs";
 import { DESCRIBERS, simpleDescriber, type Describer } from "../registry";
@@ -47,11 +48,11 @@ DESCRIBERS.life_insurance_cash_value_schedule = simpleDescriber({
   segments: [() => "Custom cash-value schedule"],
 });
 
-interface Recipient { recipientKind: RecipientKind; recipientId: string | null; percentage: number }
+interface Recipient { recipientKind: RecipientKind; recipientId: string | null; percentage: number; amount?: number | string | null }
 interface Bequest {
   id: string; kind?: string; assetMode?: string | null; accountId?: string | null;
-  entityId?: string | null; liabilityId?: string | null; percentage?: number;
-  condition?: string; recipients?: Recipient[];
+  entityId?: string | null; liabilityId?: string | null; percentage?: number; dollarSource?: string | null;
+  fallbackToEstate?: boolean; condition?: string; recipients?: Recipient[];
 }
 
 function recipients(b: Bequest, ctx: ResolveContext): string {
@@ -59,7 +60,19 @@ function recipients(b: Bequest, ctx: ResolveContext): string {
   if (!rs.length) return "—";
   return rs.map((r) => ctx.recipientName(r.recipientKind, r.recipientId)).join(" & ");
 }
+function dollarGoes(b: Bequest, ctx: ResolveContext): string {
+  const amounts = (b.recipients ?? []).map((r) => toNum(r.amount) ?? 0);
+  const total = amounts.reduce((s, n) => s + n, 0);
+  const equal = amounts.length > 1 && amounts.every((n) => n === amounts[0]);
+  const lead = equal ? `${formatCurrency(amounts[0])} each` : `${formatCurrency(total)}${amounts.length > 1 ? " total" : ""}`;
+  // Its named account was deleted: the will list's wording (wills-panel.tsx).
+  if (b.dollarSource === "account" && !b.accountId) {
+    return `${lead} · account removed — ${b.fallbackToEstate ? "paid from cash & brokerage" : "pays nothing until you pick a source"}`;
+  }
+  return `${lead} from ${b.dollarSource === "account" ? ctx.accountName(b.accountId) : "cash & brokerage"}`;
+}
 function whatGoes(b: Bequest, ctx: ResolveContext): string {
+  if (b.kind === "dollar") return dollarGoes(b, ctx);
   if (b.kind === "liability") return ctx.accountName(b.liabilityId ?? null); // liabilities not in accountsById; falls back to "an account" gracefully
   if (b.assetMode === "specific" && b.accountId) return ctx.accountName(b.accountId);
   if (b.assetMode === "specific" && b.entityId) return ctx.entityName(b.entityId);

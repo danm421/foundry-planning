@@ -399,8 +399,14 @@ export function CanvasDndProvider({
 
   function handleEditBequest({ willId, bequestId }: { willId: string; bequestId: string }) {
     const will = (tree.wills ?? []).find((w) => w.id === willId);
-    const bequest = will?.bequests.find((b) => b.id === bequestId && b.kind === "asset");
-    if (!will || !bequest || bequest.kind !== "asset") return;
+    const target = will?.bequests.find((b) => b.id === bequestId);
+    if (target?.kind === "dollar") {
+      // No dollar editor on this screen; the will page owns cash gifts.
+      showToast({ message: "Edit cash gifts on the will page.", durationMs: 5000 });
+      return;
+    }
+    const bequest = target?.kind === "asset" ? target : undefined;
+    if (!will || !bequest) return;
     setEditing({
       willId,
       bequestId,

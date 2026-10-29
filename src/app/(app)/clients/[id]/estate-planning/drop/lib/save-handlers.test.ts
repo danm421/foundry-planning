@@ -280,6 +280,42 @@ describe("save-handlers", () => {
     ]);
   });
 
+  it("saveBequest keeps a dollar gift and its position, and the new gift goes after the highest sortOrder", async () => {
+    fetchMock.mockResolvedValue(new Response("{}", { status: 200 }));
+    const dollar = {
+      kind: "dollar",
+      name: "Grandchildren",
+      dollarSource: "estate",
+      condition: "always",
+      sortOrder: 0,
+      recipients: [
+        { recipientKind: "family_member", recipientId: "fm-a", percentage: 0, amount: 20000, sortOrder: 0 },
+        { recipientKind: "family_member", recipientId: "fm-b", percentage: 0, amount: 20000, sortOrder: 1 },
+      ],
+    };
+    // sortOrders 0 and 2 (the gift at 1 was deleted): length 2 would collide.
+    const pct = { kind: "asset", name: "House", assetMode: "specific", accountId: "acc-h", percentage: 100, condition: "always", sortOrder: 2, recipients: [] };
+    await saveBequest({
+      clientId: "c1",
+      grantorMode: "client",
+      accountId: "acc-1",
+      percentage: 100,
+      condition: "always",
+      recipient: { kind: "family_member", id: "fm-1" },
+      existingWills: { client: { id: "will-1", bequests: [dollar, pct] } },
+    } as never);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/clients/c1/wills/will-1");
+    const sent = JSON.parse((init as RequestInit).body as string).bequests;
+    expect(sent[0]).toMatchObject({
+      kind: "dollar",
+      dollarSource: "estate",
+      sortOrder: 0,
+      recipients: [{ amount: 20000 }, { amount: 20000 }],
+    });
+    expect(sent[2]).toMatchObject({ accountId: "acc-1", sortOrder: 3 });
+  });
+
   // RULING 48: this test is the throw-on-failure contract's ONLY guard.
   // `submit` resolves (never rejects) even on a non-ok Response, exactly like
   // the real useScenarioWriter — so saveGiftOneTime must inspect res.ok itself

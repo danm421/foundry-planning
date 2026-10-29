@@ -13,6 +13,7 @@
 import { and, asc, count, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  accountOwners,
   accounts,
   entities,
   externalBeneficiaries,
@@ -24,7 +25,9 @@ import {
   willResiduaryRecipients,
   wills,
 } from "@/db/schema";
+import type { AccountOwner } from "@/engine/ownership";
 import { recordAudit } from "@/lib/audit";
+import { dollarSourceRefusal } from "@/lib/estate/dollar-gift-source";
 import { handleOf, inTransaction, type DbOrTx, type Tx, type WriteOptions } from "@/lib/db-tx";
 import { formatZodIssues } from "@/lib/schemas/common";
 import {
@@ -40,6 +43,8 @@ import { writeError, type EntityWriteResult } from "./entity-write-result";
 
 type CrossRefCheck = {
   accountIds: string[];
+  /** Accounts a new or changed dollar gift is paid from: held to `dollarSourceRefusal`. */
+  dollarAccountIds: string[];
   familyMemberIds: string[];
   externalIds: string[];
   entityIds: string[];
@@ -48,12 +53,32 @@ type CrossRefCheck = {
 
 export type CrossRefError = { code: string; detail?: string };
 
+/** A dollar gift's source, as a re-save is matched against the will's stored gifts. */
+const dollarSourceKey = (b: { dollarSource: string | null; accountId: string | null }) => `${b.dollarSource}:${b.accountId}`;
+
+/**
+ * The sources the will's stored dollar gifts already name. A re-saved gift on
+ * one of these skips the source rule: its account may since have moved into a
+ * trust or changed category, and refusing it would leave the whole will
+ * unsavable. The engine pays such a gift nothing, or spills it per its box.
+ */
+async function storedDollarSources(willId: string, handle: DbOrTx): Promise<Set<string>> {
+  const rows = await handle
+    .select({ dollarSource: willBequests.dollarSource, accountId: willBequests.accountId })
+    .from(willBequests)
+    .where(and(eq(willBequests.willId, willId), eq(willBequests.kind, "dollar")));
+  return new Set(rows.map(dollarSourceKey));
+}
+
+/** `stored`: the will's stored dollar sources — a gift on one isn't checked against the source rule. */
 export function gatherCrossRefs(
   bequests: WillBequestInput[],
   residuary: WillResiduaryRecipientInput[] = [],
+  stored: ReadonlySet<string> = new Set(),
 ): CrossRefCheck {
   const check: CrossRefCheck = {
     accountIds: [],
+    dollarAccountIds: [],
     familyMemberIds: [],
     externalIds: [],
     entityIds: [],
@@ -61,6 +86,10 @@ export function gatherCrossRefs(
   };
   for (const b of bequests) {
     if (b.kind === "asset" && b.accountId) check.accountIds.push(b.accountId);
+    if (b.kind === "dollar" && b.accountId) {
+      check.accountIds.push(b.accountId);
+      if (!stored.has(dollarSourceKey(b))) check.dollarAccountIds.push(b.accountId);
+    }
     if (b.kind === "asset" && b.entityId) check.entityIds.push(b.entityId);
     if (b.kind === "liability") check.liabilityIds.push(b.liabilityId);
     for (const r of b.recipients) {
@@ -77,6 +106,14 @@ export function gatherCrossRefs(
     else if (r.recipientKind === "entity") check.entityIds.push(r.recipientId);
   }
   return check;
+}
+
+/** An account_owners row as the engine reads it (each row names exactly one owner). */
+function ownerOf(o: { familyMemberId: string | null; entityId: string | null; externalBeneficiaryId: string | null; percent: string }): AccountOwner {
+  const percent = Number(o.percent);
+  if (o.entityId) return { kind: "entity", entityId: o.entityId, percent };
+  if (o.familyMemberId) return { kind: "family_member", familyMemberId: o.familyMemberId, percent };
+  return { kind: "external_beneficiary", externalBeneficiaryId: String(o.externalBeneficiaryId), percent };
 }
 
 export async function verifyCrossRefs(
@@ -129,6 +166,29 @@ export async function verifyCrossRefs(
       .where(and(eq(entities.clientId, clientId), inArray(entities.id, check.entityIds)));
     if (rows.length !== new Set(check.entityIds).size) {
       return { code: "One or more entity IDs (bequest or recipient) do not belong to this client" };
+    }
+  }
+
+  // A new or changed dollar gift's account: the shared rule the will dialog's
+  // picker applies too (dollar-gift-source.ts).
+  if (check.dollarAccountIds.length > 0) {
+    const categories = await handle
+      .select({ id: accounts.id, category: accounts.category })
+      .from(accounts)
+      .where(and(eq(accounts.clientId, clientId), inArray(accounts.id, check.dollarAccountIds)));
+    const owners = await handle
+      .select({
+        accountId: accountOwners.accountId,
+        familyMemberId: accountOwners.familyMemberId,
+        entityId: accountOwners.entityId,
+        externalBeneficiaryId: accountOwners.externalBeneficiaryId,
+        percent: accountOwners.percent,
+      })
+      .from(accountOwners)
+      .where(inArray(accountOwners.accountId, check.dollarAccountIds));
+    for (const a of categories) {
+      const refusal = dollarSourceRefusal({ category: a.category, owners: owners.filter((o) => o.accountId === a.id).map(ownerOf) });
+      if (refusal) return { code: refusal, detail: a.id };
     }
   }
 
@@ -214,7 +274,9 @@ function bequestValues(willId: string, b: WillBequestInput, sortOrder: number) {
     name: b.name,
     kind: b.kind,
     assetMode: b.kind === "asset" ? b.assetMode : null,
-    accountId: b.kind === "asset" ? (b.accountId ?? null) : null,
+    accountId: b.kind === "asset" || b.kind === "dollar" ? (b.accountId ?? null) : null,
+    dollarSource: b.kind === "dollar" ? b.dollarSource : null,
+    fallbackToEstate: b.kind === "dollar" ? b.fallbackToEstate : false,
     entityId: b.kind === "asset" ? (b.entityId ?? null) : null,
     liabilityId: b.kind === "liability" ? b.liabilityId : null,
     percentage: b.kind === "asset" ? String(b.percentage) : "100",
@@ -224,17 +286,26 @@ function bequestValues(willId: string, b: WillBequestInput, sortOrder: number) {
 }
 
 async function insertRecipients(tx: Tx, bequestId: string, b: WillBequestInput): Promise<void> {
-  if (b.recipients.length > 0) {
-    await tx.insert(willBequestRecipients).values(
-      b.recipients.map((r) => ({
-        bequestId,
-        recipientKind: r.recipientKind,
-        recipientId: r.recipientId,
-        percentage: String(r.percentage),
-        sortOrder: r.sortOrder,
-      })),
-    );
-  }
+  if (b.recipients.length === 0) return;
+  const rows =
+    b.kind === "dollar"
+      ? b.recipients.map((r) => ({
+          bequestId,
+          recipientKind: r.recipientKind,
+          recipientId: r.recipientId,
+          percentage: null,
+          amount: String(r.amount),
+          sortOrder: r.sortOrder,
+        }))
+      : b.recipients.map((r) => ({
+          bequestId,
+          recipientKind: r.recipientKind,
+          recipientId: r.recipientId,
+          percentage: String(r.percentage),
+          amount: null,
+          sortOrder: r.sortOrder,
+        }));
+  await tx.insert(willBequestRecipients).values(rows);
 }
 
 async function insertResiduary(tx: Tx, willId: string, rows: WillResiduaryRecipientInput[]): Promise<void> {
@@ -338,7 +409,7 @@ export async function updateWillForClient(args: RouteArgs & { willId: string }):
 
   const crossRefError = await verifyCrossRefs(
     id,
-    gatherCrossRefs(bequests, residuaryRecipients),
+    gatherCrossRefs(bequests, residuaryRecipients, await storedDollarSources(willId, handle)),
     bequests,
     handle,
   );
@@ -463,18 +534,31 @@ export async function updateWillBequestForClient(args: SaveArgs & { bequestId: s
     kind: before.kind,
     name: before.name,
     assetMode: before.assetMode,
+    dollarSource: before.dollarSource,
+    fallbackToEstate: before.fallbackToEstate,
     accountId: before.accountId,
     entityId: before.entityId,
     liabilityId: before.liabilityId,
     percentage: Number(before.percentage),
     condition: before.condition,
     sortOrder: before.sortOrder,
-    recipients: recipients.map((r) => ({ recipientKind: r.recipientKind, recipientId: r.recipientId, percentage: Number(r.percentage), sortOrder: r.sortOrder })),
+    recipients: recipients.map((r) => ({
+      recipientKind: r.recipientKind,
+      recipientId: r.recipientId,
+      ...(r.percentage !== null ? { percentage: Number(r.percentage) } : {}),
+      ...(r.amount !== null ? { amount: Number(r.amount) } : {}),
+      sortOrder: r.sortOrder,
+    })),
     ...patch,
   });
   if (!parsed.success) return invalidBody(parsed.error);
   const bequest = parsed.data;
-  const crossRefError = await verifyCrossRefs(args.clientId, gatherCrossRefs([bequest]), [bequest], handle);
+  const crossRefError = await verifyCrossRefs(
+    args.clientId,
+    gatherCrossRefs([bequest], [], await storedDollarSources(args.willId, handle)),
+    [bequest],
+    handle,
+  );
   if (crossRefError) return crossRefRefusal(crossRefError);
 
   try {

@@ -507,8 +507,19 @@ describe("applyTitling (Step 1)", () => {
 
 import { applyBeneficiaryDesignations } from "../death-event";
 import type { BeneficiaryRef } from "../types";
-import { applyWillSpecificBequests, applyWillAllAssetsResidual } from "../death-event";
+import { applyWillGiftShares } from "../death-event";
+import { allocateWillGifts } from "../death-event/will-gifts";
 import type { Will, FamilyMember } from "../types";
+
+/** Step 3 on one account as the chain runs it: the whole will allocated over
+ *  a one-account pool, then this account's shares applied. */
+function payWillGifts(source: Account, will: Will, fams: FamilyMember[]) {
+  const pool = [{ accountId: source.id, category: source.category, value: source.value, undisposed: 1 }];
+  return applyWillGiftShares(
+    source, allocateWillGifts(pool, will, 1, LEGACY_FM_SPOUSE),
+    "spouse", LEGACY_FM_SPOUSE, fams, [], [], undefined,
+  );
+}
 
 describe("applyBeneficiaryDesignations (Step 2)", () => {
   const ira: Account = {
@@ -991,7 +1002,7 @@ describe("applyBeneficiaryDesignations (Step 2)", () => {
   });
 });
 
-describe("applyWillSpecificBequests (Step 3a)", () => {
+describe("applyWillGiftShares — specific gifts (Step 3)", () => {
   const brokerage: Account = {
     id: "acct-brok", name: "Taxable Brokerage",
     category: "taxable", subType: "brokerage",
@@ -1021,7 +1032,7 @@ describe("applyWillSpecificBequests (Step 3a)", () => {
       }],
     };
 
-    const result = applyWillSpecificBequests(brokerage, 1, will, 1, "spouse", LEGACY_FM_SPOUSE, fams, [], [], undefined);
+    const result = payWillGifts(brokerage, will, fams);
     expect(result.fractionClaimed).toBeCloseTo(1, 9);
     expect(result.consumed).toBe(true);
     expect(result.ledgerEntries[0]).toMatchObject({
@@ -1042,7 +1053,7 @@ describe("applyWillSpecificBequests (Step 3a)", () => {
       }],
     };
 
-    const result = applyWillSpecificBequests(brokerage, 1, will, 1, "spouse", LEGACY_FM_SPOUSE, fams, [], [], undefined);
+    const result = payWillGifts(brokerage, will, fams);
     expect(result.consumed).toBe(true);
     expect(result.resultingAccounts).toEqual([]);
     expect(result.ledgerEntries).toEqual([expect.objectContaining({
@@ -1065,7 +1076,7 @@ describe("applyWillSpecificBequests (Step 3a)", () => {
       }],
     };
 
-    const result = applyWillSpecificBequests(brokerage, 1, will, 1, "spouse", LEGACY_FM_SPOUSE, fams, [], [], undefined);
+    const result = payWillGifts(brokerage, will, fams);
     expect(result.ledgerEntries).toHaveLength(2);
     expect(result.ledgerEntries[0].amount).toBe(100000);
     expect(result.ledgerEntries[1].amount).toBe(100000);
@@ -1083,7 +1094,7 @@ describe("applyWillSpecificBequests (Step 3a)", () => {
         ],
       }],
     };
-    const result = applyWillSpecificBequests(brokerage, 1, will, 1, "spouse", LEGACY_FM_SPOUSE, fams, [], [], undefined);
+    const result = payWillGifts(brokerage, will, fams);
     expect(result.fractionClaimed).toBeCloseTo(0.4, 9);
     expect(result.consumed).toBe(false);
   });
@@ -1100,11 +1111,11 @@ describe("applyWillSpecificBequests (Step 3a)", () => {
         ],
       }],
     };
-    const result = applyWillSpecificBequests(brokerage, 1, will, 1, "spouse", LEGACY_FM_SPOUSE, fams, [], [], undefined);
+    const result = payWillGifts(brokerage, will, fams);
     expect(result.fractionClaimed).toBe(0);
   });
 
-  it("emits over_allocation_in_will warning when specifics sum >100%", () => {
+  it("two specific gifts of the same account compound in list order", () => {
     const will: Will = {
       id: "will-1", grantor: "client",
       bequests: [
@@ -1122,14 +1133,17 @@ describe("applyWillSpecificBequests (Step 3a)", () => {
         },
       ],
     };
-    const result = applyWillSpecificBequests(brokerage, 1, will, 1, "spouse", LEGACY_FM_SPOUSE, fams, [], [], undefined);
-    // Pro-rate down: each bequest effectively claims 60/120 of the undisposed remainder.
-    expect(result.fractionClaimed).toBeCloseTo(1, 9);
-    expect(result.warnings).toContain("over_allocation_in_will:acct-brok");
+    const result = payWillGifts(brokerage, will, fams);
+    // A takes 60%, B 60% of the 40% left (24%); 16% flows on. No pro-rating,
+    // so no over-allocation warning either.
+    expect(result.fractionClaimed).toBeCloseTo(0.84, 9); // list order (spec 2026-10-28)
+    expect(result.ledgerEntries.map((e) => e.recipientId)).toEqual(["child-a", "child-b"]); // list order (spec 2026-10-28)
+    expect(result.ledgerEntries[0].amount).toBeCloseTo(120000, 6); // list order (spec 2026-10-28)
+    expect(result.ledgerEntries[1].amount).toBeCloseTo(48000, 6); // list order (spec 2026-10-28)
   });
 });
 
-describe("applyWillAllAssetsResidual (Step 3b)", () => {
+describe("applyWillGiftShares — estate gifts (Step 3)", () => {
   const cash: Account = {
     id: "acct-cash", name: "Savings",
     category: "cash", subType: "savings",
@@ -1143,7 +1157,7 @@ describe("applyWillAllAssetsResidual (Step 3b)", () => {
     { id: "child-a", role: "child" as const, relationship: "child", firstName: "Alice", lastName: null, dateOfBirth: null },
   ];
 
-  it("sweeps residual when no specific clause touched this account", () => {
+  it("a 100% estate gift takes the whole account", () => {
     const will: Will = {
       id: "will-1", grantor: "client",
       bequests: [{
@@ -1154,12 +1168,7 @@ describe("applyWillAllAssetsResidual (Step 3b)", () => {
       }],
     };
 
-    const result = applyWillAllAssetsResidual(
-      cash,
-      /* undisposedFraction */ 1,
-      /* accountTouchedBySpecific */ false,
-      will, 1, "spouse", LEGACY_FM_SPOUSE, fams, [], [], undefined,
-    );
+    const result = payWillGifts(cash, will, fams);
     expect(result.consumed).toBe(true);
     expect(result.fractionClaimed).toBe(1);
     expect(result.ledgerEntries[0]).toMatchObject({
@@ -1167,27 +1176,34 @@ describe("applyWillAllAssetsResidual (Step 3b)", () => {
     });
   });
 
-  it("does NOT fire when a specific clause claimed any portion", () => {
+  it("takes what's left of an account an earlier specific gift drew on", () => {
     const will: Will = {
       id: "will-1", grantor: "client",
-      bequests: [{
-        id: "beq-1", name: "All other assets",
-        kind: "asset", assetMode: "all_assets", accountId: null, liabilityId: null, entityId: null,
-        percentage: 100, condition: "always", sortOrder: 0,
-        recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
-      }],
+      bequests: [
+        {
+          id: "beq-0", name: "40% of savings to Alice",
+          kind: "asset", assetMode: "specific", accountId: "acct-cash", liabilityId: null, entityId: null,
+          percentage: 40, condition: "always", sortOrder: 0,
+          recipients: [{ recipientKind: "family_member", recipientId: "child-a", percentage: 100, sortOrder: 0 }],
+        },
+        {
+          id: "beq-1", name: "All other assets",
+          kind: "asset", assetMode: "all_assets", accountId: null, liabilityId: null, entityId: null,
+          percentage: 100, condition: "always", sortOrder: 1,
+          recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
+        },
+      ],
     };
-    const result = applyWillAllAssetsResidual(
-      cash, 0.6, /* accountTouchedBySpecific */ true,
-      will, 1, "spouse", LEGACY_FM_SPOUSE, fams, [], [], undefined,
-    );
-    expect(result.consumed).toBe(false);
-    expect(result.fractionClaimed).toBe(0);
+    const result = payWillGifts(cash, will, fams);
+    // The estate gift no longer skips an account a specific gift touched.
+    expect(result.consumed).toBe(true); // list order (spec 2026-10-28)
+    expect(result.fractionClaimed).toBeCloseTo(1, 9); // list order (spec 2026-10-28)
+    expect(result.ledgerEntries.find((e) => e.recipientKind === "spouse")?.amount).toBeCloseTo(30000, 6); // list order (spec 2026-10-28)
   });
 
   it("no-op when the will has no all_assets clause", () => {
     const will: Will = { id: "will-1", grantor: "client", bequests: [] };
-    const result = applyWillAllAssetsResidual(cash, 1, false, will, 1, "spouse", LEGACY_FM_SPOUSE, fams, [], [], undefined);
+    const result = payWillGifts(cash, will, fams);
     expect(result.consumed).toBe(false);
     expect(result.fractionClaimed).toBe(0);
   });

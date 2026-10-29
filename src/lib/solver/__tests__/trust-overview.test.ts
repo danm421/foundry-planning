@@ -100,6 +100,26 @@ describe("trustFundingSummary", () => {
     expect(trustFundingSummary(trust, t, [])).toBe("Bequest · 50% of Joint Brokerage · Alex's will, either way");
   });
 
+  it("renders a dollar gift", () => {
+    const dollar = (over: Partial<Will["bequests"][number]>) => ({
+      kind: "dollar" as const,
+      assetMode: null,
+      accountId: null,
+      dollarSource: "estate" as const,
+      percentage: 100,
+      recipients: [{ recipientKind: "entity" as const, recipientId: "t1", percentage: 0, amount: 20_000, sortOrder: 0 }],
+      ...over,
+    });
+    const fromEstate = tree({ wills: [will("client", [dollar({})])] });
+    expect(trustFundingSummary(trust, fromEstate, [])).toBe(
+      "Bequest · $20,000 from cash & brokerage · Alex's will, either way",
+    );
+    const fromAcct = tree({ wills: [will("client", [dollar({ dollarSource: "account", accountId: "a-brk" })])] });
+    expect(trustFundingSummary(trust, fromAcct, [])).toBe(
+      "Bequest · $20,000 from Joint Brokerage · Alex's will, either way",
+    );
+  });
+
   it("reads a second-death pair from both wills as one bequest", () => {
     const t = tree({
       wills: [

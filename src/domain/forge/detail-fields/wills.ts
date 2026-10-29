@@ -20,6 +20,9 @@
 //   1. To add/edit/remove ONE bequest, resend the ENTIRE `bequests` array
 //      (existing rows + the one change). Sending just the new/changed item
 //      deletes everything else. Same for `residuaryRecipients` when sent.
+//   (A will's gifts are paid top to bottom in `sortOrder`, each from what is left
+//   at that point, so resend the array in the intended order. A `kind: "dollar"`
+//   gift ("$20,000 to each grandchild") is paid only from cash and brokerage.)
 //   2. Every bequest/recipient/residuary row gets a BRAND NEW uuid on every
 //      PATCH, even for rows whose content didn't change (delete-then-insert,
 //      and the create/update zod schemas don't even accept a caller-supplied
@@ -128,10 +131,10 @@ export const WILLS_ENTITIES: readonly DetailEntity[] = [
         key: "kind",
         label: "Asset or debt",
         kind: "enum",
-        enumValues: ["asset", "liability"],
+        enumValues: ["asset", "liability", "dollar"],
         required: true,
         notes:
-          "Discriminant of a zod discriminatedUnion (willBequestAssetSchema | willBequestLiabilitySchema) — which of assetMode/accountId/entityId/liabilityId/percentage below are accepted, required, or forbidden depends on this value; see each field's notes. Picking a target in the single \"Asset or debt\" dropdown sets this plus assetMode/accountId/entityId/liabilityId together — the advisor never sets `kind` on its own. GOTCHA: the create/update schemas do not accept a caller-supplied `id` on a bequest object at all — the server always assigns a fresh uuid via INSERT ... RETURNING, and PATCH deletes+reinserts every bequest on the will every time (see file-level comment).",
+          "Discriminant of a zod discriminatedUnion (willBequestAssetSchema | willBequestLiabilitySchema | the dollar schema). 'dollar' is a fixed-dollar gift: it has no percentage, its recipients carry `amount`, and it needs `dollarSource` (below). — which of assetMode/accountId/entityId/liabilityId/percentage below are accepted, required, or forbidden depends on this value; see each field's notes. Picking a target in the single \"Asset or debt\" dropdown sets this plus assetMode/accountId/entityId/liabilityId together — the advisor never sets `kind` on its own. GOTCHA: the create/update schemas do not accept a caller-supplied `id` on a bequest object at all — the server always assigns a fresh uuid via INSERT ... RETURNING, and PATCH deletes+reinserts every bequest on the will every time (see file-level comment).",
       },
       {
         key: "name",
@@ -139,7 +142,7 @@ export const WILLS_ENTITIES: readonly DetailEntity[] = [
         kind: "string",
         required: true,
         notes:
-          "Required by the schema (trim, 1-200 chars) but NOT a free-text field the advisor types: bequest-dialog/index.tsx's deriveBequestName() computes it from the \"Asset or debt\" selection before saving — the selected account's/entity's/liability's name, or \"Remaining Estate Value\" when assetMode='all_assets'. Forge writing extracted data should supply an equivalent derived name (e.g. the linked account/entity/liability's own name) rather than an arbitrary label.",
+          "Required by the schema (trim, 1-200 chars) but NOT a free-text field the advisor types: bequest-dialog/index.tsx's deriveBequestName() computes it from the \"Asset or debt\" selection before saving — the selected account's/entity's/liability's name, or \"Estate (what's left at this point)\" when assetMode='all_assets'. Forge writing extracted data should supply an equivalent derived name (e.g. the linked account/entity/liability's own name) rather than an arbitrary label.",
       },
       {
         key: "assetMode",
@@ -149,7 +152,7 @@ export const WILLS_ENTITIES: readonly DetailEntity[] = [
         required: false,
         nullable: true,
         notes:
-          "Required (one of the two values) when kind='asset'; must be null/omitted when kind='liability' (willBequestLiabilitySchema declares it z.null().optional()). 'all_assets' = the \"Remaining Estate Value\" dropdown option (bequeaths whatever's left after other specific bequests); 'specific' = a named account or business entity, set together with accountId or entityId below.",
+          "Required (one of the two values) when kind='asset'; must be null/omitted when kind='liability' (willBequestLiabilitySchema declares it z.null().optional()). 'all_assets' = the \"Estate (what's left at this point)\" dropdown option (bequeaths whatever's left after the gifts above it in the list); 'specific' = a named account or business entity, set together with accountId or entityId below.",
       },
       {
         key: "accountId",
@@ -158,7 +161,7 @@ export const WILLS_ENTITIES: readonly DetailEntity[] = [
         required: false,
         nullable: true,
         notes:
-          "Only accepted when kind='asset'. Must be set (and mutually exclusive with entityId) when assetMode='specific'; must be null when assetMode='all_assets'. Cross-referenced server-side against this client's `accounts` — a 400 (\"One or more accountIds do not belong to this client\") if it doesn't resolve. The picker (src/components/bequest-dialog/index.tsx) additionally hides accounts already 100%-owned by an entity, and accounts with category 'retirement' or 'life_insurance' (those transfer by beneficiary designation, not the will) — Forge should avoid targeting those categories even though the server doesn't itself reject them by category.",
+          "Accepted when kind='asset' or kind='dollar'. kind='dollar': the account the gift is paid from — set it when dollarSource='account' (null there means the named account was deleted: the gift pays nothing, or pays from cash & brokerage when fallbackToEstate is true); null or omitted when dollarSource='estate' (defaults to null). A new or changed dollar source must be a cash or taxable account not wholly owned by trusts or businesses (400 dollar_bequest_source_not_cash / dollar_bequest_source_entity_owned); a gift re-saved with the source it already has on the will is not re-checked. kind='asset': must be set (and mutually exclusive with entityId) when assetMode='specific'; must be null when assetMode='all_assets'. Cross-referenced server-side against this client's `accounts` — a 400 (\"One or more accountIds do not belong to this client\") if it doesn't resolve. The picker (src/components/bequest-dialog/index.tsx) additionally hides accounts already 100%-owned by an entity, and accounts with category 'retirement' or 'life_insurance' (those transfer by beneficiary designation, not the will) — Forge should avoid targeting those categories even though the server doesn't itself reject them by category.",
       },
       {
         key: "entityId",
@@ -178,6 +181,24 @@ export const WILLS_ENTITIES: readonly DetailEntity[] = [
         nullable: true,
         notes:
           "Required when kind='liability' (uuid, non-nullable in that branch); must be null/omitted when kind='asset'. Cross-referenced against this client's `liabilities`, and rejected (400 liability_not_found / liability_linked_not_bequestable / liability_entity_owned_not_bequestable) if the liability doesn't belong to the client, is linked to a property, or is entity-owned. Also unique per will: a second bequest naming the same liabilityId 23505s → mapped to 400 { error: \"duplicate_liability_bequest\" } (unique index will_bequests_liability_idx).",
+      },
+      {
+        key: "dollarSource",
+        label: "Paid from",
+        kind: "enum",
+        enumValues: ["estate", "account"],
+        required: false,
+        notes:
+          "Required when kind='dollar', otherwise omit. 'estate' = \"Estate — cash & brokerage\": the dollars come from the cash and brokerage left after the gifts above this one in the list. 'account' = one named cash or brokerage account, given in accountId. Dollar gifts are never paid from retirement, real estate, business or other accounts.",
+      },
+      {
+        key: "fallbackToEstate",
+        label: "If that account runs short, use the estate",
+        kind: "boolean",
+        required: false,
+        defaultValue: false,
+        notes:
+          "Only meaningful when kind='dollar' and dollarSource='account'. When true, any shortfall is paid from the rest of the estate's cash and brokerage; when false, the gift is capped at what the named account holds.",
       },
       {
         key: "percentage",
@@ -204,7 +225,7 @@ export const WILLS_ENTITIES: readonly DetailEntity[] = [
         required: true,
         range: { min: 0 },
         notes:
-          "Not a field the advisor types. The UI recomputes a contiguous 0-based sortOrder from the bequest's position in the list every time it saves (drag is via the ↑/↓ buttons, which swap two rows' sortOrder and resave the whole array). Forge writing a new list should just assign 0..N-1 in the intended display order.",
+          "List order IS payment order: gifts are paid from the top, each from what is left after the ones above. Not a field the advisor types. The UI recomputes a contiguous 0-based sortOrder from the bequest's position in the list every time it saves (drag is via the ↑/↓ buttons, which swap two rows' sortOrder and resave the whole array). Forge writing a new list should just assign 0..N-1 in the intended display order.",
       },
       {
         key: "recipients",
@@ -212,7 +233,7 @@ export const WILLS_ENTITIES: readonly DetailEntity[] = [
         kind: "array",
         required: true,
         notes:
-          "Non-empty (min 1) for both kinds. Each item has the shape of the `will_bequest_recipients` entity below. Sum-of-percentage rule differs by this bequest's kind: kind='asset' → recipient percentages must sum to exactly 100 (±0.01). kind='liability' → sum must be >0 and ≤100.01, with room left over (\"falls to estate creditor-payoff\" per the UI). Liability bequests also restrict recipientKind to 'family_member' or 'entity' only — 'spouse' and 'external_beneficiary' are rejected by willBequestLiabilitySchema's superRefine for a debt bequest even though they're valid for asset bequests and residuary recipients.",
+          "Non-empty (min 1) for every kind. Each item has the shape of the `will_bequest_recipients` entity below, except a kind='dollar' gift's: each of those carries `amount` (dollars, > 0) instead of `percentage`, with no sum rule. Sum-of-percentage rule differs by this bequest's kind: kind='asset' → recipient percentages must sum to exactly 100 (±0.01). kind='liability' → sum must be >0 and ≤100.01, with room left over (\"falls to estate creditor-payoff\" per the UI). Liability bequests also restrict recipientKind to 'family_member' or 'entity' only — 'spouse' and 'external_beneficiary' are rejected by willBequestLiabilitySchema's superRefine for a debt bequest even though they're valid for asset bequests and residuary recipients.",
       },
     ],
   },
@@ -228,7 +249,9 @@ export const WILLS_ENTITIES: readonly DetailEntity[] = [
       create: "/wills",
       update: "/wills/[willId]",
     },
-    createSchema: { module: "@/lib/schemas/wills", export: "willBequestRecipientSchema" },
+    // willBequestRecipientSchema is the asset/liability recipient; a dollar gift's recipients are
+    // checked by willDollarRecipientSchema (they carry `amount`, no percentage).
+    createSchema: { module: "@/lib/schemas/wills", export: "willBequestRecipientSchema", validatesSubset: true },
     scenarioScoped: false,
     fields: [
       {
@@ -250,13 +273,21 @@ export const WILLS_ENTITIES: readonly DetailEntity[] = [
           "Required and non-null for every recipientKind EXCEPT 'spouse' and 'other_heirs', where it must be null (zod superRefine, not a plain .nullable() — sending a non-null id with recipientKind='spouse' or 'other_heirs', or null with any other kind, is a 400). See recipientKind's notes for the full reference shape.",
       },
       {
+        key: "amount",
+        label: "(dollar input beside each recipient of a dollar gift)",
+        kind: "money",
+        required: false,
+        notes:
+          "Required for each recipient when the parent bequest has kind='dollar' (a positive dollar amount per recipient, e.g. 20000 for \"$20,000 to each grandchild\"); omit otherwise. A dollar gift's recipients carry `amount` and NO percentage.",
+      },
+      {
         key: "percentage",
         label: "(no static label — numeric input beside each recipient, with a trailing \"%\")",
         kind: "percent",
         required: true,
         range: { min: 0, max: 100 },
         notes:
-          "Whole-number percent (25 means 25%). Per-recipient share of the PARENT BEQUEST, not of the whole estate. The set of a bequest's recipients must sum per the parent will_bequests row's kind — see that entity's `recipients` field notes (exact 100% for an asset bequest; 0–100% for a liability bequest).",
+          "Required for asset and liability bequests; omit for a dollar gift's recipients (they carry `amount`). Whole-number percent (25 means 25%). Per-recipient share of the PARENT BEQUEST, not of the whole estate. The set of a bequest's recipients must sum per the parent will_bequests row's kind — see that entity's `recipients` field notes (exact 100% for an asset bequest; 0–100% for a liability bequest).",
       },
       {
         key: "sortOrder",

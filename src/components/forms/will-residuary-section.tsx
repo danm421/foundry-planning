@@ -113,7 +113,7 @@ export default function WillResiduarySection({
   );
 
   return (
-    <div className="mt-6 rounded-md border border-hair bg-card-2/30 p-4">
+    <div id={`will-remainder-${grantor}`} className="mt-6 rounded-md border border-hair bg-card-2/30 p-4">
       <div className="mb-3 flex items-center gap-1.5">
         <h3 className="text-sm font-medium text-ink-3">Remainder estate</h3>
         <HelpIcon label="Where the residue of the estate goes after specific bequests have been distributed." />

@@ -39,16 +39,16 @@ interface BequestRecipientListProps {
 
 // Same visual base as BeneficiaryRowList — h-9 chip-style field that drops `w-full`
 // so the row's flex layout can drive widths.
-const rowFieldBase =
+export const rowFieldBase =
   "h-9 rounded-[var(--radius-sm)] bg-card-2 border border-hair px-3 text-[14px] text-ink outline-none " +
   "hover:border-hair-2 focus:border-accent focus:ring-2 focus:ring-accent/25 disabled:opacity-50";
 
-const rowSelectClassName =
+export const rowSelectClassName =
   rowFieldBase + " appearance-none pr-8 select-chevron";
 
 const SPOUSE_VALUE = "spouse";
 
-function rowToValue(r: BequestRecipient): string {
+function rowToValue(r: Pick<BequestRecipient, "recipientKind" | "recipientId">): string {
   if (r.recipientKind === "spouse") return SPOUSE_VALUE;
   if (r.recipientKind === "other_heirs") return OTHER_HEIRS_VALUE;
   if (r.recipientId == null) return "";
@@ -84,6 +84,81 @@ function householdOtherName(
 function spouseLabel(grantor: WillGrantor, p: WillsPanelPrimary): string {
   const name = householdOtherName(grantor, p);
   return name || CO_CLIENT_LABEL;
+}
+
+interface RecipientSelectProps {
+  ariaLabel: string;
+  value: Pick<BequestRecipient, "recipientKind" | "recipientId">;
+  onChange: (fields: { recipientKind: WillRecipientKind; recipientId: string | null }) => void;
+  grantor: WillGrantor;
+  primary: WillsPanelPrimary;
+  familyMembers: WillsPanelFamilyMember[];
+  externalBeneficiaries: WillsPanelExternal[];
+  entities: WillsPanelEntity[];
+  /** False in debt mode: family + entity only, no co-client, charities or Other Heirs. */
+  showExternal: boolean;
+}
+
+/** One recipient picker: household, family, external, entity and Other Heirs
+ *  optgroups. Shared by the percentage and dollar recipient lists. */
+export function RecipientSelect({
+  ariaLabel,
+  value,
+  onChange,
+  grantor,
+  primary,
+  familyMembers,
+  externalBeneficiaries,
+  entities,
+  showExternal,
+}: RecipientSelectProps) {
+  // Hide the principals (role: client/spouse) from the dropdown — the spouse
+  // already appears under "Household" and the grantor isn't a valid recipient
+  // of their own will.
+  const selectableFamilyMembers = familyMembers.filter(
+    (f) => f.role !== "client" && f.role !== "spouse",
+  );
+  const showSpouse = showExternal && householdOtherName(grantor, primary) != null;
+  return (
+    <select
+      aria-label={ariaLabel}
+      value={rowToValue(value)}
+      onChange={(e) => {
+        const fields = valueToFields(e.target.value);
+        if (fields) onChange(fields);
+      }}
+      className={rowSelectClassName + " flex-1 min-w-0"}
+    >
+      <option value="">— select recipient —</option>
+      {showSpouse && (
+        <optgroup label="Household">
+          <option value={SPOUSE_VALUE}>{spouseLabel(grantor, primary)}</option>
+        </optgroup>
+      )}
+      {selectableFamilyMembers.length > 0 && (
+        <optgroup label="Family">
+          {selectableFamilyMembers.map((f) => (
+            <option key={f.id} value={`fm:${f.id}`}>{familyLabel(f)}</option>
+          ))}
+        </optgroup>
+      )}
+      {showExternal && externalBeneficiaries.length > 0 && (
+        <optgroup label="External">
+          {externalBeneficiaries.map((x) => (
+            <option key={x.id} value={`ext:${x.id}`}>{x.name}</option>
+          ))}
+        </optgroup>
+      )}
+      {entities.length > 0 && (
+        <optgroup label="Entity">
+          {entities.map((e) => (
+            <option key={e.id} value={`ent:${e.id}`}>{e.name}</option>
+          ))}
+        </optgroup>
+      )}
+      {showExternal && <OtherHeirsOptgroup />}
+    </select>
+  );
 }
 
 const setRowPercentage = (r: BequestRecipient, percentage: number): BequestRecipient => ({ ...r, percentage });
@@ -164,9 +239,6 @@ export default function BequestRecipientList({
     onChange(redistribute(combined, lockedKeys, (r) => combinedKeys[combined.indexOf(r)] ?? addedKey, setRowPercentage));
   }
 
-  const showSpouse =
-    (mode === "asset" || mode === "residuary") &&
-    householdOtherName(grantor, primary) != null;
   const showExternal = mode === "asset" || mode === "residuary";
 
   return (
@@ -180,44 +252,17 @@ export default function BequestRecipientList({
       <ul className="mt-1 space-y-2">
         {rows.map((r, idx) => (
           <li key={idx} className="flex items-center gap-2">
-            <select
-              aria-label={`Recipient ${idx + 1}`}
-              value={rowToValue(r)}
-              onChange={(e) => {
-                const fields = valueToFields(e.target.value);
-                if (fields) update(idx, fields);
-              }}
-              className={rowSelectClassName + " flex-1 min-w-0"}
-            >
-              <option value="">— select recipient —</option>
-              {showSpouse && (
-                <optgroup label="Household">
-                  <option value={SPOUSE_VALUE}>{spouseLabel(grantor, primary)}</option>
-                </optgroup>
-              )}
-              {selectableFamilyMembers.length > 0 && (
-                <optgroup label="Family">
-                  {selectableFamilyMembers.map((f) => (
-                    <option key={f.id} value={`fm:${f.id}`}>{familyLabel(f)}</option>
-                  ))}
-                </optgroup>
-              )}
-              {showExternal && externalBeneficiaries.length > 0 && (
-                <optgroup label="External">
-                  {externalBeneficiaries.map((x) => (
-                    <option key={x.id} value={`ext:${x.id}`}>{x.name}</option>
-                  ))}
-                </optgroup>
-              )}
-              {entities.length > 0 && (
-                <optgroup label="Entity">
-                  {entities.map((e) => (
-                    <option key={e.id} value={`ent:${e.id}`}>{e.name}</option>
-                  ))}
-                </optgroup>
-              )}
-              {showExternal && <OtherHeirsOptgroup />}
-            </select>
+            <RecipientSelect
+              ariaLabel={`Recipient ${idx + 1}`}
+              value={r}
+              onChange={(fields) => update(idx, fields)}
+              grantor={grantor}
+              primary={primary}
+              familyMembers={familyMembers}
+              externalBeneficiaries={externalBeneficiaries}
+              entities={entities}
+              showExternal={showExternal}
+            />
             <input
               type="number"
               aria-label={`Percent ${idx + 1}`}

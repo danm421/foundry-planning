@@ -457,6 +457,43 @@ describe("deriveHeirCardData", () => {
     expect(cards[0].bequestsReceived[0].condition).toBe("always");
   });
 
+  it("renders a dollar gift", () => {
+    const childFm: FamilyMember = {
+      id: "fm1", relationship: "child", role: "child",
+      firstName: "Emma", lastName: "S", dateOfBirth: "2015-01-01",
+    };
+    const tree = baseTree({
+      familyMembers: [clientFm, spouseFm, childFm],
+      accounts: [clientAcct("a1", "Schwab", "taxable", 500_000)],
+      wills: [
+        {
+          id: "w1",
+          grantor: "client",
+          bequests: [
+            {
+              id: "d1", name: "Cash gift", kind: "dollar", assetMode: null, accountId: null,
+              dollarSource: "estate", entityId: null, liabilityId: null, percentage: 100,
+              condition: "always", sortOrder: 0,
+              recipients: [{ recipientKind: "family_member", recipientId: "fm1", percentage: 0, amount: 20_000, sortOrder: 0 }],
+            },
+            {
+              id: "b2", name: "Rest", kind: "asset", assetMode: "all_assets", accountId: null,
+              entityId: null, liabilityId: null, percentage: 100, condition: "always", sortOrder: 1,
+              recipients: [{ recipientKind: "family_member", recipientId: "fm1", percentage: 100, sortOrder: 0 }],
+            },
+          ],
+        },
+      ] as unknown as ClientData["wills"],
+    });
+    const rows = deriveHeirCardData(tree, 2026)[0].bequestsReceived;
+    expect(rows).toHaveLength(2);
+    expect(rows[0].assetName).toBe("Cash gift");
+    expect(rows[0].amount).toBe(20_000);
+    expect(rows[1].assetName).toBe("Estate (what's left at this point)");
+    expect(rows[1].amount).toBeUndefined();
+    expect(rows[1].percentage).toBe(100);
+  });
+
   it("HeirCardData ownershipRows populated when heir directly owns an account", () => {
     const childFm: FamilyMember = {
       id: "fm-heir-1", relationship: "child", role: "child",

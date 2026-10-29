@@ -180,7 +180,8 @@ describe("option maps — the values each one stores", () => {
     // will_residuary_recipient rows.
     ["trust type", TRUST_TYPE_MAP, [...TRUST_SUB_TYPES, "revocable"]],
     ["trust grantor", TRUST_GRANTOR_MAP, [...entityGrantorEnum.enumValues, "none"]],
-    ["bequest kind", BEQUEST_KIND_MAP, [...willBequestKindEnum.enumValues, "residuary"]],
+    // "dollar" is app-only: the fact finder's gift list has no dollar option, so the map leaves it out.
+    ["bequest kind", BEQUEST_KIND_MAP, [...willBequestKindEnum.enumValues.filter((k) => k !== "dollar"), "residuary"]],
   ])("%s", (_name, map, stored) => {
     expect(sorted(values(map))).toEqual(sorted(stored));
   });

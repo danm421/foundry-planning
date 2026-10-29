@@ -1982,6 +1982,13 @@
       "when": 1792681354966,
       "tag": "0282_per_advisor_integrations",
       "breakpoints": true
+    },
+    {
+      "idx": 283,
+      "version": "7",
+      "when": 1793214064360,
+      "tag": "0283_dollar_will_bequests",
+      "breakpoints": true
     }
   ]
 }

@@ -217,7 +217,7 @@ describe("life-insurance §2042 inclusion + chain routing — integration", () =
 
     const result = applyFirstDeath(input);
 
-    // Chain Step 3b: all_assets residual routes faceValue to spouse via will
+    // Chain step 3: the will's estate gift routes faceValue to spouse
     const willTransfer = result.transfers.find(
       (t) => t.via === "will" && t.sourceAccountId === "pol-2",
     );

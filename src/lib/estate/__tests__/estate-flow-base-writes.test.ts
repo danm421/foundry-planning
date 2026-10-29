@@ -131,4 +131,31 @@ describe("baseWritesForChange", () => {
       },
     ]);
   });
+
+  it("keeps a dollar gift and its position in the will PATCH body", () => {
+    const dollar = {
+      id: "bq-dollar",
+      name: "Grandchildren",
+      kind: "dollar",
+      dollarSource: "estate",
+      fallbackToEstate: false,
+      percentage: 100,
+      condition: "always",
+      sortOrder: 0,
+      recipients: [
+        { recipientKind: "family_member", recipientId: "fm-a", percentage: 0, amount: 20000, sortOrder: 0 },
+        { recipientKind: "family_member", recipientId: "fm-b", percentage: 0, amount: 20000, sortOrder: 1 },
+      ],
+    };
+    const pct = { id: "bq-pct", name: "House", kind: "asset", percentage: 100, sortOrder: 1 };
+    const writes = baseWritesForChange(change("will", "will-1", { bequests: [dollar, pct] }), CLIENT);
+    const sent = (writes[0].body as { bequests: Array<Record<string, unknown>> }).bequests;
+    expect(sent[0]).toMatchObject({
+      kind: "dollar",
+      dollarSource: "estate",
+      sortOrder: 0,
+      recipients: [{ amount: 20000 }, { amount: 20000 }],
+    });
+    expect(sent[1]).toMatchObject({ id: "bq-pct", sortOrder: 1 });
+  });
 });

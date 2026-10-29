@@ -18,11 +18,13 @@ import type {
   WillsPanelPrimary,
   WillsPanelAssetBequest,
   WillsPanelLiabilityBequest,
+  WillsPanelDollarBequest,
   WillsPanelProps,
 } from "@/components/wills-panel";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import type { ScenarioChange } from "@/engine/scenario/types";
 import { controllingEntity } from "@/engine/ownership";
+import { dollarSourceRefusal } from "@/lib/estate/dollar-gift-source";
 
 export type WillsViewPropsResult =
   | { status: "ok"; props: WillsPanelProps }
@@ -82,7 +84,29 @@ export async function loadWillsViewProps(
     .map((w) => ({
       id: w.id,
       grantor: w.grantor,
-      bequests: w.bequests.map((b): WillsPanelAssetBequest | WillsPanelLiabilityBequest => {
+      bequests: w.bequests
+        .slice()
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((b): WillsPanelAssetBequest | WillsPanelLiabilityBequest | WillsPanelDollarBequest => {
+        if (b.kind === "dollar") {
+          return {
+            kind: "dollar",
+            id: b.id,
+            name: b.name,
+            dollarSource: b.dollarSource ?? "estate",
+            accountId: b.accountId,
+            fallbackToEstate: b.fallbackToEstate ?? false,
+            condition: b.condition,
+            sortOrder: b.sortOrder,
+            recipients: b.recipients.map((r) => ({
+              recipientKind: r.recipientKind,
+              recipientId: r.recipientId,
+              percentage: 0,
+              amount: r.amount ?? 0,
+              sortOrder: r.sortOrder,
+            })),
+          };
+        }
         const recipients = b.recipients.map((r) => ({
           recipientKind: r.recipientKind,
           recipientId: r.recipientId,
@@ -139,6 +163,7 @@ export async function loadWillsViewProps(
     name: a.name,
     category: a.category,
     ownerEntityId: controllingEntity(a) ?? null,
+    canPayDollarGift: dollarSourceRefusal(a) === null,
     value: a.value,
   }));
   // People and charities a bequest can name come off the tree, so ones a
