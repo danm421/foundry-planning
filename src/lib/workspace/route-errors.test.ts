@@ -4,8 +4,8 @@ import { ForbiddenError } from "@/lib/authz";
 import { UnauthorizedError } from "@/lib/db-helpers";
 import { workspaceErrorResponse } from "./route-errors";
 import {
-  GraphRequestError,
-  GraphThrottledError,
+  ProviderRequestError,
+  ProviderThrottledError,
   WorkspaceNotConnectedError,
   WorkspaceReconnectRequiredError,
 } from "./errors";
@@ -48,22 +48,22 @@ describe("workspaceErrorResponse", () => {
     });
   });
 
-  it("(Review Focus 2) GraphThrottledError → 503 throttled", async () => {
-    expect(await read(workspaceErrorResponse(new GraphThrottledError("req-1")))).toEqual({
+  it("(Review Focus 2) ProviderThrottledError → 503 throttled", async () => {
+    expect(await read(workspaceErrorResponse(new ProviderThrottledError("microsoft", null)))).toEqual({
       status: 503,
       body: { error: "throttled" },
     });
   });
 
-  it("GraphRequestError 403 → 403 not_allowed", async () => {
-    expect(await read(workspaceErrorResponse(new GraphRequestError(403, "ErrorAccessDenied", "req-1")))).toEqual({
+  it("ProviderRequestError 403 → 403 not_allowed", async () => {
+    expect(await read(workspaceErrorResponse(new ProviderRequestError("microsoft", 403, "ErrorAccessDenied", "req-1")))).toEqual({
       status: 403,
       body: { error: "not_allowed" },
     });
   });
 
-  it("GraphRequestError 404 → 404 not_found", async () => {
-    expect(await read(workspaceErrorResponse(new GraphRequestError(404, "ErrorItemNotFound", "req-1")))).toEqual({
+  it("ProviderRequestError 404 → 404 not_found", async () => {
+    expect(await read(workspaceErrorResponse(new ProviderRequestError("microsoft", 404, "ErrorItemNotFound", "req-1")))).toEqual({
       status: 404,
       body: { error: "not_found" },
     });
@@ -81,12 +81,12 @@ describe("workspaceErrorResponse", () => {
     expect(consoleError).not.toHaveBeenCalled();
   });
 
-  it("any other GraphRequestError → 500, logging its name, status and request-id only", async () => {
-    const res = workspaceErrorResponse(new GraphRequestError(400, "ErrorInvalidRequest", "req-400"));
+  it("any other ProviderRequestError → 500, logging its name, status and request-id only", async () => {
+    const res = workspaceErrorResponse(new ProviderRequestError("microsoft", 400, "ErrorInvalidRequest", "req-400"));
 
     expect(await read(res)).toEqual({ status: 500, body: { error: "Internal server error" } });
     expect(consoleError).toHaveBeenCalledTimes(1);
-    expect(logged()).toContain("GraphRequestError");
+    expect(logged()).toContain("ProviderRequestError");
     expect(logged()).toContain("400");
     expect(logged()).toContain("req-400");
   });

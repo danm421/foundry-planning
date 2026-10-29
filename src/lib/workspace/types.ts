@@ -1,7 +1,7 @@
 // src/lib/workspace/types.ts
 
 /** A Microsoft identity-platform token response, normalized. */
-export type MicrosoftTokenSet = {
+export type ProviderTokenSet = {
   accessToken: string;
   refreshToken: string;
   expiresInSec: number;
@@ -43,7 +43,8 @@ export type WorkspaceEvent = {
   isCancelled: boolean;
   type: "singleInstance" | "occurrence" | "exception";
   attendees: { email: string; name: string | null }[];
-  teamsUrl: string | null;
+  meetingUrl: string | null;
+  iCalUid: string | null;
   webLink: string;
 };
 
@@ -53,7 +54,7 @@ export type WorkspaceEvent = {
  * and are edited in Outlook only.
  */
 export type WorkspaceTodo = {
-  source: "outlook";
+  provider: WorkspaceProvider;
   id: string;
   listId: string;
   title: string;

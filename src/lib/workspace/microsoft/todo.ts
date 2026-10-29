@@ -1,5 +1,6 @@
 // src/lib/workspace/microsoft/todo.ts
 import type { WorkspaceTodo } from "../types";
+import { mapLimited } from "../map-limited";
 import { getMailboxTimeZone } from "./calendar";
 import { graphJson, graphPages, jsonInit, type GraphContext } from "./graph";
 
@@ -36,7 +37,7 @@ function toDueDate(due: { dateTime: string; timeZone?: string }): string {
 function toWorkspaceTodo(listId: string, t: GraphTask): WorkspaceTodo {
   const isText = t.body?.contentType === "text";
   return {
-    source: "outlook",
+    provider: "microsoft",
     id: t.id,
     listId,
     title: t.title,
@@ -45,26 +46,6 @@ function toWorkspaceTodo(listId: string, t: GraphTask): WorkspaceTodo {
     // Formatted (HTML) notes can't round-trip through a plain-text box.
     notesAreHtml: !isText && (t.body?.content ?? "").trim() !== "",
   };
-}
-
-/** `items.map(fn)` with at most `limit` calls in flight; results keep `items`' order, the first failure rejects. */
-async function mapLimited<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  let failed = false;
-  async function worker() {
-    while (!failed && next < items.length) {
-      const i = next++;
-      try {
-        results[i] = await fn(items[i]);
-      } catch (err) {
-        failed = true;
-        throw err;
-      }
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return results;
 }
 
 /** Open tasks across every list except the flagged-emails list. */

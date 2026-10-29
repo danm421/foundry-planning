@@ -334,7 +334,7 @@ function TodoRow({
               {item.title}
             </button>
           )}
-          <span className={CHIP}>{item.source === "outlook" ? "Outlook" : "Foundry"}</span>
+          <span className={CHIP}>{item.source === "microsoft" ? "Outlook" : "Foundry"}</span>
         </p>
         {item.meta || item.dueDate ? (
           <p className="mt-0.5 text-[11px] text-ink-3">

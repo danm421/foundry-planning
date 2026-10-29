@@ -8,7 +8,7 @@ import { requireOrgAndUser } from "@/lib/db-helpers";
 import { parseBody } from "@/lib/schemas/common";
 import { resolveActingConnection } from "@/lib/workspace/acting-connection";
 import {
-  GraphThrottledError,
+  ProviderThrottledError,
   WorkspaceNotConnectedError,
   WorkspaceReconnectRequiredError,
 } from "@/lib/workspace/errors";
@@ -37,7 +37,7 @@ async function loadOutlook(
   } catch (err) {
     if (err instanceof WorkspaceNotConnectedError) return { outlook: null, outlookError: "not_connected" };
     if (err instanceof WorkspaceReconnectRequiredError) return { outlook: null, outlookError: "needs_reconnect" };
-    if (err instanceof GraphThrottledError) return { outlook: null, outlookError: "throttled" };
+    if (err instanceof ProviderThrottledError) return { outlook: null, outlookError: "throttled" };
     console.error("Workspace to-dos: Microsoft side failed:", safeErrorFields(err));
     return { outlook: null, outlookError: "unavailable" };
   }

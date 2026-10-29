@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { workspaceConnections } from "@/db/schema";
 import { encryptSecret, decryptSecret } from "@/lib/crypto/secrets";
-import type { MicrosoftTokenSet, WorkspaceProvider } from "./types";
+import type { ProviderTokenSet, WorkspaceProvider } from "./types";
 
 export type WorkspaceConnection = {
   id: string;
@@ -22,7 +22,7 @@ export type WorkspaceConnection = {
 };
 
 /** What a fresh token set writes: the tokens, encrypted, and a connection that works again. */
-function tokenColumns(tokens: MicrosoftTokenSet) {
+function tokenColumns(tokens: ProviderTokenSet) {
   return {
     accessTokenEnc: encryptSecret(tokens.accessToken),
     refreshTokenEnc: encryptSecret(tokens.refreshToken),
@@ -97,7 +97,7 @@ export async function upsertUserConnection(input: {
   tenantId: string;
   externalUserId: string;
   externalEmail: string;
-  tokens: MicrosoftTokenSet;
+  tokens: ProviderTokenSet;
 }): Promise<{ ok: true; id: string } | { ok: false; reason: "account_in_use" }> {
   const fields = {
     tenantId: input.tenantId,
@@ -121,7 +121,7 @@ export async function upsertUserConnection(input: {
   }
 }
 
-export async function storeRefreshedTokens(connectionId: string, tokens: MicrosoftTokenSet): Promise<void> {
+export async function storeRefreshedTokens(connectionId: string, tokens: ProviderTokenSet): Promise<void> {
   await db
     .update(workspaceConnections)
     .set({ ...tokenColumns(tokens), updatedAt: new Date() })

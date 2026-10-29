@@ -24,7 +24,8 @@ function ev(id: string, start: string, end: string, isAllDay = false): Workspace
     isCancelled: false,
     type: "singleInstance",
     attendees: [],
-    teamsUrl: null,
+    meetingUrl: null,
+    iCalUid: null,
     webLink: `https://outlook.office.com/${id}`,
   };
 }

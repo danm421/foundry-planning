@@ -65,7 +65,7 @@ export function EventEditorDialog({
     start: WallClock;
     end: WallClock;
     attendees: string[];
-    teamsUrl: string | null;
+    meetingUrl: string | null;
   };
   /** Rejects to keep the dialog open with an error; the caller closes it on success. */
   onSave: (input: EventDraft) => Promise<void>;
@@ -321,9 +321,9 @@ export function EventEditorDialog({
             />
             Add a Teams link
           </label>
-        ) : initial.teamsUrl?.startsWith("https://") ? (
+        ) : initial.meetingUrl?.startsWith("https://") ? (
           <a
-            href={initial.teamsUrl}
+            href={initial.meetingUrl}
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-1.5 self-start text-[14px] text-ink-2 hover:text-ink hover:underline"

@@ -24,7 +24,7 @@ function task(over: Partial<TaskListRow> = {}): TaskListRow {
 
 function todo(over: Partial<WorkspaceTodo> = {}): WorkspaceTodo {
   return {
-    source: "outlook",
+    provider: "microsoft",
     id: "AAMk/task=",
     listId: "AAMk/list=",
     title: "Send Hartley the updated plan",
@@ -36,7 +36,7 @@ function todo(over: Partial<WorkspaceTodo> = {}): WorkspaceTodo {
 }
 
 function item(title: string, dueDate: string | null): TodoItem {
-  return { key: title, source: "outlook", title, dueDate, meta: null, href: null };
+  return { key: title, source: "microsoft", title, dueDate, meta: null, href: null };
 }
 
 describe("toTodoItems", () => {
@@ -68,7 +68,7 @@ describe("toTodoItems", () => {
   it("keeps an Outlook to-do's list and task ids, with no meta and no link", () => {
     const [outlook] = toTodoItems([], [todo({ dueDate: "2026-10-30" })]);
     expect(outlook).toMatchObject({
-      source: "outlook",
+      source: "microsoft",
       title: "Send Hartley the updated plan",
       dueDate: "2026-10-30",
       meta: null,

@@ -1,5 +1,5 @@
 // src/lib/workspace/microsoft/oauth.ts
-import type { IdTokenClaims, MicrosoftTokenSet } from "../types";
+import type { IdTokenClaims, ProviderTokenSet } from "../types";
 import {
   ADMIN_CONSENT_REDIRECT_PATH,
   USER_REDIRECT_PATH,
@@ -79,7 +79,7 @@ export function buildAuthorizeUrl(opts: {
 export async function exchangeCode(
   opts: { tenantId: string; code: string; codeVerifier: string },
   fetchImpl: typeof fetch = fetch,
-): Promise<MicrosoftTokenSet> {
+): Promise<ProviderTokenSet> {
   const tokens = await tokenRequest(
     opts.tenantId,
     {
@@ -102,7 +102,7 @@ export async function exchangeCode(
 export async function refreshTokens(
   opts: { tenantId: string; refreshToken: string },
   fetchImpl: typeof fetch = fetch,
-): Promise<MicrosoftTokenSet> {
+): Promise<ProviderTokenSet> {
   const tokens = await tokenRequest(
     opts.tenantId,
     { grant_type: "refresh_token", refresh_token: opts.refreshToken },
@@ -115,7 +115,7 @@ async function tokenRequest(
   tenantId: string,
   params: Record<string, string>,
   fetchImpl: typeof fetch,
-): Promise<Omit<MicrosoftTokenSet, "refreshToken"> & { refreshToken: string | null }> {
+): Promise<Omit<ProviderTokenSet, "refreshToken"> & { refreshToken: string | null }> {
   const { clientId, clientSecret } = microsoftAppConfig();
   const body = new URLSearchParams({
     ...params,

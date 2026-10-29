@@ -1,5 +1,5 @@
 // src/lib/workspace/errors.ts
-import type { CalendarPaneState } from "./types";
+import type { CalendarPaneState, WorkspaceProvider } from "./types";
 
 /**
  * The advisor can't use Workspace yet: the firm hasn't approved the provider,
@@ -21,29 +21,35 @@ export class WorkspaceReconnectRequiredError extends Error {
   }
 }
 
+const PROVIDER_NAME: Record<WorkspaceProvider, string> = { microsoft: "Microsoft" };
+
 /**
- * Microsoft Graph kept answering 429/503/504 after our retries. "Microsoft is
- * busy", never "nothing there". `requestId` is Graph's `request-id` header.
+ * The provider kept answering 429/503/504 after our retries. "The provider is
+ * busy", never "nothing there". `requestId` is the provider's request-id header.
  */
-export class GraphThrottledError extends Error {
-  constructor(public readonly requestId: string | null) {
-    super("Microsoft Graph is throttling or unavailable");
-    this.name = "GraphThrottledError";
+export class ProviderThrottledError extends Error {
+  constructor(
+    public readonly provider: WorkspaceProvider,
+    public readonly requestId: string | null,
+  ) {
+    super(`${PROVIDER_NAME[provider]} is throttling or unavailable`);
+    this.name = "ProviderThrottledError";
   }
 }
 
 /**
- * Any other non-2xx from Graph. `graphCode` is Graph's `error.code`; the
- * response body (whose `error.message` can quote mailbox content) is never
- * kept. `requestId` is Graph's `request-id` header, for Microsoft support.
+ * Any other non-2xx from the provider. `code` is the provider's error code; the
+ * response body (whose message can quote mailbox content) is never kept.
+ * `requestId` is the provider's request-id header, for their support.
  */
-export class GraphRequestError extends Error {
+export class ProviderRequestError extends Error {
   constructor(
+    public readonly provider: WorkspaceProvider,
     public readonly status: number,
-    public readonly graphCode: string | null,
+    public readonly code: string | null,
     public readonly requestId: string | null,
   ) {
-    super(`Microsoft Graph request failed (HTTP ${status})${graphCode ? `: ${graphCode}` : ""}`);
-    this.name = "GraphRequestError";
+    super(`${PROVIDER_NAME[provider]} request failed (HTTP ${status})${code ? `: ${code}` : ""}`);
+    this.name = "ProviderRequestError";
   }
 }

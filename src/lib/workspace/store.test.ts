@@ -8,7 +8,7 @@ import {
   workspaceMemberAccess,
   workspaceOauthStates,
 } from "@/db/schema";
-import type { MicrosoftTokenSet } from "./types";
+import type { ProviderTokenSet } from "./types";
 import { createWorkspaceOauthState, consumeWorkspaceOauthState } from "./oauth-states";
 import { getFirmApproval, upsertFirmApproval, deleteFirmProvider } from "./approvals";
 import { hasMemberAccess, setMemberAccess, enableMembers, removeWorkspaceMember } from "./access";
@@ -21,7 +21,7 @@ function freshFirmId(): string {
   return id;
 }
 
-const tokens: MicrosoftTokenSet = {
+const tokens: ProviderTokenSet = {
   accessToken: "plain-access-token",
   refreshToken: "plain-refresh-token",
   expiresInSec: 3600,

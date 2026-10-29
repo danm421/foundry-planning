@@ -72,7 +72,7 @@ describe("listOpenTodos", () => {
       ["a", "L1"],
       ["b", "L2"],
     ]);
-    expect(todos[0].source).toBe("outlook");
+    expect(todos[0].provider).toBe("microsoft");
     expect(calls().some((c) => c.url.includes("LF"))).toBe(false);
     const taskCall = calls().find((c) => c.url.includes("/lists/L1/tasks"))!;
     const params = new URL(taskCall.url).searchParams;
@@ -162,7 +162,7 @@ describe("listOpenTodos", () => {
       if (url.includes("/lists/L2/")) return json({ error: { code: "ErrorAccessDenied" } }, 403);
       return json({ value: [task("x")] });
     });
-    await expect(listOpenTodos(ctx)).rejects.toMatchObject({ name: "GraphRequestError", status: 403 });
+    await expect(listOpenTodos(ctx)).rejects.toMatchObject({ name: "ProviderRequestError", status: 403 });
   });
 });
 

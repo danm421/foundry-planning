@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ForbiddenError } from "@/lib/authz";
 import {
-  GraphRequestError,
-  GraphThrottledError,
+  ProviderRequestError,
+  ProviderThrottledError,
   WorkspaceNotConnectedError,
   WorkspaceReconnectRequiredError,
 } from "@/lib/workspace/errors";
@@ -34,7 +34,7 @@ import { GET, POST } from "./route";
 
 const CONN = { id: "conn_1" };
 const FOUNDRY = [{ id: "t1", title: "Call Smith" }];
-const OUTLOOK = [{ source: "outlook", id: "o1", listId: "l1", title: "Pay", dueDate: null, notes: "" }];
+const OUTLOOK = [{ provider: "microsoft", id: "o1", listId: "l1", title: "Pay", dueDate: null, notes: "" }];
 
 const post = (b: unknown) =>
   POST(
@@ -76,10 +76,10 @@ describe("GET /api/workspace/todos", () => {
   it.each([
     ["not connected", new WorkspaceNotConnectedError("member_off"), "not_connected"],
     ["reconnect", new WorkspaceReconnectRequiredError(), "needs_reconnect"],
-    ["throttled", new GraphThrottledError("rid"), "throttled"],
+    ["throttled", new ProviderThrottledError("microsoft", "rid"), "throttled"],
     // (R24) Only throttling reads "busy"; any other Microsoft failure can't-load.
-    ["other Graph error", new GraphRequestError(500, "boom", "rid"), "unavailable"],
-    ["mailbox Graph can't serve", new GraphRequestError(404, "MailboxNotEnabledForRESTAPI", "rid"), "unavailable"],
+    ["other Graph error", new ProviderRequestError("microsoft", 500, "boom", "rid"), "unavailable"],
+    ["mailbox Graph can't serve", new ProviderRequestError("microsoft", 404, "MailboxNotEnabledForRESTAPI", "rid"), "unavailable"],
     ["unknown error", new Error("secret detail"), "unavailable"],
   ])("keeps Foundry tasks and sets outlookError when Microsoft fails (%s)", async (_n, err, outlookError) => {
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -111,7 +111,7 @@ describe("GET /api/workspace/todos", () => {
 
 describe("POST /api/workspace/todos", () => {
   it("creates a todo and audits ids only", async () => {
-    mocks.createTodo.mockResolvedValue({ source: "outlook", id: "o9", listId: "l1" });
+    mocks.createTodo.mockResolvedValue({ provider: "microsoft", id: "o9", listId: "l1" });
     const res = await post({ title: "Call", dueDate: "2026-11-05" });
     expect(res.status).toBe(201);
     expect(mocks.createTodo).toHaveBeenCalledWith({ conn: CONN }, { title: "Call", dueDate: "2026-11-05", notes: "" });

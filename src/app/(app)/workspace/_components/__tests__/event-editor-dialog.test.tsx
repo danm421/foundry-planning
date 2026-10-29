@@ -16,7 +16,7 @@ const BLANK = {
   start: "2026-10-28T09:00",
   end: "2026-10-28T09:30",
   attendees: [],
-  teamsUrl: null,
+  meetingUrl: null,
 };
 
 const REVIEW = {
@@ -24,7 +24,7 @@ const REVIEW = {
   start: "2026-10-27T10:00",
   end: "2026-10-27T11:30",
   attendees: ["pat@example.com"],
-  teamsUrl: "https://teams.microsoft.com/l/meetup-join/abc",
+  meetingUrl: "https://teams.microsoft.com/l/meetup-join/abc",
 };
 
 beforeEach(() => {
@@ -214,7 +214,7 @@ describe("EventEditorDialog — edit", () => {
     expect(screen.queryByLabelText("Add a Teams link")).toBeNull();
     expect(screen.getByRole("link", { name: /Join the Teams meeting/ })).toHaveAttribute(
       "href",
-      REVIEW.teamsUrl,
+      REVIEW.meetingUrl,
     );
   });
 

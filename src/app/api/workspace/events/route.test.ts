@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ForbiddenError } from "@/lib/authz";
-import { GraphThrottledError, WorkspaceReconnectRequiredError } from "@/lib/workspace/errors";
+import { ProviderThrottledError, WorkspaceReconnectRequiredError } from "@/lib/workspace/errors";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -102,7 +102,7 @@ describe("GET /api/workspace/events", () => {
   });
 
   it("is 503 throttled when Graph is throttling", async () => {
-    mocks.listEvents.mockRejectedValue(new GraphThrottledError("rid"));
+    mocks.listEvents.mockRejectedValue(new ProviderThrottledError("microsoft", "rid"));
     const res = await get("2026-11-02");
     expect(res.status).toBe(503);
     expect(await res.json()).toEqual({ error: "throttled" });

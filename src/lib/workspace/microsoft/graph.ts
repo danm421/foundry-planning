@@ -1,6 +1,6 @@
 // src/lib/workspace/microsoft/graph.ts
 import type { WorkspaceConnection } from "../connections";
-import { GraphRequestError, GraphThrottledError } from "../errors";
+import { ProviderRequestError, ProviderThrottledError } from "../errors";
 import { getAccessToken } from "./token";
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
@@ -26,8 +26,8 @@ const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(r
  *
  * - A 401 forces one token refresh and one retry.
  * - A 429/503/504 waits `Retry-After` seconds (default 1, at most 5) and
- *   retries up to twice, then throws `GraphThrottledError`.
- * - Any other non-2xx throws `GraphRequestError` with Graph's `error.code`.
+ *   retries up to twice, then throws `ProviderThrottledError`.
+ * - Any other non-2xx throws `ProviderRequestError` with Graph's `error.code`.
  *   The body is read for that code only; it is never logged or kept.
  *
  * Retries resend `init.body`, so pass a string, not a stream.
@@ -61,12 +61,12 @@ export async function graphFetch(
     }
     if (BUSY_STATUSES.has(res.status)) {
       await discardBody(res);
-      if (busyRetries >= MAX_BUSY_RETRIES) throw new GraphThrottledError(requestId);
+      if (busyRetries >= MAX_BUSY_RETRIES) throw new ProviderThrottledError("microsoft", requestId);
       busyRetries++;
       await sleep(retryAfterMs(res.headers.get("retry-after")));
       continue;
     }
-    throw new GraphRequestError(res.status, await readGraphCode(res), requestId);
+    throw new ProviderRequestError("microsoft", res.status, await readGraphCode(res), requestId);
   }
 }
 

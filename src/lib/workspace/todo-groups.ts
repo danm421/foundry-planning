@@ -1,6 +1,6 @@
 // src/lib/workspace/todo-groups.ts
 import type { TaskListRow } from "@/lib/crm-tasks/queries";
-import type { WorkspaceTodo } from "./types";
+import type { WorkspaceProvider, WorkspaceTodo } from "./types";
 import { addDays, mondayOf } from "./week";
 
 /**
@@ -12,7 +12,7 @@ import { addDays, mondayOf } from "./week";
 /** One row of the combined list. `outlook` / `foundry` carry the ids the source's routes take. */
 export type TodoItem = {
   key: string;
-  source: "outlook" | "foundry";
+  source: WorkspaceProvider | "foundry";
   title: string;
   dueDate: string | null;
   meta: string | null;
@@ -51,7 +51,7 @@ export function toTodoItems(foundry: TaskListRow[], outlook: WorkspaceTodo[]): T
     ...outlook.map(
       (t): TodoItem => ({
         key: `outlook:${t.listId}:${t.id}`,
-        source: "outlook",
+        source: t.provider,
         title: t.title,
         dueDate: t.dueDate,
         meta: null,

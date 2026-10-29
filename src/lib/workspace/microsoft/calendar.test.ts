@@ -65,6 +65,7 @@ function graphEvent(overrides: Record<string, unknown> = {}) {
     isCancelled: false,
     type: "singleInstance",
     attendees: [{ emailAddress: { address: "c@x.test", name: "Client" } }],
+    iCalUId: "ABC",
     onlineMeeting: { joinUrl: "https://teams.test/j" },
     webLink: "https://outlook.test/e1",
     ...overrides,
@@ -127,7 +128,8 @@ describe("listEvents", () => {
       isCancelled: false,
       type: "singleInstance",
       attendees: [{ email: "c@x.test", name: "Client" }],
-      teamsUrl: "https://teams.test/j",
+      meetingUrl: "https://teams.test/j",
+      iCalUid: "ABC",
       webLink: "https://outlook.test/e1",
     });
   });
@@ -146,7 +148,7 @@ describe("listEvents", () => {
     );
     const [e] = await listEvents(ctx, { startDate: "2026-11-02", days: 1, timeZone: "UTC" });
     expect(e.subject).toBe("");
-    expect(e.teamsUrl).toBeNull();
+    expect(e.meetingUrl).toBeNull();
     expect(e.attendees).toEqual([{ email: "n@x.test", name: null }]);
   });
 

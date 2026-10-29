@@ -31,7 +31,7 @@ const FOUNDRY_TASK = {
 };
 
 const OUTLOOK_TODO = {
-  source: "outlook",
+  provider: "microsoft",
   id: "AAMk/task=",
   listId: "AAMk/list=",
   title: "Send Hartley the updated plan",

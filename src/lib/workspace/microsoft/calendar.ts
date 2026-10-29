@@ -4,7 +4,7 @@ import { addDays } from "../week";
 import { graphJson, graphPages, jsonInit, type GraphContext } from "./graph";
 
 const EVENT_FIELDS =
-  "id,subject,start,end,isAllDay,isOrganizer,isCancelled,type,attendees,onlineMeeting,webLink";
+  "id,subject,start,end,isAllDay,isOrganizer,isCancelled,type,attendees,onlineMeeting,iCalUId,webLink";
 
 type GraphEvent = {
   id: string;
@@ -16,6 +16,7 @@ type GraphEvent = {
   isCancelled: boolean;
   type: WorkspaceEvent["type"];
   attendees?: { emailAddress?: { address?: string; name?: string } }[];
+  iCalUId?: string | null;
   onlineMeeting?: { joinUrl?: string } | null;
   webLink: string;
 };
@@ -42,7 +43,8 @@ function toWorkspaceEvent(e: GraphEvent): WorkspaceEvent {
     isCancelled: e.isCancelled,
     type: e.type,
     attendees,
-    teamsUrl: e.onlineMeeting?.joinUrl ?? null,
+    meetingUrl: e.onlineMeeting?.joinUrl ?? null,
+    iCalUid: e.iCalUId ?? null,
     webLink: e.webLink,
   };
 }

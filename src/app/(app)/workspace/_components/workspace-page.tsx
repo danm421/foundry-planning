@@ -431,7 +431,7 @@ export function WorkspacePage({
             start: editor.start,
             end: editor.end,
             attendees: [],
-            teamsUrl: null,
+            meetingUrl: null,
           }}
           onSave={createMeeting}
           onClose={() => setEditor(null)}
@@ -444,7 +444,7 @@ export function WorkspacePage({
             start: editor.event.start,
             end: editor.event.end,
             attendees: editor.event.attendees.map((a) => a.email),
-            teamsUrl: editor.event.teamsUrl,
+            meetingUrl: editor.event.meetingUrl,
           }}
           onSave={(draft) => saveTimes(editor.event, draft)}
           onCancelMeeting={() => cancelMeeting(editor.event.id)}
