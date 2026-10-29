@@ -1982,13 +1982,6 @@
       "when": 1792681354966,
       "tag": "0282_per_advisor_integrations",
       "breakpoints": true
-    },
-    {
-      "idx": 283,
-      "version": "7",
-      "when": 1793222758642,
-      "tag": "0283_workspace_microsoft_365",
-      "breakpoints": true
     }
   ]
 }
