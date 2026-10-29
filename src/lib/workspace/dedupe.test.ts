@@ -43,6 +43,14 @@ describe("normalizeUid", () => {
     expect(normalizeUid(occurrence)).toBe(normalizeUid(series));
     expect(normalizeUid(occurrence)).toBe(series.toUpperCase());
   });
+  it("does not throw on a truncated Outlook-prefixed UID", () => {
+    const bare = CLASS_ID; // 16 bytes
+    const short = CLASS_ID + "070000"; // 19 bytes
+    const midWrapped = CLASS_ID + hex([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ...Buffer.from("vCal-Uid", "ascii")]); // 48 bytes
+    expect(normalizeUid(bare)).toBe(bare);
+    expect(normalizeUid(short)).toBe(short);
+    expect(() => normalizeUid(midWrapped)).not.toThrow();
+  });
   it("leaves other UIDs alone, trimmed", () => {
     expect(normalizeUid("  abc123@google.com ")).toBe("abc123@google.com");
   });
@@ -65,6 +73,10 @@ describe("dedupeEvents", () => {
     );
     expect(out).toHaveLength(1);
     expect(out[0].connectionId).toBe("m");
+  });
+  it("keeps every event when one has a truncated Outlook UID", () => {
+    const events = [ev({}), ev({ iCalUid: CLASS_ID + "07", connectionId: "m" })];
+    expect(dedupeEvents(events, order)).toHaveLength(2);
   });
   it("keeps both when the start differs", () => {
     const out = dedupeEvents([ev({}), ev({ connectionId: "m", start: "2026-11-03T09:00" })], order);

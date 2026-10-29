@@ -12,6 +12,9 @@ export function normalizeUid(uid: string): string {
   const hex = uid.trim();
   if (/^[0-9a-f]+$/i.test(hex) && hex.length % 2 === 0 && hex.toUpperCase().startsWith(OUTLOOK_CLASS_ID)) {
     const bytes = Buffer.from(hex, "hex");
+    // A truncated id (an outsider's invite can carry just the class id) has no
+    // instance date to zero; treat it as an ordinary UID rather than throw.
+    if (bytes.length < 20) return hex;
     // Bytes 40-47 spell "vCal-Uid" when Outlook wrapped an external UID; the
     // UID itself starts after a 4-byte version at byte 52 and ends at a NUL.
     if (bytes.length > 52 && bytes.subarray(40, 48).toString("ascii") === "vCal-Uid") {
