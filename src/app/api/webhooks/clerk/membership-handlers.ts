@@ -18,6 +18,7 @@ import { getOrgMemberCount, expectedSeatQuantity } from "@/lib/billing/seat-coun
 import { recordAudit } from "@/lib/audit";
 import { findOpenImpersonation } from "@/lib/ops/impersonation";
 import { sendWelcomeEmail } from "@/lib/onboarding/welcome-email";
+import { removeWorkspaceMember } from "@/lib/workspace/access";
 import type { ClerkEvent } from "./handler";
 
 type MembershipEventData = {
@@ -268,6 +269,7 @@ export async function dispatchClerkMembership(
         await stopAlertEmailsFor(firmId, userId);
         await turnOffAdvisorBranding(firmId, userId);
         await revokeSharesReceivedBy(firmId, userId);
+        await removeWorkspaceMember(firmId, userId);
         metadata.issued_shares = await listSharesIssuedBy(firmId, userId);
       }
       await syncSeatQuantity(firmId);

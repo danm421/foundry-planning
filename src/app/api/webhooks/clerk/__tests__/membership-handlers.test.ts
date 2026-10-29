@@ -92,6 +92,11 @@ vi.mock("@/lib/onboarding/welcome-email", () => ({
   sendWelcomeEmail: (a: unknown) => mockSendWelcomeEmail(a),
 }));
 
+const mockRemoveWorkspaceMember = vi.fn();
+vi.mock("@/lib/workspace/access", () => ({
+  removeWorkspaceMember: (...a: unknown[]) => mockRemoveWorkspaceMember(...a),
+}));
+
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { advisorProfiles, clerkEvents, clientShares, notificationPreferences, notifications } from "@/db/schema";
@@ -122,6 +127,7 @@ beforeEach(() => {
   mockUpdateOrganizationMetadata.mockReset();
   mockRecordAudit.mockReset();
   mockCaptureException.mockReset();
+  mockRemoveWorkspaceMember.mockReset();
   // Default: fresh svix delivery (insert returns a row).
   mockClerkEventInsert.mockResolvedValue([{ id: "ce_1" }]);
 });
@@ -369,6 +375,26 @@ describe("organizationMembership.deleted — the removed member's alerts", () =>
     await dispatchClerkMembership(membershipEvent("organizationMembership.created"), "svix_add_alerts");
     expect(mockDelete).not.toHaveBeenCalled();
     expect(mockUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe("organizationMembership.deleted — the removed member's Microsoft connection", () => {
+  const membershipEvent = (type: string) =>
+    ({
+      type,
+      data: { organization: { id: "org_x" }, public_user_data: { user_id: "user_y" } },
+    }) as never;
+
+  it("drops their Workspace connection and access in that firm", async () => {
+    mockSelectFirms.mockResolvedValue([]);
+    await dispatchClerkMembership(membershipEvent("organizationMembership.deleted"), "svix_del_ws");
+    expect(mockRemoveWorkspaceMember).toHaveBeenCalledWith("org_x", "user_y");
+  });
+
+  it("leaves the Workspace alone when a member is added", async () => {
+    mockSelectFirms.mockResolvedValue([]);
+    await dispatchClerkMembership(membershipEvent("organizationMembership.created"), "svix_add_ws");
+    expect(mockRemoveWorkspaceMember).not.toHaveBeenCalled();
   });
 });
 
