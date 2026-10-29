@@ -3,7 +3,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
 
 const refresh = vi.fn();
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
+const replace = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh, replace }) }));
 
 import { MicrosoftWorkspaceAdminCard } from "../MicrosoftWorkspaceAdminCard";
 
@@ -13,9 +14,16 @@ function ok(body: unknown = { ok: true }) {
   return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
 }
 
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((r) => (resolve = r));
+  return { promise, resolve };
+}
+
 beforeEach(() => {
   fetchMock.mockReset();
   refresh.mockReset();
+  replace.mockReset();
   vi.stubGlobal("fetch", fetchMock);
 });
 afterEach(() => {
@@ -48,7 +56,7 @@ describe("MicrosoftWorkspaceAdminCard — not approved", () => {
     await waitFor(() => expect(assign).toHaveBeenCalledWith("about:blank#consent"));
   });
 
-  it("copies the approval link and says it works once", async () => {
+  it("without ClipboardItem, copies the approval link with writeText and says it works once", async () => {
     fetchMock.mockReturnValue(ok({ url: "https://app/consent?x=1" }));
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
@@ -61,6 +69,64 @@ describe("MicrosoftWorkspaceAdminCard — not approved", () => {
     expect(writeText).toHaveBeenCalledWith("https://app/consent?x=1");
   });
 
+  it("(Safari) starts the clipboard write inside the click, before the link exists", async () => {
+    const answer = deferred<Response>();
+    fetchMock.mockReturnValue(answer.promise);
+    const items: Record<string, Promise<Blob>>[] = [];
+    vi.stubGlobal(
+      "ClipboardItem",
+      class {
+        constructor(data: Record<string, Promise<Blob>>) {
+          items.push(data);
+        }
+      },
+    );
+    // Like the browser, the write settles once the item's text does.
+    const write = vi.fn(async (list: unknown[]) => {
+      expect(list).toHaveLength(1);
+      await items[0]["text/plain"];
+    });
+    vi.stubGlobal("navigator", { clipboard: { write, writeText: vi.fn() } });
+    render(<MicrosoftWorkspaceAdminCard approval={null} members={[]} flash={null} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy approval link" }));
+    // Still inside the click: the server hasn't answered yet.
+    expect(write).toHaveBeenCalledTimes(1);
+
+    answer.resolve(new Response(JSON.stringify({ url: "https://app/consent?x=1" }), { status: 200 }));
+    await screen.findByText("Link copied — it works once and expires in 7 days.");
+    const blob = await items[0]["text/plain"];
+    expect(blob.type).toBe("text/plain");
+    expect(await blob.text()).toBe("https://app/consent?x=1");
+  });
+
+  it("when the clipboard refuses, shows the link to copy by hand — never 'couldn't create'", async () => {
+    fetchMock.mockReturnValue(ok({ url: "https://app/consent?x=1" }));
+    const writeText = vi.fn().mockRejectedValue(new DOMException("denied", "NotAllowedError"));
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    render(<MicrosoftWorkspaceAdminCard approval={null} members={[]} flash={null} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy approval link" }));
+
+    expect(await screen.findByRole("textbox", { name: "Approval link" })).toHaveValue("https://app/consent?x=1");
+    expect(screen.getByText(/Copy this link by hand/)).toBeTruthy();
+    expect(screen.queryByText(/Couldn.t create the approval link/)).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("says it couldn't create the link only when the server refused", async () => {
+    fetchMock.mockReturnValue(Promise.resolve(new Response("{}", { status: 429 })));
+    const writeText = vi.fn();
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    render(<MicrosoftWorkspaceAdminCard approval={null} members={[]} flash={null} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy approval link" }));
+
+    expect((await screen.findByRole("alert")).textContent).toBe("Couldn't create the approval link. Try again.");
+    expect(writeText).not.toHaveBeenCalled();
+    expect(screen.queryByRole("textbox", { name: "Approval link" })).toBeNull();
+  });
+
   it("shows the expired-link banner", () => {
     render(<MicrosoftWorkspaceAdminCard approval={null} members={[]} flash="consent_expired" />);
     expect(screen.getByText(/link expired or was already used/i)).toBeTruthy();
@@ -69,6 +135,42 @@ describe("MicrosoftWorkspaceAdminCard — not approved", () => {
   it("shows the declined banner", () => {
     render(<MicrosoftWorkspaceAdminCard approval={null} members={[]} flash="consent_declined" />);
     expect(screen.getByText(/wasn.t approved/i)).toBeTruthy();
+  });
+
+  it("never says 'approved' when there is no approval", () => {
+    render(<MicrosoftWorkspaceAdminCard approval={null} members={[]} flash="approved" />);
+    expect(screen.queryByText(/Microsoft 365 is approved/)).toBeNull();
+  });
+});
+
+describe("MicrosoftWorkspaceAdminCard — the flash", () => {
+  it("clears the flag from the URL once read, and keeps the banner until the page is left", async () => {
+    const { rerender } = render(
+      <MicrosoftWorkspaceAdminCard approval={APPROVAL} members={MEMBERS} flash="approved" />,
+    );
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/settings/integrations/microsoft_365"));
+    // The cleaned URL renders the page again with no flash.
+    rerender(<MicrosoftWorkspaceAdminCard approval={APPROVAL} members={MEMBERS} flash={null} />);
+    expect(screen.getByText(/Microsoft 365 is approved/)).toBeTruthy();
+  });
+
+  it("leaves a clean URL alone", () => {
+    render(<MicrosoftWorkspaceAdminCard approval={APPROVAL} members={MEMBERS} flash={null} />);
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("drops the 'approved' banner once Disconnect has removed the approval", async () => {
+    fetchMock.mockReturnValue(ok());
+    const { rerender } = render(
+      <MicrosoftWorkspaceAdminCard approval={APPROVAL} members={MEMBERS} flash="approved" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect Microsoft 365" }));
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+
+    rerender(<MicrosoftWorkspaceAdminCard approval={null} members={[]} flash={null} />);
+    expect(screen.queryByText(/Microsoft 365 is approved/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Connect Microsoft 365" })).toBeTruthy();
   });
 });
 
@@ -130,6 +232,23 @@ describe("MicrosoftWorkspaceAdminCard — approved", () => {
     fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
     await waitFor(() => expect(refresh).toHaveBeenCalled());
     expect(fetchMock.mock.calls[0][0]).toBe("/api/workspace/microsoft/disconnect");
+  });
+
+  it("the Disconnect confirmation can't send twice while it's out", async () => {
+    const answer = deferred<Response>();
+    fetchMock.mockReturnValue(answer.promise);
+    render(<MicrosoftWorkspaceAdminCard approval={APPROVAL} members={MEMBERS} flash={null} />);
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect Microsoft 365" }));
+
+    const confirm = screen.getByRole("button", { name: "Disconnect" });
+    fireEvent.click(confirm);
+    expect(confirm).toBeDisabled();
+    fireEvent.click(confirm);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    answer.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("follows refreshed server props after Turn on for everyone", async () => {

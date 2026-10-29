@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactElement } from "react";
 import { useRouter } from "next/navigation";
 import DialogShell from "@/components/dialog-shell";
+import { inputClassName } from "@/components/forms/input-styles";
 import { SwitchControl } from "@/components/forms/switch-control";
 import type { MemberStatus } from "@/lib/workspace/types";
 
@@ -23,6 +24,9 @@ type Props = {
 };
 
 const BASE = "/api/workspace/microsoft";
+/** This card's page, without the flash's `?approved=1` / `?error=consent_*`. */
+const PAGE_PATH = "/settings/integrations/microsoft_365";
+const LINK_COPIED = "Link copied — it works once and expires in 7 days.";
 
 const FLASH_COPY: Record<Exclude<Flash, null>, string> = {
   approved: "Microsoft 365 is approved. Now choose which advisors get it.",
@@ -66,6 +70,19 @@ async function consentUrl(mode: "redirect" | "link"): Promise<string> {
   return ((await res.json()) as { url: string }).url;
 }
 
+/**
+ * Copies `text` once it resolves. Safari only allows a clipboard write that
+ * starts inside the click, so this must be called before any `await`; a
+ * `ClipboardItem` can wait on the text. Rejects when the copy didn't happen.
+ */
+async function copyWhenReady(text: Promise<string>): Promise<void> {
+  if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+    const blob = text.then((t) => new Blob([t], { type: "text/plain" }));
+    return navigator.clipboard.write([new ClipboardItem({ "text/plain": blob })]);
+  }
+  return navigator.clipboard.writeText(await text);
+}
+
 function without(s: Record<string, boolean>, key: string): Record<string, boolean> {
   const rest = { ...s };
   delete rest[key];
@@ -79,10 +96,21 @@ export function MicrosoftWorkspaceAdminCard({ approval, members, flash }: Props)
   // `saving` is the rows whose request is still out: one request per row.
   const [pending, setPending] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState<Record<string, boolean>>({});
-  const [busy, setBusy] = useState<null | "connect" | "link" | "all">(null);
+  const [busy, setBusy] = useState<null | "connect" | "link" | "all" | "disconnect">(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // A link the clipboard refused: shown so the admin can copy it by hand.
+  const [linkToCopy, setLinkToCopy] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+
+  // Read once, then cleared from the URL so a reload or bookmark can't replay
+  // it; the banner stays until the admin leaves the page. "Approved" never
+  // shows once the approval is gone (after Disconnect).
+  const [flashOnLoad] = useState(flash);
+  const shownFlash = flashOnLoad === "approved" && approval === null ? null : flashOnLoad;
+  useEffect(() => {
+    if (flashOnLoad) router.replace(PAGE_PATH);
+  }, [flashOnLoad, router]);
 
   useEffect(() => {
     setPending((s) => {
@@ -111,10 +139,17 @@ export function MicrosoftWorkspaceAdminCard({ approval, members, flash }: Props)
     setBusy("link");
     setError(null);
     setNotice(null);
+    setLinkToCopy(null);
+    const link = consentUrl("link");
+    // Started before any await, inside the click (see copyWhenReady).
+    const copied = copyWhenReady(link).then(
+      () => true,
+      () => false,
+    );
     try {
-      const url = await consentUrl("link");
-      await navigator.clipboard.writeText(url);
-      setNotice("Link copied — it works once and expires in 7 days.");
+      const url = await link;
+      if (await copied) setNotice(LINK_COPIED);
+      else setLinkToCopy(url);
     } catch {
       setError("Couldn't create the approval link. Try again.");
     } finally {
@@ -153,6 +188,7 @@ export function MicrosoftWorkspaceAdminCard({ approval, members, flash }: Props)
   }
 
   async function disconnect() {
+    setBusy("disconnect");
     setError(null);
     try {
       const res = await post("disconnect");
@@ -162,17 +198,19 @@ export function MicrosoftWorkspaceAdminCard({ approval, members, flash }: Props)
     } catch {
       setConfirmOpen(false);
       setError("Couldn't disconnect Microsoft 365. Try again.");
+    } finally {
+      setBusy(null);
     }
   }
 
   return (
     <div className="flex flex-col gap-4">
-      {flash ? (
+      {shownFlash ? (
         <p
           role="status"
           className="rounded border border-hair bg-card-2 px-3 py-2 text-sm text-ink-2"
         >
-          {FLASH_COPY[flash]}
+          {FLASH_COPY[shownFlash]}
         </p>
       ) : null}
       {error ? (
@@ -255,7 +293,7 @@ export function MicrosoftWorkspaceAdminCard({ approval, members, flash }: Props)
             onOpenChange={setConfirmOpen}
             title="Disconnect Microsoft 365?"
             size="sm"
-            destructiveAction={{ label: "Disconnect", onClick: disconnect }}
+            destructiveAction={{ label: "Disconnect", onClick: disconnect, loading: busy === "disconnect" }}
           >
             <p className="text-[14px] text-ink-2">
               Every advisor is signed out of Microsoft 365 and their calendar and to-dos leave
@@ -296,6 +334,20 @@ export function MicrosoftWorkspaceAdminCard({ approval, members, flash }: Props)
             <p role="status" className="text-sm text-ink-3">
               {notice}
             </p>
+          ) : null}
+          {linkToCopy ? (
+            <div className="flex flex-col gap-2">
+              <p role="status" className="text-sm text-ink-3">
+                Copy this link by hand — it works once and expires in 7 days.
+              </p>
+              <input
+                readOnly
+                aria-label="Approval link"
+                value={linkToCopy}
+                onFocus={(e) => e.currentTarget.select()}
+                className={inputClassName}
+              />
+            </div>
           ) : null}
         </section>
       )}
