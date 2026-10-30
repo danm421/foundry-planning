@@ -132,7 +132,9 @@ export function DistributionsTable({
     "Goals\n(set-aside)",
   ];
   return (
-    <View style={s.table}>
+    // A FLAT run of rows (no wrapper View): the caller puts it in a `flow`
+    // PageFrame, which is what lets react-pdf break it onto further sheets.
+    <>
       <View
         style={[s.headerRow, { backgroundColor: accent.tint, borderBottomColor: accent.accent }]}
         fixed
@@ -177,7 +179,7 @@ export function DistributionsTable({
           </View>
         );
       })}
-    </View>
+    </>
   );
 }
 

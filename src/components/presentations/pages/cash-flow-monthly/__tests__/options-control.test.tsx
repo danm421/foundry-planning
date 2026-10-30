@@ -79,4 +79,12 @@ describe("MonthlyCashFlowOptionsControl", () => {
     expect(getByLabelText("Report")).toBeTruthy();
     expect(getByLabelText("Year")).toBeTruthy();
   });
+
+  it("treats a stored descriptor with no mode as Cash flow, keeping the Report select controlled", () => {
+    const legacy: Partial<MonthlyCashFlowPageOptions> = { ...MONTHS };
+    delete legacy.mode;
+    const { getByLabelText } = setup(legacy as MonthlyCashFlowPageOptions);
+    expect((getByLabelText("Report") as HTMLSelectElement).value).toBe("cashflow");
+    expect(getByLabelText("Show")).toBeTruthy();
+  });
 });

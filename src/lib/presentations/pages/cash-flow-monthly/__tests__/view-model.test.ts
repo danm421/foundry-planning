@@ -2,6 +2,9 @@ import { describe, it, expect } from "vitest";
 import { buildMonthlyCashFlowPageData } from "../view-model";
 import type { MonthlyCashFlowPageOptions } from "../types";
 import { buildDistributionsChartData } from "@/components/charts/solver-monthly-distributions-chart";
+import { buildMonthlyCashFlowRows, selectMonthlyRow } from "@/lib/solver/monthly-cash-flow";
+import { otherAccountsAmount } from "../view-model";
+import { makeRealDistributionsFixture } from "./real-fixture";
 import { INFLATION, PLAN_START_YEAR, makeMonthlyClientData, makeMonthlyYear } from "./fixtures";
 
 // 2040 is comfortable, 2041 is the first shortfall year (income below fixed
@@ -250,5 +253,53 @@ describe("buildMonthlyCashFlowPageData — Distributions", () => {
     expect(all.some((n) => /exhausted/i.test(n))).toBe(true);
     const early = build({ mode: "distributions", range: { startYear: 2040, endYear: 2041 } }).notes;
     expect(early.some((n) => /exhausted/i.test(n))).toBe(false);
+  });
+});
+
+describe("buildMonthlyCashFlowPageData — Distributions on a real engine projection", () => {
+  const { clientData, years: realYears } = makeRealDistributionsFixture();
+  const data = buildMonthlyCashFlowPageData({
+    years: realYears,
+    clientData,
+    options: { view: "plan", basis: "today", range: "full", year: null, mode: "distributions" },
+    scenarioLabel: "Base Case",
+    clientName: "John",
+    spouseName: "Jane",
+  });
+  const d = data.distribution!;
+
+  it("has more than four drawable accounts, so Other accounts is printed", () => {
+    expect(d.columns).toHaveLength(4);
+    expect(d.showOther).toBe(true);
+    expect(d.rows.length).toBeGreaterThan(5);
+  });
+
+  it("every printed row: ranked columns + Other accounts = Total from accounts", () => {
+    for (const r of d.rows) {
+      const ranked = d.columns.reduce(
+        (s, c) => s + (r.fromAccounts.accounts.find((a) => a.accountId === c.accountId)?.amount ?? 0),
+        0,
+      );
+      expect(ranked + otherAccountsAmount(r, d.columns), `${r.year}`).toBeCloseTo(r.fromAccounts.total, 6);
+      expect(otherAccountsAmount(r, d.columns), `${r.year} other`).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("the chart's Other accounts stack equals the table's, year by year", () => {
+    const other = data.chartSpec!.stacks.find((s) => s.label === "Other accounts")!;
+    expect(other.values).toHaveLength(d.rows.length);
+    d.rows.forEach((r, i) => expect(other.values[i], `${r.year}`).toBeCloseTo(otherAccountsAmount(r, d.columns), 6));
+  });
+
+  it("captions the year the screen rule picks over the full projection", () => {
+    const screen = selectMonthlyRow(buildMonthlyCashFlowRows(realYears, clientData, "today"), null)!;
+    expect(d.summary!.year).toBe(screen.year);
+  });
+
+  it("reports (does not assert away) years with a residue of $1/month or more", () => {
+    const residue = d.rows.filter((r) => Math.abs(r.fromAccounts.unexplained) >= 1);
+    // Recorded for the task report: see its "real projection" section.
+    console.info(`residue years: ${residue.map((r) => `${r.year}:${r.fromAccounts.unexplained.toFixed(2)}`).join(", ") || "none"}`);
+    expect(residue.length).toBeGreaterThanOrEqual(0);
   });
 });

@@ -16,14 +16,16 @@ const field =
 
 export function MonthlyCashFlowOptionsControl({ value, onChange }: Props) {
   const people = useAgePeople();
-  const distributions = value.mode === "distributions";
+  // A stored descriptor that was never parsed through the schema has no mode.
+  const mode = value.mode ?? "cashflow";
+  const distributions = mode === "distributions";
   return (
     <OptionsRow>
       <OptionsGroup label="Report">
         <select
           aria-label="Report"
           className={field}
-          value={value.mode}
+          value={mode}
           onChange={(e) =>
             onChange({ ...value, mode: e.target.value as MonthlyCashFlowPageOptions["mode"] })
           }

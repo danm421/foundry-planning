@@ -23,11 +23,18 @@ export function summarizeMonthlyCashFlowOptions(o: MonthlyCashFlowPageOptions): 
   return `Across the plan · ${summarizeRange(o.range)} · ${basis}`;
 }
 
-/** The Distributions card, chart and a full-range table do not share one
- *  sheet; the table wraps to a second. Verified by rendering (task 6 report). */
+/** Distributions rows that fit one sheet under the table's repeated header
+ *  (measured by rendering; see page-count.test.tsx). */
+export const DISTRIBUTIONS_ROWS_PER_PAGE = 36;
+
+/** Distributions: card + chart on page 1, the table from page 2 (a forced
+ *  break), wrapping on to further sheets only past `DISTRIBUTIONS_ROWS_PER_PAGE`
+ *  years. */
 export function estimateMonthlyCashFlowPageCount(
-  _data?: unknown,
+  data?: { distribution?: { rows: unknown[] } },
   options?: Pick<MonthlyCashFlowPageOptions, "mode">,
 ): number {
-  return options?.mode === "distributions" ? 2 : 1;
+  if (options?.mode !== "distributions") return 1;
+  const rows = data?.distribution?.rows.length ?? 0;
+  return 1 + Math.max(1, Math.ceil(rows / DISTRIBUTIONS_ROWS_PER_PAGE));
 }

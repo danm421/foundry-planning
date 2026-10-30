@@ -130,28 +130,43 @@ export function MonthlyCashFlowPagePdf({
     ? dist.rows.length === 0
     : data.planRows.length === 0 && data.monthRows.length === 0;
 
+  const frame = { firmName, clientName, reportDate, totalPages };
+
+  if (dist && !empty) {
+    // Two sheets by construction: card + chart on the first, the table from the
+    // second (a flow frame, so a long plan wraps on). The deck numbers pages
+    // from `estimateMonthlyCashFlowPageCount`, so the sheet count cannot depend
+    // on how many years the range happens to hold.
+    return (
+      <>
+        <PageFrame {...frame} pageIndex={pageIndex}>
+          <SectionHead title={data.title} subtitle={data.subtitle} accent={accent} />
+          {dist.summary && <DistributionsCard row={dist.summary} />}
+          {data.chartSpec && <CashflowChartPdf spec={data.chartSpec} />}
+        </PageFrame>
+        <PageFrame {...frame} pageIndex={pageIndex + 1} flow>
+          <DistributionsTable distribution={dist} accent={accent} />
+          {data.notes.map((n, i) => (
+            <Text key={i} style={s.note}>
+              {n}
+            </Text>
+          ))}
+          <Text style={s.footnote}>{data.footnote}</Text>
+        </PageFrame>
+      </>
+    );
+  }
+
   return (
-    <PageFrame
-      firmName={firmName}
-      clientName={clientName}
-      reportDate={reportDate}
-      pageIndex={pageIndex}
-      totalPages={totalPages}
-    >
+    <PageFrame {...frame} pageIndex={pageIndex}>
       <SectionHead title={data.title} subtitle={data.subtitle} accent={accent} />
       {empty ? (
         <Text style={s.empty}>No projection years to show.</Text>
       ) : (
         <>
-          {dist ? (
-            dist.summary && <DistributionsCard row={dist.summary} />
-          ) : (
-            data.summary && <SummaryCard summary={data.summary} />
-          )}
+          {data.summary && <SummaryCard summary={data.summary} />}
           {data.chartSpec && <CashflowChartPdf spec={data.chartSpec} />}
-          {dist ? (
-            <DistributionsTable distribution={dist} accent={accent} />
-          ) : data.view === "plan" ? (
+          {data.view === "plan" ? (
             <PlanTable rows={data.planRows} accent={accent} />
           ) : (
             <MonthTable rows={data.monthRows} accent={accent} />
