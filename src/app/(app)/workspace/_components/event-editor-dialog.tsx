@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactElement } from "react";
 import { z } from "zod";
 import DialogShell from "@/components/dialog-shell";
-import { checkboxClassName, fieldLabelClassName, inputClassName } from "@/components/forms/input-styles";
+import { checkboxClassName, fieldLabelClassName, inputClassName, selectClassName } from "@/components/forms/input-styles";
 import { ExternalLinkIcon, XIcon } from "@/components/icons";
 import type { AttendeeSuggestion, WallClock, WorkspaceProvider } from "@/lib/workspace/types";
 import { addDays, daysBetween, minutesOfTime, monthDay, timeOf, toWallClock } from "@/lib/workspace/week";
@@ -271,7 +271,7 @@ export function EventEditorDialog({
             </label>
             <select
               id={field("account")}
-              className={inputClassName}
+              className={selectClassName}
               value={account?.id}
               onChange={(e) => pickAccount(e.target.value)}
             >

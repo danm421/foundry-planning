@@ -995,7 +995,7 @@ describe("WorkspacePage — creating a meeting", () => {
       ).toBeInTheDocument();
     });
 
-    it("never offers an account that needs to reconnect or is hidden", async () => {
+    it("never offers a hidden account", async () => {
       localStorage.setItem("workspace.hiddenAccounts", JSON.stringify([G]));
       const user = userEvent.setup();
       renderPage("ready", [ACCOUNT, google]);
@@ -1003,6 +1003,27 @@ describe("WorkspacePage — creating a meeting", () => {
       await user.click(screen.getByRole("button", { name: "+ New event" }));
       expect(screen.queryByLabelText("Calendar")).toBeNull();
       expect(screen.getByLabelText("Add a Teams link")).toBeInTheDocument();
+    });
+
+    it("never offers an account that needs to reconnect", async () => {
+      const user = userEvent.setup();
+      renderPage("ready", [ACCOUNT, { ...google, status: "needs_reconnect" }]);
+      await screen.findByText("Annual review");
+      await user.click(screen.getByRole("button", { name: "+ New event" }));
+      expect(screen.queryByLabelText("Calendar")).toBeNull();
+      expect(screen.getByLabelText("Add a Teams link")).toBeInTheDocument();
+    });
+
+    it("+ New event is disabled when every account is hidden, or the rest need to reconnect", async () => {
+      localStorage.setItem("workspace.hiddenAccounts", JSON.stringify([MS_ID, G]));
+      const { unmount } = renderPage("ready", [ACCOUNT, google]);
+      await screen.findByText(/^Times in /);
+      expect(screen.getByRole("button", { name: "+ New event" })).toBeDisabled();
+      unmount();
+      localStorage.setItem("workspace.hiddenAccounts", JSON.stringify([MS_ID]));
+      renderPage("ready", [ACCOUNT, { ...google, status: "needs_reconnect" }]);
+      await screen.findByText(/^Times in /);
+      expect(screen.getByRole("button", { name: "+ New event" })).toBeDisabled();
     });
 
     it("a 409 needs_reconnect on create refreshes the page's account statuses", async () => {

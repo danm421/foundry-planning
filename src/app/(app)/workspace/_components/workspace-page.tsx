@@ -454,7 +454,7 @@ export function WorkspacePage({
           />
           <button
             type="button"
-            disabled={week === null}
+            disabled={blocked !== null || week === null || pickable.length === 0}
             onClick={openNew}
             className="ml-1 inline-flex h-8 items-center rounded-[var(--radius-sm)] bg-accent px-3 text-[12px] font-semibold text-accent-on transition-colors hover:bg-accent-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-accent"
           >
