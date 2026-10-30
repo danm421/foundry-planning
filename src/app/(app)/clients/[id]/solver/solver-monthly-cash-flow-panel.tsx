@@ -8,6 +8,8 @@ import {
   type MonthlyCashFlowRow,
 } from "@/lib/solver/monthly-cash-flow";
 import type { MonthRow } from "@/lib/solver/monthly-allocation";
+import type { MonthlyMode } from "@/lib/solver/monthly-distributions";
+import { MonthlyModeSwitch } from "./solver-monthly-mode-switch";
 
 const fmt = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -36,6 +38,10 @@ interface Props {
    *  The production caller opens on "months". */
   view?: "plan" | "months";
   onViewChange?: (v: "plan" | "months") => void;
+  /** Cash flow / Distributions switch, shown at the left of the header only
+   *  when the caller passes `mode`. */
+  mode?: MonthlyMode;
+  onModeChange?: (m: MonthlyMode) => void;
 }
 
 // Memoized for the same reason `SolverWithdrawalPanel` is: this table renders
@@ -51,6 +57,8 @@ export const SolverMonthlyCashFlowPanel = memo(function SolverMonthlyCashFlowPan
   monthRows = [],
   view = "plan",
   onViewChange,
+  mode,
+  onModeChange,
 }: Props) {
   if (rows.length === 0) {
     return (
@@ -69,6 +77,9 @@ export const SolverMonthlyCashFlowPanel = memo(function SolverMonthlyCashFlowPan
   return (
     <div className="mt-3 space-y-3">
       <div className="flex items-center justify-between gap-1">
+        {mode !== undefined && onModeChange ? (
+          <MonthlyModeSwitch mode={mode} onChange={onModeChange} />
+        ) : null}
         <div className="flex items-center gap-1" role="group" aria-label="Table view">
           <BasisButton
             label="Month by month"
@@ -315,7 +326,7 @@ export const SolverMonthlyCashFlowPanel = memo(function SolverMonthlyCashFlowPan
   );
 });
 
-function BasisButton({
+export function BasisButton({
   label,
   active,
   onClick,
