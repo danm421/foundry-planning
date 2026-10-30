@@ -41,9 +41,9 @@ type Fake = {
 function fake(f: Fake = {}) {
   const run = <T>(v: T | Error | undefined, dflt: T) => (v instanceof Error ? Promise.reject(v) : Promise.resolve(v ?? dflt));
   return {
-    getTimeZone: vi.fn(() => run(f.tz, null)),
-    listEvents: vi.fn(() => run(f.events, [])),
-    listOpenTodos: vi.fn(() => run(f.todos, [])),
+    getTimeZone: vi.fn<WorkspaceProviderAdapter["getTimeZone"]>(() => run(f.tz, null)),
+    listEvents: vi.fn<WorkspaceProviderAdapter["listEvents"]>(() => run(f.events, [])),
+    listOpenTodos: vi.fn<WorkspaceProviderAdapter["listOpenTodos"]>(() => run(f.todos, [])),
   };
 }
 
@@ -102,6 +102,16 @@ describe("readers", () => {
       });
     });
 
+    it("an earlier account's zone wins over a later one that answers first", async () => {
+      const a = conn("a", "google");
+      const b = conn("b", "microsoft");
+      const fakes = { a: fake(), b: fake({ tz: "Europe/Paris" }) };
+      fakes.a.getTimeZone.mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve("America/Chicago"), 10)),
+      );
+      expect((await resolveDisplayZone([a, b], lookup(fakes, [a, b]))).timeZone).toBe("America/Chicago");
+    });
+
     it("never asks a needs_reconnect account", async () => {
       const a = conn("a", "google", "needs_reconnect");
       const fakes = { a: fake({ tz: "Asia/Tokyo" }) };
@@ -142,8 +152,8 @@ describe("readers", () => {
       const res = await readWeek({ connections: [a, b], startDate: "2026-11-02", days: 7, adapters: lookup(fakes, [a, b]) });
       expect(res.timeZone).toBe("America/Chicago");
       expect(res.timeZoneFallback).toBe(false);
-      expect(fakes.a.listEvents).toHaveBeenCalledWith(a, { startDate: "2026-11-02", days: 7, timeZone: "America/Chicago" });
-      expect(fakes.b.listEvents).toHaveBeenCalledWith(b, { startDate: "2026-11-02", days: 7, timeZone: "America/Chicago" });
+      expect(fakes.a.listEvents).toHaveBeenCalledWith(a, expect.objectContaining({ startDate: "2026-11-02", days: 7, timeZone: "America/Chicago" }));
+      expect(fakes.b.listEvents).toHaveBeenCalledWith(b, expect.objectContaining({ startDate: "2026-11-02", days: 7, timeZone: "America/Chicago" }));
     });
 
     it("reports the UTC fallback", async () => {
@@ -231,7 +241,9 @@ describe("readers", () => {
     beforeEach(() => vi.useFakeTimers());
     afterEach(() => vi.useRealTimers());
 
-    const never = () => new Promise<never>(() => {});
+    /** A call that never answers on its own. Like fetch, it rejects once its signal aborts. */
+    const never = (_conn: WorkspaceConnection, opts?: { signal?: AbortSignal }) =>
+      new Promise<never>((_, reject) => opts?.signal?.addEventListener("abort", () => reject(opts.signal?.reason)));
 
     /** Settles `p` across the deadline, checking it was still pending just before it. */
     async function acrossTheDeadline<T>(p: Promise<T>): Promise<T> {
@@ -267,6 +279,7 @@ describe("readers", () => {
       expect(out).toContain('"connectionId":"a"');
       expect(out).toContain('"provider":"google"');
       expect(out).not.toContain("secret-mail");
+      expect(fakes.a.listEvents.mock.calls[0][1].signal?.aborted).toBe(true);
     });
 
     it("the to-dos: the hung account is unavailable, the other's to-dos still come back", async () => {
@@ -278,6 +291,7 @@ describe("readers", () => {
         { connectionId: "a", provider: "google", todos: null, error: "unavailable" },
         { connectionId: "b", provider: "microsoft", todos: [todo("t1", "microsoft")], error: null },
       ]);
+      expect(fakes.a.listOpenTodos.mock.calls[0][1]?.signal?.aborted).toBe(true);
     });
 
     it("the zone: a hung getTimeZone falls through to the next account, and is logged", async () => {
@@ -290,6 +304,20 @@ describe("readers", () => {
         fallback: false,
       });
       expect(JSON.stringify(warn.mock.calls)).toContain('"connectionId":"a"');
+      expect(fakes.a.getTimeZone.mock.calls[0][1]?.signal?.aborted).toBe(true);
+    });
+
+    it("the zone: every account is asked at once, so two hung accounts cost one deadline, not two", async () => {
+      const a = conn("a", "google");
+      const b = conn("b", "google");
+      const c = conn("c", "microsoft");
+      const google = fake();
+      google.getTimeZone.mockImplementation(never);
+      const fakes = { a: google, b: google, c: fake({ tz: "Europe/Paris" }) };
+      expect(await acrossTheDeadline(resolveDisplayZone([a, b, c], lookup(fakes, [a, b, c])))).toEqual({
+        timeZone: "Europe/Paris",
+        fallback: false,
+      });
     });
   });
 

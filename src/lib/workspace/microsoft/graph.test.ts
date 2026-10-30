@@ -93,6 +93,16 @@ describe("graphFetch", () => {
     expect(refreshTokens).not.toHaveBeenCalled();
   });
 
+  it("passes the context's signal to fetch, so a missed deadline cancels the request", async () => {
+    const { fetchImpl, call } = stubFetch(respond(200, { value: [] }));
+    const { ctx } = context(connection(), fetchImpl);
+    const signal = new AbortController().signal;
+
+    await graphFetch({ ...ctx, signal }, "/me/calendarView");
+
+    expect(call(0).init.signal).toBe(signal);
+  });
+
   it("sends no Prefer header without a time zone, and keeps the caller's method, body and headers", async () => {
     const { fetchImpl, call } = stubFetch(respond(201, { id: "e1" }));
     const { ctx } = context(connection(), fetchImpl);

@@ -38,6 +38,7 @@ function stubFetch(...responses: Response[]) {
     return {
       url,
       headers: new Headers(init.headers),
+      signal: init.signal,
       body: init.body ? JSON.parse(init.body as string) : undefined,
     };
   };
@@ -61,6 +62,13 @@ describe("microsoftAdapter", () => {
     const call = stubFetch(json({ value: [] }));
     await microsoftAdapter.listEvents(conn, { startDate: "2026-11-02", days: 7, timeZone: "America/Chicago" });
     expect(call(0).headers.get("prefer")).toBe('outlook.timezone="Central Standard Time"');
+  });
+
+  it("hands a read's signal to Graph", async () => {
+    const call = stubFetch(json({ value: [] }));
+    const signal = new AbortController().signal;
+    await microsoftAdapter.listEvents(conn, { startDate: "2026-11-02", days: 7, timeZone: "America/Chicago", signal });
+    expect(call(0).signal).toBe(signal);
   });
 
   it("converts the zone on create and move too", async () => {

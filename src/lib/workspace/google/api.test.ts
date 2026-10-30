@@ -139,6 +139,16 @@ describe("googleFetch", () => {
     expect(refreshTokens).not.toHaveBeenCalled();
   });
 
+  it("passes the context's signal to fetch, so a missed deadline cancels the request", async () => {
+    const { fetchImpl, call } = stubFetch(respond(200, { items: [] }));
+    const { ctx } = context(connection(), fetchImpl);
+    const signal = new AbortController().signal;
+
+    await googleFetch({ ...ctx, signal }, EVENTS_URL);
+
+    expect(call(0).init.signal).toBe(signal);
+  });
+
   it("a 401 forces one refresh, stores it, and retries with the new token", async () => {
     const { fetchImpl, mock, call } = stubFetch(respond(401), respond(200, { items: [] }));
     const { ctx } = context(connection(), fetchImpl);

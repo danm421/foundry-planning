@@ -26,14 +26,23 @@ class AccountDeadlineError extends Error {
   }
 }
 
-/** `call`'s answer, or an `AccountDeadlineError` once the deadline passes first. The call itself isn't cancelled. */
-async function withDeadline<T>(call: Promise<T>): Promise<T> {
+/**
+ * `call`'s answer, or an `AccountDeadlineError` once the deadline passes first.
+ * The deadline also aborts the signal `call` was given, which cancels its
+ * provider requests; a token refresh in flight still finishes and is stored.
+ */
+async function withDeadline<T>(call: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new AccountDeadlineError()), ACCOUNT_DEADLINE_MS);
+    timer = setTimeout(() => {
+      const err = new AccountDeadlineError();
+      controller.abort(err);
+      reject(err);
+    }, ACCOUNT_DEADLINE_MS);
   });
   try {
-    return await Promise.race([call, deadline]);
+    return await Promise.race([call(controller.signal), deadline]);
   } finally {
     clearTimeout(timer);
   }
@@ -54,21 +63,25 @@ function toAccountError(err: unknown, conn: WorkspaceConnection): AccountError {
 
 /**
  * The first valid zone any connected account reports (in the given order); UTC
- * when none does. An account that fails or misses the deadline has no say, and
- * is logged.
+ * when none does. Every account is asked at once, so accounts that hang cost
+ * one deadline between them, not one each. An account that fails or misses
+ * the deadline has no say, and is logged.
  */
 export async function resolveDisplayZone(
   connections: WorkspaceConnection[],
   adapters: AdapterLookup = adapterFor,
 ): Promise<{ timeZone: string; fallback: boolean }> {
-  for (const conn of connections) {
-    if (conn.status !== "connected") continue;
-    try {
-      const zone = await withDeadline(adapters(conn.provider).getTimeZone(conn));
-      if (zone && isValidIanaZone(zone)) return { timeZone: zone, fallback: false };
-    } catch (err) {
-      warnAccount("Workspace time zone read failed:", err, conn);
-    }
+  const answers = connections
+    .filter((conn) => conn.status === "connected")
+    .map((conn) =>
+      withDeadline((signal) => adapters(conn.provider).getTimeZone(conn, { signal })).catch((err: unknown) => {
+        warnAccount("Workspace time zone read failed:", err, conn);
+        return null;
+      }),
+    );
+  for (const answer of answers) {
+    const zone = await answer;
+    if (zone && isValidIanaZone(zone)) return { timeZone: zone, fallback: false };
   }
   return { timeZone: "UTC", fallback: true };
 }
@@ -101,7 +114,9 @@ export async function readWeek(input: {
   const results = await mapLimited(shown, MAX_ACCOUNTS_PER_ADVISOR, async (conn) => {
     if (conn.status !== "connected") return { events: [] as TaggedEvent[], error: "needs_reconnect" as AccountError };
     try {
-      const events = await withDeadline(adapters(conn.provider).listEvents(conn, { startDate, days, timeZone }));
+      const events = await withDeadline((signal) =>
+        adapters(conn.provider).listEvents(conn, { startDate, days, timeZone, signal }),
+      );
       return {
         events: events.map((e) => ({ ...e, connectionId: conn.id, provider: conn.provider })),
         error: null,
@@ -133,7 +148,8 @@ export async function readTodos(input: {
     const base = { connectionId: conn.id, provider: conn.provider };
     if (conn.status !== "connected") return { ...base, todos: null, error: "needs_reconnect" as const };
     try {
-      return { ...base, todos: await withDeadline(adapters(conn.provider).listOpenTodos(conn)), error: null };
+      const todos = await withDeadline((signal) => adapters(conn.provider).listOpenTodos(conn, { signal }));
+      return { ...base, todos, error: null };
     } catch (err) {
       return { ...base, todos: null, error: toAccountError(err, conn) };
     }

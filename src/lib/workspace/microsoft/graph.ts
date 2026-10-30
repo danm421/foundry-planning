@@ -13,6 +13,8 @@ export type GraphContext = {
   conn: WorkspaceConnection;
   fetchImpl?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
+  /** Cancels the Graph requests (not a token refresh) once it aborts. */
+  signal?: AbortSignal;
 };
 
 /**
@@ -45,7 +47,7 @@ export async function graphFetch(
     headers.set("authorization", `Bearer ${token}`);
     if (timeZone) headers.append("prefer", `outlook.timezone="${timeZone}"`);
 
-    const res = await fetchImpl(`${GRAPH_BASE}${path}`, { ...requestInit, headers });
+    const res = await fetchImpl(`${GRAPH_BASE}${path}`, { ...requestInit, headers, signal: ctx.signal });
     if (res.ok) return res;
 
     const requestId = res.headers.get("request-id");

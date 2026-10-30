@@ -24,6 +24,8 @@ export type GoogleContext = {
   conn: WorkspaceConnection;
   fetchImpl?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
+  /** Cancels the Google requests (not a token refresh) once it aborts. */
+  signal?: AbortSignal;
 };
 
 /**
@@ -63,7 +65,7 @@ export async function googleFetch(
     const headers = new Headers(init.headers);
     headers.set("authorization", `Bearer ${token}`);
 
-    const res = await fetchImpl(href, { ...init, headers });
+    const res = await fetchImpl(href, { ...init, headers, signal: ctx.signal });
     if (res.ok) return res;
 
     if (res.status === 401 && !refreshed) {
