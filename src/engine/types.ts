@@ -8,6 +8,7 @@ import type { TrustTaxBreakdown, TrustWarning } from "./trust-tax/types";
 import type { AccountOwner } from "./ownership";
 import type { EntityCashFlowRow } from "./entity-cashflow";
 import type { NoteReceivable } from "./notes-receivable/types";
+import type { WithdrawalPolicy } from "./withdrawal-policy";
 import type { LiabilityType } from "./liability-kind";
 import type { IncomeTaxType } from "./tax-adjustments";
 
@@ -1868,6 +1869,10 @@ export interface PlanSettings {
    *  from that retirement year onward `surplusSpendPct` applies as normal.
    *  Defaults to false = today's flat-percentage behavior. */
   surplusSpendAllUntilRetirement?: boolean;
+  /** How a shortfall is drawn from the household's accounts (spec 2026-10-29).
+   *  Null/undefined = today's behavior: the account-by-account rows when there
+   *  are any, else the default group order. See `resolveWithdrawalPolicy`. */
+  withdrawalPolicy?: WithdrawalPolicy | null;
   /** Stress test: cut ALL Social Security benefits by `pct` (decimal) for every
    *  projection year ≥ `startYear`. Applied in computeIncome before taxation. */
   ssBenefitHaircut?: { pct: number; startYear: number };
