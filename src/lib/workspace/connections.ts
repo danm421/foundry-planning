@@ -88,6 +88,8 @@ export async function upsertUserConnection(input: {
     ...tokenColumns(input.tokens),
   };
   return db.transaction(async (tx) => {
+    // Serializes this advisor's connects so two at once can't both pass the count.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`workspace:${input.firmId}:${input.userId}`}))`);
     const [existing] = await tx
       .select({ id: workspaceConnections.id })
       .from(workspaceConnections)

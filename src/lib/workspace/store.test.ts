@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { randomBytes, randomUUID } from "node:crypto";
-import { inArray, eq } from "drizzle-orm";
+import { inArray, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   workspaceConnections,
@@ -262,6 +262,20 @@ describe("connections", () => {
       expect(await connectAs(firmId, "u1", "google", "sub-extra")).toEqual({ ok: false, reason: "too_many_accounts" });
       expect(await listUserConnectionSummaries(firmId, "u1")).toHaveLength(MAX_ACCOUNTS_PER_ADVISOR);
       expect((await connectAs(firmId, "u1", "google", "sub-2")).ok).toBe(true);
+      expect(await listUserConnectionSummaries(firmId, "u1")).toHaveLength(MAX_ACCOUNTS_PER_ADVISOR);
+    });
+
+    it("simultaneous connects one short of the cap let exactly one through", async () => {
+      const firmId = freshFirmId();
+      for (let i = 0; i < MAX_ACCOUNTS_PER_ADVISOR - 1; i++) {
+        expect((await connectAs(firmId, "u1", "google", `sub-${i}`)).ok).toBe(true);
+      }
+      // Open the pool's connections first so the three transactions overlap.
+      await Promise.all([1, 2, 3].map(() => db.execute(sql`select pg_sleep(0.1)`)));
+      const results = await Promise.all(
+        ["a", "b", "c"].map((s) => connectAs(firmId, "u1", "google", `sub-race-${s}`)),
+      );
+      expect(results.filter((r) => r.ok)).toHaveLength(1);
       expect(await listUserConnectionSummaries(firmId, "u1")).toHaveLength(MAX_ACCOUNTS_PER_ADVISOR);
     });
 
