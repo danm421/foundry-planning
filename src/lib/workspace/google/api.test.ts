@@ -344,7 +344,7 @@ describe("googlePages", () => {
     );
     const { ctx } = context(connection(), fetchImpl);
 
-    await expect(googlePages<number>(ctx, `${LISTS_URL}?maxResults=100`, "items")).resolves.toEqual([1, 2, 3]);
+    await expect(googlePages<number>(ctx, `${LISTS_URL}?maxResults=100`)).resolves.toEqual([1, 2, 3]);
 
     expect(mock).toHaveBeenCalledTimes(3);
     expect(call(0).url).toBe(`${LISTS_URL}?maxResults=100`);
@@ -359,6 +359,6 @@ describe("googlePages", () => {
     const { fetchImpl } = stubFetch(respond(200, {}));
     const { ctx } = context(connection(), fetchImpl);
 
-    await expect(googlePages<number>(ctx, LISTS_URL, "items")).resolves.toEqual([]);
+    await expect(googlePages<number>(ctx, LISTS_URL)).resolves.toEqual([]);
   });
 });

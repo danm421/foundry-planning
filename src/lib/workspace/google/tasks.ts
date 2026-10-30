@@ -2,7 +2,7 @@
 import { mapLimited } from "../map-limited";
 import type { TodoPatch } from "../provider-adapter";
 import type { WorkspaceTodo } from "../types";
-import { googleJson, googlePages, type GoogleContext } from "./api";
+import { googleJson, googlePages, jsonInit, type GoogleContext } from "./api";
 
 const TASKS_BASE = "https://tasks.googleapis.com/tasks/v1";
 const DEFAULT_LIST = "@default";
@@ -31,10 +31,10 @@ function toWorkspaceTodo(listId: string, t: GoogleTask): WorkspaceTodo {
 
 /** Open tasks across every list. */
 export async function listOpenTodos(ctx: GoogleContext): Promise<WorkspaceTodo[]> {
-  const lists = await googlePages<{ id: string }>(ctx, `${TASKS_BASE}/users/@me/lists?maxResults=100`, "items");
+  const lists = await googlePages<{ id: string }>(ctx, `${TASKS_BASE}/users/@me/lists?maxResults=100`);
   const query = new URLSearchParams({ showCompleted: "false", showHidden: "false", maxResults: "100" });
   const perList = await mapLimited(lists, MAX_LIST_READS, async (l) => {
-    const tasks = await googlePages<GoogleTask>(ctx, `${listTasksUrl(l.id)}?${query}`, "items");
+    const tasks = await googlePages<GoogleTask>(ctx, `${listTasksUrl(l.id)}?${query}`);
     return tasks.map((t) => toWorkspaceTodo(l.id, t));
   });
   return perList.flat();
@@ -50,11 +50,7 @@ export async function createTodo(
     notes: input.notes,
     ...(input.dueDate ? { due: toDue(input.dueDate) } : {}),
   };
-  const created = await googleJson<GoogleTask>(ctx, listTasksUrl(DEFAULT_LIST), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const created = await googleJson<GoogleTask>(ctx, listTasksUrl(DEFAULT_LIST), jsonInit("POST", body));
   return toWorkspaceTodo(DEFAULT_LIST, created);
 }
 
@@ -70,9 +66,6 @@ export async function updateTodo(
     ...(patch.dueDate !== undefined ? { due: patch.dueDate === null ? null : toDue(patch.dueDate) } : {}),
     ...(patch.completed !== undefined ? { status: patch.completed ? "completed" : "needsAction" } : {}),
   };
-  await googleJson<void>(ctx, `${listTasksUrl(input.listId)}/${encodeURIComponent(input.taskId)}`, {
-    method: "PATCH",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const url = `${listTasksUrl(input.listId)}/${encodeURIComponent(input.taskId)}`;
+  await googleJson<void>(ctx, url, jsonInit("PATCH", body));
 }

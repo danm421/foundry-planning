@@ -87,6 +87,13 @@ function normalizedHref(url: string): string | null {
   }
 }
 
+/** A JSON-body request for `googleJson`. */
+export const jsonInit = (method: string, body: unknown): RequestInit => ({
+  method,
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify(body),
+});
+
 /** `googleFetch` + JSON. A 204 has no body and resolves `undefined`. */
 export async function googleJson<T>(ctx: GoogleContext, url: string, init?: RequestInit): Promise<T> {
   const res = await googleFetch(ctx, url, init);
@@ -95,10 +102,10 @@ export async function googleJson<T>(ctx: GoogleContext, url: string, init?: Requ
 }
 
 /**
- * Every item of a paged Google collection. Follows `nextPageToken` by asking
- * for the same URL again with `pageToken` set, so the host never changes.
+ * Every `items` entry of a paged Google collection. Follows `nextPageToken` by
+ * asking for the same URL again with `pageToken` set, so the host never changes.
  */
-export async function googlePages<T>(ctx: GoogleContext, url: string, itemsKey: "items"): Promise<T[]> {
+export async function googlePages<T>(ctx: GoogleContext, url: string): Promise<T[]> {
   const items: T[] = [];
   let pageToken: string | undefined;
   do {
@@ -106,7 +113,7 @@ export async function googlePages<T>(ctx: GoogleContext, url: string, itemsKey: 
       ctx,
       pageToken ? withPageToken(url, pageToken) : url,
     );
-    items.push(...(page[itemsKey] ?? []));
+    items.push(...(page.items ?? []));
     pageToken = page.nextPageToken || undefined;
   } while (pageToken);
   return items;

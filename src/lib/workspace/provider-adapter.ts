@@ -36,7 +36,13 @@ export interface WorkspaceProviderAdapter {
 }
 
 export function adapterFor(provider: WorkspaceProvider): WorkspaceProviderAdapter {
-  return provider === "microsoft" ? microsoftAdapter : googleAdapter;
+  // Exhaustive: a new provider fails to compile here rather than borrowing another's adapter.
+  switch (provider) {
+    case "microsoft":
+      return microsoftAdapter;
+    case "google":
+      return googleAdapter;
+  }
 }
 
 /** Only an organizer can change a live event. */

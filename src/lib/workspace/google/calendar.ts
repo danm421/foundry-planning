@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { ProviderRequestError } from "../errors";
 import type { WallClock, WorkspaceEvent } from "../types";
 import { addDays, overlappingDays } from "../week";
-import { googleJson, googlePages, type GoogleContext } from "./api";
+import { googleJson, googlePages, jsonInit, type GoogleContext } from "./api";
 
 const EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
 /** No working-location or birthday markers. */
@@ -36,12 +36,6 @@ const fromGoogleTime = (t: GoogleEventTime): WallClock =>
 
 /** A wall clock as Google's `EventDateTime`. */
 const toGoogleTime = (w: WallClock, timeZone: string) => ({ dateTime: `${w}:00`, timeZone });
-
-const jsonInit = (method: string, body: unknown): RequestInit => ({
-  method,
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify(body),
-});
 
 const isGuest = (a: { self?: boolean; resource?: boolean }) => !a.self && !a.resource;
 
@@ -87,7 +81,7 @@ export async function listEvents(
     timeZone: opts.timeZone,
   });
   for (const type of EVENT_TYPES) query.append("eventTypes", type);
-  const events = await googlePages<GoogleEvent>(ctx, `${EVENTS_URL}?${query}`, "items");
+  const events = await googlePages<GoogleEvent>(ctx, `${EVENTS_URL}?${query}`);
   // The bounds are widened a day each side (they are instants, not local days),
   // so the events are trimmed to the local window here.
   return overlappingDays(
