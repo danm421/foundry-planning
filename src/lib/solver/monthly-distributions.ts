@@ -7,8 +7,7 @@
 // the presentation page all read these rows, so screen and print can't drift.
 import type { ClientData, ClientInfo, ProjectionYear } from "@/engine";
 import type { GoalYear } from "@/engine/types";
-import { controllingFamilyMember, normalizeOwners } from "@/engine/ownership";
-import { goalDrawAccountIds, isFundedGoal } from "@/engine/goals/goal-funding";
+import { canHaveGoalFunding, goalDrawAccountIds } from "@/engine/goals/goal-funding";
 import { ageLabel } from "./cashflow-year-detail";
 import {
   deflator,
@@ -25,6 +24,10 @@ export interface DistributionAccountLine {
   name: string;
   /** supplemental + checking drawdown + RMD cash − set-aside goal draws */
   amount: number;
+  /** The same draw for the whole year in future dollars — what
+   *  `rankDistributionAccounts` sums, so the column order is one order in both
+   *  dollar bases, on screen and in print. */
+  annualNominal: number;
   /** margin-borrowed part of `amount` (0 when none) */
   borrowed: number;
 }
@@ -32,6 +35,8 @@ export interface DistributionAccountLine {
 export interface DistributionGoalLine {
   goalId: string;
   name: string;
+  /** Empty only for a goal with no set-aside account, listed here solely for
+   *  its unfunded part — what it did cost is a need line (R14). */
   setAsideAccountNames: string[];
   /** GoalYear.dedicatedWithdrawal (household, 529 and entity alike) */
   fromSetAside: number;
@@ -52,7 +57,8 @@ export interface DistributionRow {
     liabilities: number;
     realEstate: number;
     insurance: number;
-    /** "Show as a goal" Other rows with no set-aside account — counted in the need. */
+    /** Goals with no set-aside account — counted in the need (R14): a "Show as
+     *  a goal" Other row, or an education goal with no 529, at its booked cost. */
     goalLines: { expenseId: string; name: string; amount: number }[];
     other: number;
     savings: number;
@@ -74,15 +80,29 @@ export interface DistributionRow {
     };
     unexplained: number;
   };
-  /** goals with goalExpense > 0 */
+  /** Set-aside goals with a cost this year, plus any goal with no set-aside
+   *  account that went partly unfunded (shown only for its "short by"). */
   goals: DistributionGoalLine[];
   qcds: { accountId: string; name: string; amount: number }[];
+  /** Life insurance paid out this year — the WHOLE YEAR'S lump sum in the
+   *  chosen dollar basis, not a monthly figure. Kept out of income and every
+   *  other figure: the engine adds it to the year's income after the cash
+   *  flows ran, so it pays for nothing in them. 0 in most years. */
+  lifeInsuranceProceeds: number;
 }
 
 const MONTHS_PER_YEAR = 12;
 
-/** The smallest account line worth a row, per month: anything less prints as "$0". */
-const MIN_LINE_PER_MONTH = 0.5;
+/** Never printed in practice — every id a projection lists is named by the
+ *  plan or the engine — but a raw id must never reach a client page. */
+const UNNAMED_ACCOUNT = "Unnamed account";
+
+/** The view's ONE threshold set, per month. A line below `MIN_LINE_PER_MONTH`
+ *  would print as "$0" (or is float dust — the engine leaves ~1e-12 on
+ *  checking), so it is left off. The leftover gets its own line from
+ *  `MIN_UNEXPLAINED_PER_MONTH`, the spec's "above $1/month". */
+export const MIN_LINE_PER_MONTH = 0.5;
+export const MIN_UNEXPLAINED_PER_MONTH = 1;
 
 /** The engine's own age of death when no life expectancy is set
  *  (`computeFirstDeathYear`'s `?? 95`). */
@@ -141,8 +161,20 @@ function livingAgeLabel(year: ProjectionYear, client: ClientInfo): string {
 /** At most this many accounts get their own column / colour. */
 const MAX_RANKED_ACCOUNTS = 4;
 
-/** The accounts that get their own column/colour: largest Σ amount across
- *  `rows` first, at most four; everything else is "Other accounts". */
+/** True when some row draws from an account `ranked` leaves out — the "Other
+ *  accounts" column / stack shows. */
+export function hasOtherAccounts(
+  rows: DistributionRow[],
+  ranked: { accountId: string }[],
+): boolean {
+  const ids = new Set(ranked.map((a) => a.accountId));
+  return rows.some((r) => r.fromAccounts.accounts.some((a) => !ids.has(a.accountId)));
+}
+
+/** The accounts that get their own column/colour: largest total draw across
+ *  `rows` first, at most four; everything else is "Other accounts". Pass the
+ *  FULL projection's rows and the order is the same on screen and in print.
+ *  Sums `annualNominal`, so the dollar basis can't reorder the columns. */
 export function rankDistributionAccounts(
   rows: DistributionRow[],
 ): { accountId: string; name: string }[] {
@@ -150,7 +182,7 @@ export function rankDistributionAccounts(
   for (const r of rows) {
     for (const a of r.fromAccounts.accounts) {
       const t = totals.get(a.accountId) ?? { accountId: a.accountId, name: a.name, total: 0 };
-      t.total += a.amount;
+      t.total += a.annualNominal;
       totals.set(a.accountId, t);
     }
   }
@@ -169,42 +201,44 @@ export function buildMonthlyDistributionRows(
 ): DistributionRow[] {
   const householdLiquidIds = householdLiquidAccountIds(years, clientData);
 
-  const knownAccounts = [
-    ...clientData.accounts,
-    ...years.flatMap((y) => y.syntheticAccounts ?? []),
-  ];
-  const accountName = new Map(knownAccounts.map((a) => [a.id, a.name]));
-  const nameOf = (id: string) => accountName.get(id) ?? id;
-  // Whose RMD cash reached household checking — the engine's own routing
-  // predicate, read through `normalizeOwners` because the engine does. An
-  // entity-owned IRA carries `rmdAmount` too, but its cash goes to the
-  // entity, never into `rmdInTotalIncome`.
-  const householdIds = new Set(
-    knownAccounts
-      .filter((a) => controllingFamilyMember(normalizeOwners(a)) != null)
-      .map((a) => a.id),
-  );
+  // Names for every account a row can list: the plan's own, then any the
+  // engine minted (a death splitting an IRA between heirs, equity destination
+  // accounts) — a minted account keeps its name in every year it exists.
+  const accountName = new Map(clientData.accounts.map((a) => [a.id, a.name]));
+  for (const y of years) {
+    for (const [id, name] of Object.entries(y.distributionDetail?.mintedAccountNames ?? {})) {
+      if (!accountName.has(id)) accountName.set(id, name);
+    }
+  }
+  const nameOf = (id: string) => accountName.get(id) ?? UNNAMED_ACCOUNT;
 
   const accountById = new Map(clientData.accounts.map((a) => [a.id, a]));
   const expenseById = new Map(clientData.expenses.map((e) => [e.id, e]));
-  // "Show as a goal" Other rows the engine pays as a plain expense: no
-  // set-aside account to draw, and no owner entity/account paying it.
-  const unsetAsideGoals = clientData.expenses.filter(
+  // R14: a goal is "set-aside" only when it has an account to draw. Every
+  // other goal — a "Show as a goal" Other row with no account, or an education
+  // goal with no 529 — counts in the need at what the household paid for it
+  // (an entity or business owner pays its own goals, so those never do).
+  const hasSetAside = (expenseId: string) => {
+    const e = expenseById.get(expenseId);
+    return e != null && goalDrawAccountIds(e, accountById).length > 0;
+  };
+  const needGoalExpenses = clientData.expenses.filter(
     (e) =>
-      e.type === "other" &&
-      e.isGoal === true &&
-      !isFundedGoal(e, accountById) &&
+      canHaveGoalFunding(e) &&
+      !hasSetAside(e.id) &&
       e.ownerAccountId == null &&
       e.ownerEntityId == null,
   );
 
   return years.map((y) => {
-    // One scale factor per year: annual → monthly, then nominal → chosen basis.
-    const k = deflator(y.year, basis, clientData.planSettings) / MONTHS_PER_YEAR;
+    // One scale factor per year: nominal → chosen basis, then annual → monthly.
+    const toBasis = deflator(y.year, basis, clientData.planSettings);
+    const k = toBasis / MONTHS_PER_YEAR;
     const detail = y.distributionDetail ?? NO_DETAIL;
 
     // ── Goals ──
-    const setAsideGoals = (y.goals ?? []).filter((g) => !g.accumulation);
+    const goalYears = (y.goals ?? []).filter((g) => !g.accumulation);
+    const setAsideGoals = goalYears.filter((g) => hasSetAside(g.goalId));
     // The household-paid cost is exactly what the engine booked into
     // `expenses.other` under the goal's id — NOT `householdWithdrawal +
     // outOfPocketWithdrawal`. The engine sets `outOfPocketWithdrawal` whenever
@@ -219,24 +253,29 @@ export function buildMonthlyDistributionRows(
       Math.max(0, householdCost(g) - g.householdWithdrawal);
     const setAsideHouseholdCost = sumOf(setAsideGoals, householdCost);
     const outOfPocket = sumOf(setAsideGoals, householdOutOfPocket);
-    const goals: DistributionGoalLine[] = setAsideGoals
-      .filter((g) => g.goalExpense > 0)
-      .map((g) => {
-        const expense = expenseById.get(g.goalId);
-        return {
-          goalId: g.goalId,
-          name: expense?.name ?? g.goalId,
-          setAsideAccountNames: expense
-            ? goalDrawAccountIds(expense, accountById).map(nameOf)
-            : [],
-          fromSetAside: g.dedicatedWithdrawal * k,
-          fromGeneral: householdOutOfPocket(g) * k,
-          unfunded: g.shortfall * k,
-        };
-      });
+    const goalLine = (g: GoalYear, setAside: boolean): DistributionGoalLine => {
+      const expense = expenseById.get(g.goalId);
+      return {
+        goalId: g.goalId,
+        name: expense?.name ?? g.goalId,
+        setAsideAccountNames:
+          setAside && expense ? goalDrawAccountIds(expense, accountById).map(nameOf) : [],
+        fromSetAside: g.dedicatedWithdrawal * k,
+        fromGeneral: setAside ? householdOutOfPocket(g) * k : 0,
+        unfunded: g.shortfall * k,
+      };
+    };
+    const goals: DistributionGoalLine[] = [
+      ...setAsideGoals.filter((g) => g.goalExpense > 0).map((g) => goalLine(g, true)),
+      // No set-aside account: what it cost is a need line; only an unfunded
+      // part has a place here, as "short by" (R14).
+      ...goalYears
+        .filter((g) => !hasSetAside(g.goalId) && g.shortfall * k >= MIN_LINE_PER_MONTH)
+        .map((g) => goalLine(g, false)),
+    ];
 
     // ── Spending need (annual) ──
-    const goalLinesAnnual = unsetAsideGoals
+    const goalLinesAnnual = needGoalExpenses
       .map((e) => ({ expenseId: e.id, name: e.name, amount: y.expenses.bySource[e.id] ?? 0 }))
       .filter((l) => l.amount > 0);
     const goalLinesTotal = sumOf(goalLinesAnnual, (l) => l.amount);
@@ -252,37 +291,55 @@ export function buildMonthlyDistributionRows(
       y.savings.total;
 
     // ── Income (annual): RMD cash moves to the account it came from ──
-    const incomeTotal = y.totalIncome - detail.rmdInTotalIncome;
+    const bySourcePrefix = (prefix: string) =>
+      sumOf(
+        Object.entries(y.income.bySource).filter(([key]) => key.startsWith(prefix)),
+        ([, amount]) => amount,
+      );
+    // Life insurance proceeds are folded into the year's income AFTER its cash
+    // flows ran (`foldLifeInsurancePayoutsIntoIncome`), so they paid for none
+    // of it: left in, they would cover the whole need and leave the real draws
+    // unexplained. The row carries them as a note instead.
+    const lifeInsurance = bySourcePrefix("life-insurance-proceeds:");
+    const incomeTotal = y.totalIncome - detail.rmdInTotalIncome - lifeInsurance;
     const named = [
       { label: "Social Security", amount: y.income.socialSecurity },
       { label: "Salary", amount: y.income.salaries },
       { label: "Pension / deferred comp", amount: y.income.deferred },
+      // Inside `income.other`; the engine keys each contract `annuity:<id>`.
+      { label: "Annuity", amount: bySourcePrefix("annuity:") },
       { label: "Business", amount: y.income.business },
       { label: "Trust", amount: y.income.trust },
     ].filter((s) => s.amount !== 0);
     const otherIncome = incomeTotal - sumOf(named, (s) => s.amount);
     const sources = [
       ...named,
-      ...(otherIncome * k >= 1 ? [{ label: "Other income", amount: otherIncome }] : []),
+      ...(otherIncome * k >= MIN_LINE_PER_MONTH ? [{ label: "Other income", amount: otherIncome }] : []),
     ].map((s) => ({ label: s.label, amount: s.amount * k }));
 
     // ── Account draws (annual) ──
-    const rmdById = new Map<string, number>();
-    for (const [id, ledger] of Object.entries(y.accountLedgers)) {
-      if (ledger.rmdAmount > 0 && householdIds.has(id)) rmdById.set(id, ledger.rmdAmount);
-    }
-    const accountIds = new Set([...Object.keys(y.withdrawals.byAccount), ...rmdById.keys()]);
+    // RMD cash as the engine routed it THIS year: by the working owners a
+    // death may have rewritten (a split IRA's minted shares are in it; an IRA
+    // left to a trust is not), and never an entity-owned IRA's.
+    const rmdById = detail.rmdCashByAccount;
+    const accountIds = new Set([
+      ...Object.keys(y.withdrawals.byAccount),
+      ...Object.keys(rmdById),
+    ]);
     const accounts: DistributionAccountLine[] = [...accountIds]
-      .map((id) => ({
-        accountId: id,
-        name: nameOf(id),
-        amount:
-          ((y.withdrawals.byAccount[id] ?? 0) -
-            (detail.goalDrawsByAccount[id] ?? 0) +
-            (rmdById.get(id) ?? 0)) *
-          k,
-        borrowed: (y.withdrawals.borrowedByAccount?.[id] ?? 0) * k,
-      }))
+      .map((id) => {
+        const annual =
+          (y.withdrawals.byAccount[id] ?? 0) -
+          (detail.goalDrawsByAccount[id] ?? 0) +
+          (rmdById[id] ?? 0);
+        return {
+          accountId: id,
+          name: nameOf(id),
+          amount: annual * k,
+          annualNominal: annual,
+          borrowed: (y.withdrawals.borrowedByAccount?.[id] ?? 0) * k,
+        };
+      })
       // A line at or below zero — or float dust that would print as "$0"; the
       // engine leaves ~1e-12 on checking in some years — is dropped from the
       // list AND the total. Whatever it carried surfaces in `unexplained`,
@@ -315,8 +372,12 @@ export function buildMonthlyDistributionRows(
       (needTotal + taxes + outOfPocket + discretionary + detail.absorbedSurplus + kept) * k;
 
     // ── QCDs: a note under the IRA, outside every total ──
+    // No ownership filter: the engine books a QCD only from an IRA whose sole
+    // owner that year is the client or the spouse (`qcdGiverOf`; an entity or
+    // other heir gives none) — a death's minted share included. Not keyed on
+    // `rmdCashByAccount` either: a QCD that pays the whole RMD leaves no RMD
+    // cash, and that is the most common QCD of all.
     const qcds = Object.entries(y.accountLedgers)
-      .filter(([id]) => householdIds.has(id))
       .map(([id, ledger]) => ({
         accountId: id,
         name: nameOf(id),
@@ -347,6 +408,7 @@ export function buildMonthlyDistributionRows(
       fromAccounts: { total: fromAccountsTotal, accounts, parts, unexplained },
       goals,
       qcds,
+      lifeInsuranceProceeds: lifeInsurance * toBasis,
     };
   });
 }

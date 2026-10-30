@@ -18,6 +18,7 @@ import { Chart } from "react-chartjs-2";
 import { chartChrome, useThemeName } from "@/lib/chart-colors";
 import { colors, colorsLight, data as brandData, dataLight as brandDataLight } from "@/brand";
 import {
+  hasOtherAccounts,
   rankDistributionAccounts,
   type DistributionRow,
 } from "@/lib/solver/monthly-distributions";
@@ -105,10 +106,7 @@ export function buildDistributionsChartData(
   const p = palette(theme);
   const ranked = rankDistributionAccounts(rows);
   const rankedIds = new Set(ranked.map((a) => a.accountId));
-  const accountCount = new Set(
-    rows.flatMap((r) => r.fromAccounts.accounts.map((a) => a.accountId)),
-  ).size;
-  const showOther = accountCount > ranked.length;
+  const showOther = hasOtherAccounts(rows, ranked);
 
   const bar = (label: string, color: string, values: number[]) => ({
     type: "bar" as const,

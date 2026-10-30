@@ -7,6 +7,7 @@ import {
   type MonthlyCashFlowRow,
 } from "@/lib/solver/monthly-cash-flow";
 import {
+  hasOtherAccounts,
   rankDistributionAccounts,
   type DistributionRow,
   type MonthlyMode,
@@ -53,10 +54,7 @@ export const SolverMonthlyDistributionsPanel = memo(
     const selected = rows.find((r) => r.year === year) ?? rows[0];
     const ranked = rankDistributionAccounts(rows);
     const rankedIds = new Set(ranked.map((a) => a.accountId));
-    const accountCount = new Set(
-      rows.flatMap((r) => r.fromAccounts.accounts.map((a) => a.accountId)),
-    ).size;
-    const showOther = accountCount > ranked.length;
+    const showOther = hasOtherAccounts(rows, ranked);
 
     const { need, fromAccounts: from } = selected;
     const needLines = [

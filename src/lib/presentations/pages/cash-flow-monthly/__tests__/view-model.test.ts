@@ -4,6 +4,10 @@ import type { MonthlyCashFlowPageOptions } from "../types";
 import { buildDistributionsChartData } from "@/components/charts/solver-monthly-distributions-chart";
 import { buildMonthlyCashFlowRows, selectMonthlyRow } from "@/lib/solver/monthly-cash-flow";
 import { otherAccountsAmount } from "../view-model";
+import {
+  buildMonthlyDistributionRows,
+  rankDistributionAccounts,
+} from "@/lib/solver/monthly-distributions";
 import { makeRealDistributionsFixture } from "./real-fixture";
 import { INFLATION, PLAN_START_YEAR, makeMonthlyClientData, makeMonthlyYear } from "./fixtures";
 
@@ -289,6 +293,21 @@ describe("buildMonthlyCashFlowPageData — Distributions on a real engine projec
     const other = data.chartSpec!.stacks.find((s) => s.label === "Other accounts")!;
     expect(other.values).toHaveLength(d.rows.length);
     d.rows.forEach((r, i) => expect(other.values[i], `${r.year}`).toBeCloseTo(otherAccountsAmount(r, d.columns), 6));
+  });
+
+  it("ranks the columns as the screen does — full projection, either basis, any range", () => {
+    // The screen ranks every projection year, on the basis the advisor chose.
+    const screen = rankDistributionAccounts(buildMonthlyDistributionRows(realYears, clientData, "nominal"));
+    const printed = buildMonthlyCashFlowPageData({
+      years: realYears,
+      clientData,
+      options: { view: "plan", basis: "today", range: { startYear: 2040, endYear: 2046 }, year: null, mode: "distributions" },
+      scenarioLabel: "Base Case",
+      clientName: "John",
+      spouseName: "Jane",
+    }).distribution!;
+    expect(printed.columns).toEqual(screen);
+    expect(d.columns).toEqual(screen);
   });
 
   it("captions the year the screen rule picks over the full projection", () => {

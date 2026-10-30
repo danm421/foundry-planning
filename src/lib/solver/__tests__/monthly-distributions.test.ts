@@ -12,12 +12,20 @@ import {
   CHECKING as MARGIN_CHECKING,
   spending,
 } from "@/engine/__tests__/_fixtures/margin";
+import {
+  FIRST_DEATH_YEAR,
+  JANE_INHERITED_ROTH,
+  iraSplitAtFirstDeath,
+  iraToTrustAtFirstDeath,
+} from "@/engine/__tests__/_fixtures/survivor-iras";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "@/engine/ownership";
 import type { Account, ClientData, Expense, ProjectionYear } from "@/engine/types";
 import { buildMonthlyCashFlowRows, deflator, type DollarBasis } from "../monthly-cash-flow";
 import {
   buildMonthlyDistributionRows,
+  hasOtherAccounts,
   isRetirementYear,
+  MIN_LINE_PER_MONTH,
   rankDistributionAccounts,
   type DistributionRow,
 } from "../monthly-distributions";
@@ -75,8 +83,6 @@ const RESIDUAL_TOLERANCE_PER_YEAR = 10;
 
 const sum = (xs: number[]) => xs.reduce((s, x) => s + x, 0);
 
-/** The smallest account line worth a row: anything less prints as "$0". */
-const MIN_LINE_PER_MONTH = 0.5;
 
 /** Float noise allowed below zero on a need line, per month. */
 const NEED_EPSILON = 0.01;
@@ -207,6 +213,7 @@ function rowWithAccounts(lines: [string, number][]): DistributionRow {
         accountId: id,
         name: id.toUpperCase(),
         amount,
+        annualNominal: amount * 12,
         borrowed: 0,
       })),
       parts: {
@@ -221,6 +228,7 @@ function rowWithAccounts(lines: [string, number][]): DistributionRow {
     },
     goals: [],
     qcds: [],
+    lifeInsuranceProceeds: 0,
   };
 }
 
@@ -645,6 +653,14 @@ describe("monthly distributions", () => {
       4,
     );
     expect(rows[1].qcds).toEqual([]);
+    // A QCD that pays the whole RMD leaves the IRA no RMD cash at all — the
+    // note must not depend on there being some.
+    const wholeRmd = { ...clientData, qcds: [{ ...clientData.qcds![0], amount: 60_000 }] };
+    const whole = build(wholeRmd);
+    expect(whole.years[0].distributionDetail!.rmdCashByAccount["acct-ira"]).toBeUndefined();
+    expect(whole.rows[0].qcds).toHaveLength(1);
+    expect(whole.rows[0].qcds[0].amount * 12).toBeGreaterThan(40_000);
+    expectCloses(whole.rows);
     // A single client: the survivor-style age label never prints "undefined".
     for (const row of rows) expect(row.ageLabel).not.toContain("undefined");
     expectCloses(rows);
@@ -766,5 +782,236 @@ describe("monthly distributions", () => {
       { accountId: "b", name: "B" },
       { accountId: "e", name: "E" },
     ]);
+  });
+
+  it("rankDistributionAccounts sums nominal draws, so the dollar basis can't reorder it", () => {
+    // Monthly amounts in today's dollars say "x" draws more; the whole-year
+    // future-dollar draws say "y" (its draw comes late, where the deflator bites).
+    const x = rowWithAccounts([["x", 100]]);
+    const y = rowWithAccounts([["y", 90]]);
+    x.fromAccounts.accounts[0].annualNominal = 1_300;
+    y.fromAccounts.accounts[0].annualNominal = 2_000;
+    expect(rankDistributionAccounts([x, y]).map((a) => a.accountId)).toEqual(["y", "x"]);
+
+    // On a real projection the two bases rank alike.
+    const clientData = buildClientData({ accounts: withChecking() });
+    const years = runProjection(clientData);
+    const rank = (b: DollarBasis) =>
+      rankDistributionAccounts(buildMonthlyDistributionRows(years, clientData, b));
+    expect(rank("today")).toEqual(rank("nominal"));
+  });
+
+  it("hasOtherAccounts is true only when a row draws from an unranked account", () => {
+    const rows = [rowWithAccounts([["a", 10], ["b", 5]]), rowWithAccounts([["c", 1]])];
+    expect(hasOtherAccounts(rows, [{ accountId: "a" }, { accountId: "b" }])).toBe(true);
+    expect(hasOtherAccounts(rows, [{ accountId: "a" }, { accountId: "b" }, { accountId: "c" }])).toBe(false);
+  });
+
+  it("an annuity's payout is named Annuity, not Other income", () => {
+    const spia: Account = {
+      id: "acct-spia",
+      name: "Income Annuity",
+      category: "annuity",
+      subType: "other",
+      titlingType: "jtwros",
+      value: 150_000,
+      basis: 150_000,
+      growthRate: 0,
+      rmdEnabled: false,
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      annuity: {
+        productType: "spia",
+        incomeMode: "annuitized",
+        incomeStartYear: 2026,
+        annuitizedPayment: 12_000,
+        taxTreatment: "non_qualified",
+        costBasis: 150_000,
+        annualFeePct: 0,
+        rollupRatchets: false,
+      },
+    };
+    const { years, rows } = build(buildClientData({ accounts: withChecking([...sampleAccounts, spia]) }));
+    expect(years[0].income.bySource["annuity:acct-spia"]).toBeCloseTo(12_000, 2);
+    const annuity = rows[0].income.sources.find((s) => s.label === "Annuity");
+    expect(annuity?.amount).toBeCloseTo(1_000, 2);
+    expect(rows[0].income.sources.some((s) => s.label === "Other income")).toBe(false);
+    expectCloses(rows);
+  });
+
+  describe("goals with no set-aside account (R14)", () => {
+    const college = (payShortfallOutOfPocket: boolean): Expense => ({
+      id: "college",
+      type: "education",
+      name: "Grandkid college",
+      annualAmount: 36_000,
+      startYear: 2040,
+      endYear: 2040,
+      growthRate: 0,
+      payShortfallOutOfPocket,
+    });
+
+    it("an education goal with no 529 is a need line at what the household paid", () => {
+      const { years, rows } = build(withGoal(college(true)));
+      const i = years.findIndex((y) => y.year === 2040);
+      const y = years[i];
+      const r = rows[i];
+      const goal = y.goals!.find((g) => g.goalId === "college")!;
+      // Liveness: the engine funds it as a goal, from cash flow.
+      expect(goal.dedicatedWithdrawal).toBe(0);
+      expect(goal.outOfPocketWithdrawal).toBeGreaterThan(0);
+      const cost = y.expenses.bySource["college"];
+      expect(cost).toBeCloseTo(36_000, 2);
+
+      expect(r.need.goalLines).toEqual([
+        { expenseId: "college", name: "Grandkid college", amount: cost / 12 },
+      ]);
+      expect(r.goals).toEqual([]);
+      expect(r.fromAccounts.parts.goalShortfall).toBe(0);
+      expect(r.need.other * 12).toBeCloseTo(y.expenses.other - cost, 4);
+      expectCloses(rows);
+    });
+
+    it("with out-of-pocket off, its unfunded cost is 'short by' in the goals box", () => {
+      const { years, rows } = build(withGoal(college(false)));
+      const i = years.findIndex((y) => y.year === 2040);
+      const y = years[i];
+      const r = rows[i];
+      const goal = y.goals!.find((g) => g.goalId === "college")!;
+      expect(goal.shortfall).toBeCloseTo(36_000, 2);
+      expect(y.expenses.bySource["college"]).toBeUndefined();
+
+      expect(r.need.goalLines).toEqual([]);
+      expect(r.goals).toEqual([
+        {
+          goalId: "college",
+          name: "Grandkid college",
+          setAsideAccountNames: [],
+          fromSetAside: 0,
+          fromGeneral: 0,
+          unfunded: 3_000,
+        },
+      ]);
+      expect(rows[i - 1].goals).toEqual([]);
+      expectCloses(rows);
+    });
+  });
+
+  it("life insurance proceeds are a note, not income, in the year they pay out", () => {
+    const policy: Account = {
+      id: "pol-term",
+      name: "Term Life Policy",
+      category: "life_insurance",
+      subType: "term",
+      titlingType: "jtwros",
+      insuredPerson: "client",
+      value: 0,
+      basis: 0,
+      growthRate: 0,
+      rmdEnabled: false,
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      beneficiaries: [
+        { id: "b1", tier: "primary", percentage: 100, familyMemberId: LEGACY_FM_SPOUSE, sortOrder: 0 },
+      ],
+      lifeInsurance: {
+        faceValue: 1_000_000,
+        costBasis: 0,
+        premiumAmount: 0,
+        premiumYears: null,
+        policyType: "term",
+        termIssueYear: 2026,
+        termLengthYears: 40,
+        endsAtInsuredRetirement: false,
+        cashValueGrowthMode: "basic",
+        premiumScheduleMode: "off",
+        deathBenefitScheduleMode: "off",
+        incomeScheduleMode: "off",
+        postPayoutGrowthRate: 0,
+        premiumPayer: "owner",
+        cashValueSchedule: [],
+      },
+    };
+    const clientData = buildClientData({
+      accounts: withChecking([...sampleAccounts, policy]),
+      client: { ...baseClient, lifeExpectancy: 80, spouseLifeExpectancy: 95 },
+    });
+    const { years, rows } = build(clientData);
+    const i = years.findIndex((y) => (y.income.bySource["life-insurance-proceeds:pol-term"] ?? 0) > 0);
+    expect(years[i]?.year).toBe(2050);
+    const y = years[i];
+    const r = rows[i];
+
+    expect(r.lifeInsuranceProceeds).toBeCloseTo(1_000_000, 2);
+    expect(rows.filter((row) => row.lifeInsuranceProceeds > 0).map((row) => row.year)).toEqual([2050]);
+    expect(r.income.total * 12).toBeCloseTo(
+      y.totalIncome - y.distributionDetail!.rmdInTotalIncome - 1_000_000,
+      4,
+    );
+    // Money really was drawn that year, and the card says what it paid for.
+    expect(r.fromAccounts.total).toBeGreaterThan(0);
+    expect(r.fromAccounts.parts.spending).toBeGreaterThan(0);
+    expectCloses(rows);
+
+    // Today's dollars: the lump sum is deflated like every other figure.
+    const today = buildMonthlyDistributionRows(years, clientData, "today")[i];
+    expect(today.lifeInsuranceProceeds).toBeCloseTo(
+      1_000_000 * deflator(2050, "today", clientData.planSettings),
+      2,
+    );
+  });
+
+  describe("survivor years: RMDs follow the engine's routing after a death (C1)", () => {
+    /** Every RMD the engine sent to household checking is (part of) a line
+     *  under its own account, named — never a raw id. */
+    function expectRmdsOnTheirAccounts(years: ProjectionYear[], rows: DistributionRow[]) {
+      years.forEach((y, i) => {
+        const r = rows[i];
+        for (const [id, cash] of Object.entries(y.distributionDetail!.rmdCashByAccount)) {
+          if (cash / 12 < MIN_LINE_PER_MONTH) continue;
+          const line = r.fromAccounts.accounts.find((a) => a.accountId === id);
+          expect(line, `${y.year} ${id}`).toBeDefined();
+          expect(line!.amount * 12, `${y.year} ${id}`).toBeGreaterThanOrEqual(cash - 0.01);
+        }
+        for (const a of r.fromAccounts.accounts) {
+          expect(a.name, `${y.year} ${a.accountId}`).not.toMatch(/^(death-acct|acct)-|Unnamed/);
+        }
+      });
+    }
+
+    it("an IRA split between spouse and child: each share's required withdrawal is its own line", () => {
+      const { years, rows } = build(iraSplitAtFirstDeath());
+      const shares = (years.find((y) => y.year === FIRST_DEATH_YEAR)!.deathTransfers ?? [])
+        .filter((t) => t.sourceAccountId === "acct-401k")
+        .map((t) => t.resultingAccountId!);
+      expect(shares).toHaveLength(2);
+
+      expectCloses(rows);
+      expectRmdsOnTheirAccounts(years, rows);
+      const survivor = rows.filter((r) => r.year > FIRST_DEATH_YEAR);
+      expect(survivor.length).toBe(10);
+      // The child's share pays from the first survivor year, Jane's from her 75th.
+      const shareLines = survivor.flatMap((r) =>
+        r.fromAccounts.accounts.filter((a) => shares.includes(a.accountId)),
+      );
+      expect(new Set(shareLines.map((a) => a.accountId))).toEqual(new Set(shares));
+      for (const a of shareLines) expect(a.name).toMatch(/^John IRA — to /);
+      // The inherited Roth's tax-free payout is a line too, never income.
+      for (const r of survivor) {
+        expect(r.fromAccounts.accounts.some((a) => a.accountId === JANE_INHERITED_ROTH.id), `${r.year}`)
+          .toBe(true);
+      }
+    });
+
+    it("an IRA left to a trust: its RMD is the trust's, so no household line and no residue", () => {
+      const { years, rows } = build(iraToTrustAtFirstDeath());
+      // Liveness: the trust's IRA really does take RMDs in the survivor years.
+      expect(years.some((y) => y.year > FIRST_DEATH_YEAR && y.accountLedgers["acct-401k"]?.rmdAmount > 0))
+        .toBe(true);
+
+      expectCloses(rows);
+      expectRmdsOnTheirAccounts(years, rows);
+      for (const r of rows.filter((row) => row.year > FIRST_DEATH_YEAR)) {
+        expect(r.fromAccounts.accounts.some((a) => a.accountId === "acct-401k"), `${r.year}`).toBe(false);
+      }
+    });
   });
 });

@@ -17,6 +17,7 @@ import { buildMonthlyAllocation } from "@/lib/solver/monthly-allocation";
 import { exactCurrency } from "../../format";
 import {
   buildMonthlyDistributionRows,
+  hasOtherAccounts,
   rankDistributionAccounts,
   type DistributionRow,
 } from "@/lib/solver/monthly-distributions";
@@ -188,11 +189,10 @@ function buildDistributionsBranch(
   const visible = new Set(filterYearsToRange(years, options.range).map((y) => y.year));
   const rows = allRows.filter((r) => visible.has(r.year));
   // One ranking for the table and the chart, so both roll the same accounts
-  // into "Other accounts".
-  const columns = rankDistributionAccounts(rows);
-  const showOther =
-    new Set(rows.flatMap((r) => r.fromAccounts.accounts.map((a) => a.accountId))).size >
-    columns.length;
+  // into "Other accounts" — ranked over the FULL projection, as the screen
+  // ranks, so a range never reorders the columns or recolours an account.
+  const columns = rankDistributionAccounts(allRows);
+  const showOther = hasOtherAccounts(rows, columns);
 
   const notes: string[] = [];
   if (rows.some((r) => r.depleted)) notes.push(DEPLETED_NOTE);

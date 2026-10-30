@@ -32,7 +32,7 @@ function row(year: number, accounts: Acct[], over: Partial<DistributionRow> = {}
     taxes: 1_200,
     fromAccounts: {
       total,
-      accounts: accounts.map((a) => ({ ...a, borrowed: 0 })),
+      accounts: accounts.map((a) => ({ ...a, annualNominal: a.amount * 12, borrowed: 0 })),
       parts: {
         spending: 5_100,
         taxes: 1_200,
@@ -54,6 +54,7 @@ function row(year: number, accounts: Acct[], over: Partial<DistributionRow> = {}
       },
     ],
     qcds: [],
+    lifeInsuranceProceeds: 0,
     ...over,
   };
 }
@@ -189,7 +190,7 @@ describe("distributionTooltipExtras", () => {
     const r = row(2040, [A("a", 7_000)], {
       fromAccounts: {
         total: 7_000,
-        accounts: [{ accountId: "a", name: "Acct a", amount: 7_000, borrowed: 0 }],
+        accounts: [{ accountId: "a", name: "Acct a", amount: 7_000, annualNominal: 84_000, borrowed: 0 }],
         parts: {
           spending: 5_100,
           taxes: 1_200,

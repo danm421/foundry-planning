@@ -38,11 +38,12 @@ function drow(
     fromAccounts: {
       total: 8_800,
       accounts: [
-        { accountId: "a1", name: "Rollover IRA", amount: 5_200, borrowed: 0 },
+        { accountId: "a1", name: "Rollover IRA", amount: 5_200, annualNominal: 62_400, borrowed: 0 },
         {
           accountId: "a2",
           name: "Joint Brokerage",
           amount: 3_600,
+          annualNominal: 43_200,
           borrowed: 0,
         },
       ],
@@ -67,6 +68,7 @@ function drow(
       },
     ],
     qcds: [],
+    lifeInsuranceProceeds: 0,
     ...over,
   };
 }
@@ -192,6 +194,7 @@ describe("SolverMonthlyDistributionsPanel", () => {
       accountId: n,
       name: `Acct ${n}`,
       amount: 600 - i * 50,
+      annualNominal: (600 - i * 50) * 12,
       borrowed: 0,
     }));
     setup([
@@ -237,6 +240,7 @@ describe("SolverMonthlyDistributionsPanel", () => {
               accountId: "a1",
               name: "Rollover IRA",
               amount: 8_800,
+              annualNominal: 105_600,
               borrowed: 500,
             },
           ],
