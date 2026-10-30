@@ -1,4 +1,5 @@
 // src/lib/workspace/microsoft/oauth.ts
+import { postTokenRequest, readJwtPayload, stringField, type TokenResponse } from "../provider-http";
 import type { IdTokenClaims, ProviderTokenSet } from "../types";
 import {
   ADMIN_CONSENT_REDIRECT_PATH,
@@ -129,39 +130,18 @@ export async function refreshTokens(
   return { ...tokens, refreshToken: tokens.refreshToken ?? opts.refreshToken };
 }
 
-async function tokenRequest(
+function tokenRequest(
   tenantId: string,
   params: Record<string, string>,
   fetchImpl: typeof fetch,
-): Promise<Omit<ProviderTokenSet, "refreshToken"> & { refreshToken: string | null }> {
+): Promise<TokenResponse> {
   const { clientId, clientSecret } = microsoftAppConfig();
-  const body = new URLSearchParams({
-    ...params,
-    client_id: clientId,
-    client_secret: clientSecret,
-    scope: graphScopeParam(),
-  });
-  const res = await fetchImpl(tenantUrl(tenantId, "token"), {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body,
-  });
-  const json = parseJsonObject(await res.text());
-  if (!res.ok) {
-    throw new MicrosoftAuthError(stringField(json, "error") ?? "token_request_failed", res.status);
-  }
-  const accessToken = stringField(json, "access_token");
-  const expiresInSec = Number(json.expires_in);
-  if (!accessToken || !Number.isFinite(expiresInSec)) {
-    throw new MicrosoftAuthError("invalid_token_response", res.status);
-  }
-  return {
-    accessToken,
-    refreshToken: stringField(json, "refresh_token"),
-    expiresInSec,
-    scope: stringField(json, "scope") ?? "",
-    idToken: stringField(json, "id_token"),
-  };
+  return postTokenRequest(
+    tenantUrl(tenantId, "token"),
+    { ...params, client_id: clientId, client_secret: clientSecret, scope: graphScopeParam() },
+    fetchImpl,
+    MicrosoftAuthError,
+  );
 }
 
 /**
@@ -172,27 +152,10 @@ async function tokenRequest(
  * arrived any other way (a browser redirect, a request body).
  */
 export function readIdTokenClaims(idToken: string): IdTokenClaims {
-  const parts = idToken.split(".");
-  const payload =
-    parts.length === 3 ? parseJsonObject(Buffer.from(parts[1], "base64url").toString("utf8")) : {};
+  const payload = readJwtPayload(idToken);
   const tenantId = stringField(payload, "tid");
   const userObjectId = stringField(payload, "oid");
   const email = stringField(payload, "preferred_username");
   if (!tenantId || !userObjectId || !email) throw new MicrosoftAuthError("invalid_id_token");
   return { tenantId, userObjectId, email };
-}
-
-/** Never throws: a JSON parse error's message quotes the text it choked on. */
-function parseJsonObject(text: string): Record<string, unknown> {
-  try {
-    const json: unknown = JSON.parse(text);
-    return typeof json === "object" && json !== null ? (json as Record<string, unknown>) : {};
-  } catch {
-    return {};
-  }
-}
-
-function stringField(obj: Record<string, unknown>, key: string): string | null {
-  const v = obj[key];
-  return typeof v === "string" && v !== "" ? v : null;
 }

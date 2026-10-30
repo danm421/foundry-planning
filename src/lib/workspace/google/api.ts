@@ -1,6 +1,7 @@
 // src/lib/workspace/google/api.ts
 import type { WorkspaceConnection } from "../connections";
 import { ProviderRequestError, ProviderThrottledError } from "../errors";
+import { MAX_BUSY_RETRIES, defaultSleep, discardBody, retryAfterMs } from "../provider-http";
 import { getAccessToken } from "./token";
 
 /** The only places a Google access token is ever sent. */
@@ -12,17 +13,12 @@ const ALLOWED_URL_PREFIXES = [
 /** Google's "busy" answers. A 403 is busy too when its reason is a rate limit. */
 const BUSY_STATUSES = new Set([429, 500, 502, 503, 504]);
 const RATE_LIMIT_REASONS = new Set(["rateLimitExceeded", "userRateLimitExceeded"]);
-const MAX_BUSY_RETRIES = 2;
-const DEFAULT_RETRY_AFTER_SEC = 1;
-const MAX_RETRY_AFTER_SEC = 5;
 
 export type GoogleContext = {
   conn: WorkspaceConnection;
   fetchImpl?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
 };
-
-const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
  * One Google Calendar or Tasks call, acting with `ctx.conn`. `url` is absolute
@@ -122,13 +118,6 @@ function withPageToken(url: string, pageToken: string): string {
   return next.toString();
 }
 
-/** `Retry-After` in seconds; 0 is valid. Missing or unparseable → the default. */
-function retryAfterMs(header: string | null): number {
-  const sec = header === null || header.trim() === "" ? NaN : Number(header);
-  const wait = Number.isFinite(sec) && sec >= 0 ? sec : DEFAULT_RETRY_AFTER_SEC;
-  return Math.min(wait, MAX_RETRY_AFTER_SEC) * 1000;
-}
-
 /** Google's `error.errors[0].reason`, or null. Never throws, and never lets the body out. */
 async function readGoogleReason(res: Response): Promise<string | null> {
   try {
@@ -138,9 +127,4 @@ async function readGoogleReason(res: Response): Promise<string | null> {
   } catch {
     return null;
   }
-}
-
-/** Frees the connection of a response we won't read before retrying. */
-async function discardBody(res: Response): Promise<void> {
-  await res.body?.cancel().catch(() => {});
 }

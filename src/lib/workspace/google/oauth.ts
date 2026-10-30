@@ -1,4 +1,5 @@
 // src/lib/workspace/google/oauth.ts
+import { discardBody, postTokenRequest, readJwtPayload, stringField, type TokenResponse } from "../provider-http";
 import type { ProviderTokenSet } from "../types";
 import {
   GOOGLE_CALENDAR_SCOPE,
@@ -106,33 +107,14 @@ export async function refreshTokens(
   return { ...tokens, refreshToken: tokens.refreshToken ?? opts.refreshToken };
 }
 
-async function tokenRequest(
-  params: Record<string, string>,
-  fetchImpl: typeof fetch,
-): Promise<Omit<ProviderTokenSet, "refreshToken"> & { refreshToken: string | null }> {
+function tokenRequest(params: Record<string, string>, fetchImpl: typeof fetch): Promise<TokenResponse> {
   const { clientId, clientSecret } = googleAppConfig();
-  const body = new URLSearchParams({ ...params, client_id: clientId, client_secret: clientSecret });
-  const res = await fetchImpl(TOKEN_URL, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body,
-  });
-  const json = parseJsonObject(await res.text());
-  if (!res.ok) {
-    throw new GoogleAuthError(stringField(json, "error") ?? "token_request_failed", res.status);
-  }
-  const accessToken = stringField(json, "access_token");
-  const expiresInSec = Number(json.expires_in);
-  if (!accessToken || !Number.isFinite(expiresInSec)) {
-    throw new GoogleAuthError("invalid_token_response", res.status);
-  }
-  return {
-    accessToken,
-    refreshToken: stringField(json, "refresh_token"),
-    expiresInSec,
-    scope: stringField(json, "scope") ?? "",
-    idToken: stringField(json, "id_token"),
-  };
+  return postTokenRequest(
+    TOKEN_URL,
+    { ...params, client_id: clientId, client_secret: clientSecret },
+    fetchImpl,
+    GoogleAuthError,
+  );
 }
 
 /**
@@ -144,9 +126,7 @@ async function tokenRequest(
  * issuer are still checked, so a token minted for another client is refused.
  */
 export function readIdTokenClaims(idToken: string): GoogleIdTokenClaims {
-  const parts = idToken.split(".");
-  const payload =
-    parts.length === 3 ? parseJsonObject(Buffer.from(parts[1], "base64url").toString("utf8")) : {};
+  const payload = readJwtPayload(idToken);
   const subject = stringField(payload, "sub");
   const email = stringField(payload, "email");
   const issuer = stringField(payload, "iss");
@@ -185,26 +165,9 @@ export async function revokeToken(token: string, fetchImpl: typeof fetch = fetch
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ token }),
     });
-    await res.body?.cancel().catch(() => {});
+    await discardBody(res);
     if (!res.ok) console.error("Google token revoke failed:", { status: res.status });
   } catch (err) {
     console.error("Google token revoke failed:", { name: err instanceof Error ? err.name : typeof err });
   }
-}
-
-/** Never throws: a JSON parse error's message quotes the text it choked on. */
-function parseJsonObject(text: string): Record<string, unknown> {
-  try {
-    const json: unknown = JSON.parse(text);
-    return typeof json === "object" && json !== null && !Array.isArray(json)
-      ? (json as Record<string, unknown>)
-      : {};
-  } catch {
-    return {};
-  }
-}
-
-function stringField(obj: Record<string, unknown>, key: string): string | null {
-  const v = obj[key];
-  return typeof v === "string" && v !== "" ? v : null;
 }

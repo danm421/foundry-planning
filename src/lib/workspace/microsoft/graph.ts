@@ -1,23 +1,19 @@
 // src/lib/workspace/microsoft/graph.ts
 import type { WorkspaceConnection } from "../connections";
 import { ProviderRequestError, ProviderThrottledError } from "../errors";
+import { MAX_BUSY_RETRIES, defaultSleep, discardBody, retryAfterMs } from "../provider-http";
 import { getAccessToken } from "./token";
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
 /** Graph's "busy" answers: throttled, unavailable, gateway timeout. */
 const BUSY_STATUSES = new Set([429, 503, 504]);
-const MAX_BUSY_RETRIES = 2;
-const DEFAULT_RETRY_AFTER_SEC = 1;
-const MAX_RETRY_AFTER_SEC = 5;
 
 export type GraphContext = {
   conn: WorkspaceConnection;
   fetchImpl?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
 };
-
-const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
  * One Graph call, acting with `ctx.conn`. `path` is relative to v1.0 and
@@ -113,13 +109,6 @@ export async function graphPages<T>(
   return items;
 }
 
-/** `Retry-After` in seconds; 0 is valid. Missing or unparseable → the default. */
-function retryAfterMs(header: string | null): number {
-  const sec = header === null || header.trim() === "" ? NaN : Number(header);
-  const wait = Number.isFinite(sec) && sec >= 0 ? sec : DEFAULT_RETRY_AFTER_SEC;
-  return Math.min(wait, MAX_RETRY_AFTER_SEC) * 1000;
-}
-
 /** Graph's `error.code`, or null. Never throws, and never lets the body out. */
 async function readGraphCode(res: Response): Promise<string | null> {
   try {
@@ -129,9 +118,4 @@ async function readGraphCode(res: Response): Promise<string | null> {
   } catch {
     return null;
   }
-}
-
-/** Frees the connection of a response we won't read before retrying. */
-async function discardBody(res: Response): Promise<void> {
-  await res.body?.cancel().catch(() => {});
 }
