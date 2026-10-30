@@ -219,7 +219,8 @@ export default function WithdrawalPolicySection({
             text="When income can't cover spending, savings and taxes, the plan sells from these accounts to make up the difference. Within a group the largest account goes first. Tax-deferred includes HSAs, which are drawn only from age 65. Required distributions, scheduled transfers, Roth conversions and goal funding run on their own."
           />
         </div>
-        {canEdit && <AutosaveStatus state={state} error={error} onRetry={retry} />}
+        {/* A held-back split hasn't saved: don't keep showing the last "Saved". */}
+        {canEdit && <AutosaveStatus state={problem ? "idle" : state} error={error} onRetry={retry} />}
       </header>
 
       <div>
@@ -240,6 +241,11 @@ export default function WithdrawalPolicySection({
           ))}
         </div>
         <p className="mt-1.5 text-[12px] text-ink-3">{METHODS.find((m) => m.id === policy.method)!.line}</p>
+        {isSplit && (
+          <p role="status" className={`mt-1 text-[12px] ${problem ? "text-crit" : "text-ink-3"}`}>
+            {problem ?? "The shares total 100%. A group that runs short passes the rest down the list."}
+          </p>
+        )}
       </div>
 
       {policy.method === "custom" ? (
@@ -252,12 +258,6 @@ export default function WithdrawalPolicySection({
             </SortableRows>
           ) : (
             groupList
-          )}
-
-          {isSplit && (
-            <p role="status" className={`text-[12px] ${problem ? "text-crit" : "text-ink-3"}`}>
-              {problem ?? "The shares total 100%. A group that runs short passes the rest down the list."}
-            </p>
           )}
 
           <div className="space-y-1.5">

@@ -130,6 +130,20 @@ describe("WithdrawalPolicySection", () => {
     await settleAutosave();
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     expect(lastSavedPolicy().splitPct).toEqual({ taxable: 0.4, tax_deferred: 0.5, roth: 0.1 });
+    await waitFor(() => expect(screen.getByText("Saved")).toBeTruthy());
+
+    // Held back again: the corner must not keep saying "Saved".
+    fireEvent.change(screen.getByLabelText(/roth share/i), { target: { value: "20" } });
+    expect(screen.queryByText("Saved")).toBeNull();
+  });
+
+  // A long account list pushes anything below it off screen.
+  it("puts the split's total above the groups, next to the method", () => {
+    renderSection({
+      policy: { method: "split", groupOrder: [...ORDER], splitPct: { taxable: 0.5, tax_deferred: 0.5 }, excludedAccountIds: [] },
+    });
+    const total = screen.getByText(/shares total 100%/);
+    expect(total.compareDocumentPosition(groupRow("Cash & savings")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("adding and removing a never-sold account saves the list", async () => {
