@@ -1,6 +1,6 @@
 // src/lib/workspace/microsoft/adapter.ts
 import type { WorkspaceProviderAdapter } from "../provider-adapter";
-import { ianaToWindows, isValidIanaZone, windowsToIana } from "../time-zones";
+import { isValidIanaZone } from "../time-zones";
 import {
   cancelEvent,
   createEvent,
@@ -10,6 +10,7 @@ import {
   readMailboxTimeZone,
 } from "./calendar";
 import type { GraphContext } from "./graph";
+import { ianaToWindows, windowsToIana } from "./time-zones";
 import { createTodo, listOpenTodos, updateTodo } from "./todo";
 
 const ctx = (conn: GraphContext["conn"]): GraphContext => ({ conn });
