@@ -51,12 +51,23 @@ export async function upsertFirmApproval(input: {
 
 /**
  * "Disconnect everyone": every advisor's connected addresses, pending
- * sign-ins and the approval, every provider, atomically.
+ * sign-ins and the approval, every provider, atomically. Resolves to the
+ * removed addresses' ids, for the audit.
  */
-export async function deleteFirmWorkspace(firmId: string): Promise<void> {
-  await db.transaction(async (tx) => {
-    await tx.delete(workspaceConnections).where(eq(workspaceConnections.firmId, firmId));
+export async function deleteFirmWorkspace(
+  firmId: string,
+): Promise<Array<{ id: string; provider: WorkspaceProvider; userId: string }>> {
+  return db.transaction(async (tx) => {
+    const removed = await tx
+      .delete(workspaceConnections)
+      .where(eq(workspaceConnections.firmId, firmId))
+      .returning({
+        id: workspaceConnections.id,
+        provider: workspaceConnections.provider,
+        userId: workspaceConnections.userId,
+      });
     await tx.delete(workspaceOauthStates).where(eq(workspaceOauthStates.firmId, firmId));
     await tx.delete(workspaceFirmApprovals).where(eq(workspaceFirmApprovals.firmId, firmId));
+    return removed;
   });
 }

@@ -24,7 +24,7 @@ beforeEach(() => {
   vi.stubEnv("WORKSPACE_ENABLED", "true");
   mocks.auth.mockResolvedValue(ADMIN);
   mocks.requireActiveSubscription.mockResolvedValue(undefined);
-  mocks.deleteFirmWorkspace.mockResolvedValue(undefined);
+  mocks.deleteFirmWorkspace.mockResolvedValue([]);
   mocks.recordAudit.mockResolvedValue(undefined);
 });
 afterEach(() => vi.unstubAllEnvs());
@@ -60,6 +60,27 @@ describe("POST /api/workspace/admin/disconnect-all", () => {
     expect(mocks.recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: "workspace.firm_disconnect", firmId: "org_1" }),
     );
+  });
+
+  it("audits each removed address by its ids, as a single admin disconnect would", async () => {
+    mocks.deleteFirmWorkspace.mockResolvedValue([
+      { id: "c1", provider: "microsoft", userId: "user_ada" },
+      { id: "c2", provider: "google", userId: "user_bo" },
+    ]);
+    expect((await POST()).status).toBe(200);
+    expect(mocks.recordAudit).toHaveBeenCalledTimes(3);
+    for (const [id, provider, userId] of [
+      ["c1", "microsoft", "user_ada"],
+      ["c2", "google", "user_bo"],
+    ]) {
+      expect(mocks.recordAudit).toHaveBeenCalledWith({
+        action: "workspace.admin_disconnect",
+        resourceType: "workspace_connection",
+        resourceId: id,
+        firmId: "org_1",
+        metadata: { provider, connectionId: id, userId },
+      });
+    }
   });
 
   it("isn't gated on the subscription", async () => {

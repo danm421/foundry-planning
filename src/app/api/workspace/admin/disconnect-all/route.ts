@@ -23,7 +23,7 @@ export async function POST(): Promise<Response> {
     const { orgId: firmId } = await requireOrgAndUser();
     if (await isImpersonating()) throw new WorkspaceImpersonationError();
 
-    await deleteFirmWorkspace(firmId);
+    const removed = await deleteFirmWorkspace(firmId);
     await recordAudit({
       action: "workspace.firm_disconnect",
       resourceType: "workspace_firm",
@@ -31,6 +31,18 @@ export async function POST(): Promise<Response> {
       firmId,
       metadata: { provider: "all" },
     });
+    // Each removed address gets the row a single admin disconnect writes.
+    await Promise.all(
+      removed.map((c) =>
+        recordAudit({
+          action: "workspace.admin_disconnect",
+          resourceType: "workspace_connection",
+          resourceId: c.id,
+          firmId,
+          metadata: { provider: c.provider, connectionId: c.id, userId: c.userId },
+        }),
+      ),
+    );
     return NextResponse.json({ ok: true });
   } catch (err) {
     return workspaceErrorResponse(err);

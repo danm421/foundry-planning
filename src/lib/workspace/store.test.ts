@@ -194,8 +194,12 @@ describe("connections", () => {
     const otherFirmId = freshFirmId();
     await seed(firmId);
     await seed(otherFirmId);
+    const ids = (await listFirmConnections(firmId)).map((c) => ({ id: c.id, provider: c.provider, userId: c.userId }));
 
-    await deleteFirmWorkspace(firmId);
+    const removed = await deleteFirmWorkspace(firmId);
+
+    expect(removed).toHaveLength(3);
+    expect(removed).toEqual(expect.arrayContaining(ids));
 
     const tables = [workspaceFirmApprovals, workspaceConnections, workspaceOauthStates];
     for (const t of tables) {
