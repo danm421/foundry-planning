@@ -149,6 +149,17 @@ describe("googleFetch", () => {
     expect(call(0).init.signal).toBe(signal);
   });
 
+  it.each([`${EVENTS_URL}/..`, `${EVENTS_URL}/.`, `${LISTS_URL}/%2e%2E/tasks`])(
+    "refuses %s (the URL would climb to a parent path) as not found, before any request",
+    async (url) => {
+      const { fetchImpl, mock } = stubFetch();
+      const { ctx } = context(connection(), fetchImpl);
+
+      await expect(googleFetch(ctx, url)).rejects.toMatchObject({ provider: "google", status: 404 });
+      expect(mock).not.toHaveBeenCalled();
+    },
+  );
+
   it("a 401 forces one refresh, stores it, and retries with the new token", async () => {
     const { fetchImpl, mock, call } = stubFetch(respond(401), respond(200, { items: [] }));
     const { ctx } = context(connection(), fetchImpl);

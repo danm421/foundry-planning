@@ -265,10 +265,4 @@ describe("cancelEvent", () => {
     expect(c.method).toBe("DELETE");
     expect(c.url.searchParams.get("sendUpdates")).toBe("all");
   });
-
-  it.each([".", ".."])("refuses the id %j (the URL would climb out of the event) as not found, before any request", async (id) => {
-    const { ctx, fetchImpl } = setup();
-    await expect(cancelEvent(ctx, id)).rejects.toMatchObject({ provider: "google", status: 404 });
-    expect(fetchImpl).not.toHaveBeenCalled();
-  });
 });

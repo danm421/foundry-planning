@@ -1,6 +1,5 @@
 // src/lib/workspace/google/tasks.ts
 import { mapLimited } from "../map-limited";
-import { idSegment } from "../provider-http";
 import type { TodoPatch } from "../provider-adapter";
 import type { WorkspaceTodo } from "../types";
 import { googleJson, googlePages, jsonInit, type GoogleContext } from "./api";
@@ -13,7 +12,7 @@ type GoogleTask = { id: string; title?: string; due?: string | null; notes?: str
 
 /** `@default` is Google's alias for the default list, a literal segment (`encodeURIComponent` would turn its `@` into `%40`). */
 const listTasksUrl = (listId: string) =>
-  `${TASKS_BASE}/lists/${listId === DEFAULT_LIST ? DEFAULT_LIST : idSegment("google", listId)}/tasks`;
+  `${TASKS_BASE}/lists/${listId === DEFAULT_LIST ? DEFAULT_LIST : encodeURIComponent(listId)}/tasks`;
 
 /** Google keeps a due date as a UTC-midnight timestamp. */
 const toDue = (date: string) => `${date}T00:00:00.000Z`;
@@ -67,6 +66,6 @@ export async function updateTodo(
     ...(patch.dueDate !== undefined ? { due: patch.dueDate === null ? null : toDue(patch.dueDate) } : {}),
     ...(patch.completed !== undefined ? { status: patch.completed ? "completed" : "needsAction" } : {}),
   };
-  const url = `${listTasksUrl(input.listId)}/${idSegment("google", input.taskId)}`;
+  const url = `${listTasksUrl(input.listId)}/${encodeURIComponent(input.taskId)}`;
   await googleJson<void>(ctx, url, jsonInit("PATCH", body));
 }

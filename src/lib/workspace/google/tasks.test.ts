@@ -72,16 +72,4 @@ describe("updateTodo", () => {
     await updateTodo(ctx, { listId: "a/b", taskId: "c d", patch: { completed: true } });
     expect(call(0).url.pathname).toBe("/tasks/v1/lists/a%2Fb/tasks/c%20d");
   });
-
-  it.each([
-    { listId: "..", taskId: "t1" },
-    { listId: "L1", taskId: "." },
-  ])("refuses a dot-segment id (%j) as not found, before any request", async (ids) => {
-    const { ctx, fetchImpl } = setup();
-    await expect(updateTodo(ctx, { ...ids, patch: { completed: true } })).rejects.toMatchObject({
-      provider: "google",
-      status: 404,
-    });
-    expect(fetchImpl).not.toHaveBeenCalled();
-  });
 });

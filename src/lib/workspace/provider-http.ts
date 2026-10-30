@@ -1,6 +1,5 @@
 // src/lib/workspace/provider-http.ts
-import { ProviderRequestError } from "./errors";
-import type { ProviderTokenSet, WorkspaceProvider } from "./types";
+import type { ProviderTokenSet } from "./types";
 
 /*
  * Plumbing the Google and Microsoft clients share. What each provider counts
@@ -23,13 +22,15 @@ export function retryAfterMs(header: string | null): number {
 }
 
 /**
- * A provider id as one URL path segment. `.` and `..` pass through
- * `encodeURIComponent`, and the URL would then climb to the parent path, so
- * they are refused as the provider's 404 before any request.
+ * True when the path (before any query) has a `.` or `..` segment, plain or
+ * percent-encoded. An event, list or task id can be one (`encodeURIComponent`
+ * leaves dots alone), and the URL parser would then climb to the parent path.
  */
-export function idSegment(provider: WorkspaceProvider, id: string): string {
-  if (id === "." || id === "..") throw new ProviderRequestError(provider, 404, null, null);
-  return encodeURIComponent(id);
+export function hasDotSegment(url: string): boolean {
+  return url
+    .split("?", 1)[0]
+    .split("/")
+    .some((segment) => /^(\.|%2e){1,2}$/i.test(segment));
 }
 
 /** Frees the connection of a response we won't read. */

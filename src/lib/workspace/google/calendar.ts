@@ -1,7 +1,6 @@
 // src/lib/workspace/google/calendar.ts
 import { randomUUID } from "node:crypto";
 import { ProviderRequestError } from "../errors";
-import { idSegment } from "../provider-http";
 import type { WallClock, WorkspaceEvent } from "../types";
 import { addDays, overlappingDays } from "../week";
 import { googleJson, googlePages, jsonInit, type GoogleContext } from "./api";
@@ -29,7 +28,7 @@ type GoogleEvent = {
   htmlLink: string;
 };
 
-const eventUrl = (id: string) => `${EVENTS_URL}/${idSegment("google", id)}`;
+const eventUrl = (id: string) => `${EVENTS_URL}/${encodeURIComponent(id)}`;
 
 /** Google's `2026-11-02T09:00:00-06:00` → `2026-11-02T09:00`; an all-day `date` → midnight. */
 const fromGoogleTime = (t: GoogleEventTime): WallClock =>

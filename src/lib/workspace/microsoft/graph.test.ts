@@ -103,6 +103,26 @@ describe("graphFetch", () => {
     expect(call(0).init.signal).toBe(signal);
   });
 
+  it.each(["/me/events/..", "/me/events/.", "/me/todo/lists/%2E%2E/tasks"])(
+    "refuses %s (the URL would climb to a parent path) as not found, before any request",
+    async (path) => {
+      const { fetchImpl, mock } = stubFetch();
+      const { ctx } = context(connection(), fetchImpl);
+
+      await expect(graphFetch(ctx, path)).rejects.toMatchObject({ provider: "microsoft", status: 404 });
+      expect(mock).not.toHaveBeenCalled();
+    },
+  );
+
+  it("lets dots inside an id or the query through", async () => {
+    const { fetchImpl, call } = stubFetch(respond(200, {}));
+    const { ctx } = context(connection(), fetchImpl);
+
+    await graphFetch(ctx, "/me/events/a..b?$filter=x/../y");
+
+    expect(call(0).url).toBe("https://graph.microsoft.com/v1.0/me/events/a..b?$filter=x/../y");
+  });
+
   it("sends no Prefer header without a time zone, and keeps the caller's method, body and headers", async () => {
     const { fetchImpl, call } = stubFetch(respond(201, { id: "e1" }));
     const { ctx } = context(connection(), fetchImpl);

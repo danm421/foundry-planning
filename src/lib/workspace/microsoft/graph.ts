@@ -1,7 +1,7 @@
 // src/lib/workspace/microsoft/graph.ts
 import type { WorkspaceConnection } from "../connections";
 import { ProviderRequestError, ProviderThrottledError } from "../errors";
-import { MAX_BUSY_RETRIES, defaultSleep, discardBody, retryAfterMs } from "../provider-http";
+import { MAX_BUSY_RETRIES, defaultSleep, discardBody, hasDotSegment, retryAfterMs } from "../provider-http";
 import { getAccessToken } from "./token";
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
@@ -22,6 +22,9 @@ export type GraphContext = {
  * starts with `/`. `timeZone` (a Windows or IANA name) asks Graph for
  * wall-clock times in that zone via `Prefer: outlook.timezone`.
  *
+ * - A `.` or `..` path segment (an id that would climb to the parent path,
+ *   e.g. `/me/events/..` is `/me`) throws `ProviderRequestError` 404 before
+ *   any request.
  * - A 401 forces one token refresh and one retry.
  * - A 429/503/504 waits `Retry-After` seconds (default 1, at most 5) and
  *   retries up to twice, then throws `ProviderThrottledError`.
@@ -35,6 +38,7 @@ export async function graphFetch(
   path: string,
   init: RequestInit & { timeZone?: string } = {},
 ): Promise<Response> {
+  if (hasDotSegment(path)) throw new ProviderRequestError("microsoft", 404, null, null);
   const { timeZone, ...requestInit } = init;
   const fetchImpl = ctx.fetchImpl ?? fetch;
   const sleep = ctx.sleep ?? defaultSleep;

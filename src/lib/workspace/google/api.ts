@@ -1,7 +1,7 @@
 // src/lib/workspace/google/api.ts
 import type { WorkspaceConnection } from "../connections";
 import { ProviderRequestError, ProviderThrottledError } from "../errors";
-import { MAX_BUSY_RETRIES, defaultSleep, discardBody, retryAfterMs } from "../provider-http";
+import { MAX_BUSY_RETRIES, defaultSleep, discardBody, hasDotSegment, retryAfterMs } from "../provider-http";
 import { getAccessToken } from "./token";
 
 /** The only places a Google access token is ever sent. */
@@ -33,7 +33,8 @@ export type GoogleContext = {
 /**
  * One Google Calendar or Tasks call, acting with `ctx.conn`. `url` is absolute
  * and must start with a Calendar v3 or Tasks v1 base; anything else throws
- * before a token is refreshed or sent.
+ * before a token is refreshed or sent. A `.` or `..` path segment (an id that
+ * would climb to the parent path) throws `ProviderRequestError` 404 there too.
  *
  * - A 401 forces one token refresh and one retry.
  * - A 429/500/502/503/504, or a 403 whose reason is `rateLimitExceeded` /
@@ -58,6 +59,7 @@ export async function googleFetch(
   if (href === null || !ALLOWED_URL_PREFIXES.some((prefix) => href.startsWith(prefix))) {
     throw new Error("Refusing to send a Google token outside the Calendar and Tasks APIs");
   }
+  if (hasDotSegment(url)) throw new ProviderRequestError("google", 404, null, null);
   const fetchImpl = ctx.fetchImpl ?? fetch;
   const sleep = ctx.sleep ?? defaultSleep;
   const isPost = init.method?.toUpperCase() === "POST";
