@@ -11,6 +11,7 @@ import TaxRatesForm from "@/components/forms/tax-rates-form";
 import GrowthInflationForm from "@/components/forms/growth-inflation-form";
 import SurplusCashFlowForm from "@/components/forms/surplus-cash-flow-form";
 import WithdrawalStrategySection from "@/components/withdrawal-strategy-section";
+import WithdrawalPolicySection from "@/components/withdrawal-policy-section";
 import type { WithdrawalAccount, WithdrawalStrategy } from "@/components/withdrawal-strategy-section";
 import type { ClientMilestones } from "@/lib/milestones";
 import { DeductionsClient } from "./deductions-client";
@@ -126,6 +127,7 @@ export default function AssumptionsClient({
   settings,
   accounts,
   withdrawalStrategies,
+  withdrawalAccounts,
   milestones,
   modelPortfolios,
   clientFirstName,
@@ -238,13 +240,22 @@ export default function AssumptionsClient({
           .filter((a) => !a.ownerEntityId)
           .map((a) => ({ id: a.id, name: a.name }))}
       />
-      <WithdrawalStrategySection
+      <WithdrawalPolicySection
         clientId={clientId}
-        accounts={accounts}
-        initialStrategies={withdrawalStrategies}
-        milestones={milestones}
-        clientFirstName={clientFirstName}
-        spouseFirstName={spouseFirstName}
+        policy={settings.withdrawalPolicy}
+        hasAccountRows={withdrawalStrategies.length > 0}
+        accounts={withdrawalAccounts}
+        accountByAccount={
+          <WithdrawalStrategySection
+            clientId={clientId}
+            accounts={accounts}
+            initialStrategies={withdrawalStrategies}
+            milestones={milestones}
+            clientFirstName={clientFirstName}
+            spouseFirstName={spouseFirstName}
+            title="Accounts, in order"
+          />
+        }
       />
     </div>
   );

@@ -53,6 +53,8 @@ interface WithdrawalStrategySectionProps {
   focusIntent?: "edit" | "create" | "delete";
   focusRowId?: string | null;
   onFocusClose?: (outcome?: FocusCloseOutcome) => void;
+  /** The header; under the withdrawal-policy section it names the list. */
+  title?: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -383,6 +385,7 @@ export default function WithdrawalStrategySection({
   focusIntent,
   focusRowId,
   onFocusClose,
+  title = "Withdrawal Strategy",
 }: WithdrawalStrategySectionProps) {
   const { permission } = useClientAccess();
   const canEdit = permission === "edit";
@@ -501,9 +504,9 @@ export default function WithdrawalStrategySection({
       <header className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-3">
-            Withdrawal Strategy
+            {title}
           </h3>
-          <HelpTip text="When household income can't cover expenses and savings, the projection pulls from these accounts in priority order. If left empty, the default order is Cash → Taxable → Tax-Deferred → Roth → Annuities, so an annuity is only surrendered as a last resort. Illiquid accounts are skipped, and an annuitized contract is never touched — that money is already with the carrier." />
+          <HelpTip text="When household income can't cover expenses and savings, the projection pulls from these accounts in priority order. If the list is empty, the plan draws In order instead. Illiquid accounts are skipped, and an annuitized contract is never touched — that money is already with the carrier." />
         </div>
         {canEdit && (
           <button
@@ -519,7 +522,7 @@ export default function WithdrawalStrategySection({
       <div className="overflow-hidden rounded-lg border border-hair bg-card">
         {sorted.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-ink-3">
-            No custom order set — the default tax-efficient order applies.
+            No accounts listed yet — the plan draws In order until you add one.
           </div>
         ) : (
           <>

@@ -332,6 +332,10 @@ describe("AssumptionsClient focus mode — Savings & Withdrawals tab", () => {
     expect(within(dialog).getByText("Savings & Withdrawals — Plan B")).toBeTruthy();
     expect(within(dialog).getByText("Withdrawal Strategy")).toBeTruthy();
     expect(within(dialog).getByText("Surplus Cash Flow")).toBeTruthy();
+    // Nothing saved and the client has rows: the account-by-account method,
+    // with the method switch above its list.
+    expect(within(dialog).getByRole("button", { name: "Account by account" }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(dialog).getByText("Accounts, in order")).toBeTruthy();
     expect(onFocusClose).not.toHaveBeenCalled();
   });
 
