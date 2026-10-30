@@ -200,6 +200,20 @@ describe("googleFetch", () => {
     expect(mock).toHaveBeenCalledTimes(2);
   });
 
+  it.each(["dailyLimitExceeded", "quotaExceeded"])(
+    "a 403 %s (a used-up quota) is busy at once: ProviderThrottledError, not retried",
+    async (reason) => {
+      const { fetchImpl, mock } = stubFetch(respond(403, googleError(403, reason)));
+      const { ctx, sleep } = context(connection(), fetchImpl);
+
+      const err = await googleFetch(ctx, EVENTS_URL).catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(ProviderThrottledError);
+      expect(mock).toHaveBeenCalledTimes(1);
+      expect(sleep).not.toHaveBeenCalled();
+    },
+  );
+
   it("any other 403 is a ProviderRequestError with Google's reason, not retried", async () => {
     const { fetchImpl, mock } = stubFetch(respond(403, googleError(403, "forbiddenForNonOrganizer")));
     const { ctx, sleep } = context(connection(), fetchImpl);

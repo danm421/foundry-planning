@@ -43,7 +43,7 @@ const PROVIDER_NAME: Record<WorkspaceProvider, string> = { microsoft: "Microsoft
 
 /**
  * The provider kept answering "busy" after our retries: Microsoft's
- * 429/503/504; Google's 429/500/502/503/504 or a rate-limit 403 (each client
+ * 429/503/504; Google's 429/500/502/503/504 or a rate-limit or quota 403 (each client
  * keeps its own set). "The provider is busy", never "nothing there".
  * `requestId` is the provider's request-id header (Google sends none).
  */

@@ -19,6 +19,8 @@ const BUSY_STATUSES = new Set([429, 500, 502, 503, 504]);
  */
 const MAYBE_DONE_STATUSES = new Set([500, 502]);
 const RATE_LIMIT_REASONS = new Set(["rateLimitExceeded", "userRateLimitExceeded"]);
+/** A 403 for a used-up quota: busy too, but a retry within seconds can't help. */
+const QUOTA_REASONS = new Set(["dailyLimitExceeded", "quotaExceeded"]);
 
 export type GoogleContext = {
   conn: WorkspaceConnection;
@@ -39,6 +41,8 @@ export type GoogleContext = {
  *   5) and retries up to twice, then throws `ProviderThrottledError`. A POST
  *   is never retried on a 500 or 502 (it may have landed); that throws
  *   `ProviderRequestError` at once.
+ * - A 403 whose reason is `dailyLimitExceeded` / `quotaExceeded` throws
+ *   `ProviderThrottledError` at once.
  * - Any other non-2xx throws `ProviderRequestError` with Google's
  *   `error.errors[0].reason`. The body is read for that reason only; it is
  *   never logged or kept. Google sends no request-id header, so it is null.
@@ -77,6 +81,9 @@ export async function googleFetch(
     // Only a 403 needs its reason to tell "rate limited" from "forbidden", but
     // reading it here also frees a busy response's connection before the retry.
     const reason = await readGoogleReason(res);
+    if (res.status === 403 && reason !== null && QUOTA_REASONS.has(reason)) {
+      throw new ProviderThrottledError("google", null);
+    }
     const busy =
       (BUSY_STATUSES.has(res.status) && !(isPost && MAYBE_DONE_STATUSES.has(res.status))) ||
       (res.status === 403 && reason !== null && RATE_LIMIT_REASONS.has(reason));
