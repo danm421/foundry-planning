@@ -25,9 +25,9 @@ vi.mock("@/lib/workspace/acting-connection", () => ({ resolveActingConnection: m
 vi.mock("@/lib/workspace/microsoft/calendar", () => ({
   getMailboxTimeZone: mocks.getMailboxTimeZone,
   listEvents: mocks.listEvents,
-  canEditEvent: mocks.canEditEvent,
   createEvent: mocks.createEvent,
 }));
+vi.mock("@/lib/workspace/provider-adapter", () => ({ canEditEvent: mocks.canEditEvent }));
 vi.mock("@/lib/workspace/client-links", () => ({
   findHouseholdsByEmail: mocks.findHouseholdsByEmail,
   linkEventHousehold: mocks.linkEventHousehold,
@@ -126,10 +126,10 @@ describe("GET /api/workspace/events", () => {
 });
 
 describe("POST /api/workspace/events", () => {
-  const valid = { subject: "Review", start: "2026-11-02T09:00", end: "2026-11-02T10:00", attendees: ["a@c.com"], teams: true };
+  const valid = { subject: "Review", start: "2026-11-02T09:00", end: "2026-11-02T10:00", attendees: ["a@c.com"], video: true };
 
-  it("passes teams through, uses the mailbox zone, returns teamsFailed, audits ids only", async () => {
-    mocks.createEvent.mockResolvedValue({ event: { id: "evt_1" }, teamsFailed: true });
+  it("passes video through, uses the mailbox zone, returns teamsFailed, audits ids only", async () => {
+    mocks.createEvent.mockResolvedValue({ event: { id: "evt_1" }, videoFailed: true });
     const res = await post(valid);
     expect(res.status).toBe(201);
     expect(await res.json()).toEqual({ event: { id: "evt_1" }, teamsFailed: true });

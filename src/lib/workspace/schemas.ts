@@ -13,7 +13,7 @@ export const createEventSchema = z
     start: wallClockSchema,
     end: wallClockSchema,
     attendees: z.array(z.string().email()).max(50).default([]),
-    teams: z.boolean().default(false),
+    video: z.boolean().default(false),
   })
   .strict()
   .refine(endAfterStart, END_AFTER_START);

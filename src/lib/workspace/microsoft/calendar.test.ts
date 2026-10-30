@@ -1,10 +1,8 @@
 // src/lib/workspace/microsoft/calendar.test.ts
 import { describe, it, expect, vi } from "vitest";
 import type { WorkspaceConnection } from "../connections";
-import type { WorkspaceEvent } from "../types";
 import type { GraphContext } from "./graph";
 import {
-  canEditEvent,
   cancelEvent,
   createEvent,
   getEventForEdit,
@@ -98,6 +96,7 @@ describe("listEvents", () => {
     expect(url.searchParams.get("endDateTime")).toBe("2026-11-03T00:00:00");
     expect(url.searchParams.get("$top")).toBe("250");
     expect(url.searchParams.get("$select")).toContain("onlineMeeting");
+    expect(url.searchParams.get("$select")).toContain("iCalUId");
     expect(sent.headers.get("prefer")).toBe('outlook.timezone="Eastern Standard Time"');
   });
 
@@ -183,15 +182,6 @@ describe("listEvents", () => {
   });
 });
 
-describe("canEditEvent", () => {
-  const base = { isOrganizer: true, isCancelled: false } as WorkspaceEvent;
-  it("is true only for a live event the advisor organizes", () => {
-    expect(canEditEvent(base)).toBe(true);
-    expect(canEditEvent({ ...base, isOrganizer: false })).toBe(false);
-    expect(canEditEvent({ ...base, isCancelled: true })).toBe(false);
-  });
-});
-
 describe("getEventForEdit", () => {
   it("reports organizer and whether there are attendees", async () => {
     const { ctx, call } = setup(json({ isOrganizer: true, attendees: [{}] }));
@@ -206,7 +196,7 @@ describe("createEvent", () => {
     start: "2026-10-28T14:00",
     end: "2026-10-28T15:00",
     attendees: ["c@x.test"],
-    teams: true,
+    video: true,
     timeZone: "Eastern Standard Time",
   };
 
@@ -214,7 +204,7 @@ describe("createEvent", () => {
     const { ctx, call } = setup(json({ allowedOnlineMeetingProviders: ["teamsForBusiness"] }), json(graphEvent(), 201));
     const out = await createEvent(ctx, input);
 
-    expect(out.teamsFailed).toBe(false);
+    expect(out.videoFailed).toBe(false);
     expect(call(0).url).toContain("allowedOnlineMeetingProviders");
     const post = call(1);
     expect(post.method).toBe("POST");
@@ -230,16 +220,16 @@ describe("createEvent", () => {
     const { ctx, call } = setup(json({ allowedOnlineMeetingProviders: ["unknown"] }), json(graphEvent(), 201));
     const out = await createEvent(ctx, input);
 
-    expect(out.teamsFailed).toBe(true);
+    expect(out.videoFailed).toBe(true);
     expect(call(1).body).not.toHaveProperty("isOnlineMeeting");
     expect(call(1).body).not.toHaveProperty("onlineMeetingProvider");
   });
 
   it("does not look up providers when Teams is not requested", async () => {
     const { ctx, fetchImpl } = setup(json(graphEvent(), 201));
-    const out = await createEvent(ctx, { ...input, teams: false });
+    const out = await createEvent(ctx, { ...input, video: false });
 
-    expect(out.teamsFailed).toBe(false);
+    expect(out.videoFailed).toBe(false);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });

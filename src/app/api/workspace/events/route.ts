@@ -7,7 +7,8 @@ import { parseBody } from "@/lib/schemas/common";
 import { findHouseholdsByEmail, linkEventHousehold } from "@/lib/workspace/client-links";
 import { resolveActingConnection } from "@/lib/workspace/acting-connection";
 import { isWorkspaceEnabled } from "@/lib/workspace/flag";
-import { canEditEvent, createEvent, getMailboxTimeZone, listEvents } from "@/lib/workspace/microsoft/calendar";
+import { createEvent, getMailboxTimeZone, listEvents } from "@/lib/workspace/microsoft/calendar";
+import { canEditEvent } from "@/lib/workspace/provider-adapter";
 import type { GraphContext } from "@/lib/workspace/microsoft/graph";
 import { workspaceErrorResponse } from "@/lib/workspace/route-errors";
 import { createEventSchema } from "@/lib/workspace/schemas";
@@ -64,7 +65,7 @@ export async function POST(req: Request): Promise<Response> {
     const conn = await resolveActingConnection({ firmId, actorUserId: userId, provider: "microsoft" });
     const ctx: GraphContext = { conn };
     const timeZone = await getMailboxTimeZone(ctx);
-    const { event, teamsFailed } = await createEvent(ctx, { ...parsed.data, timeZone });
+    const { event, videoFailed } = await createEvent(ctx, { ...parsed.data, timeZone });
 
     await recordAudit({
       action: "workspace.event_create",
@@ -73,7 +74,7 @@ export async function POST(req: Request): Promise<Response> {
       firmId,
       metadata: { eventId: event.id },
     });
-    return NextResponse.json({ event, teamsFailed }, { status: 201 });
+    return NextResponse.json({ event, teamsFailed: videoFailed }, { status: 201 });
   } catch (err) {
     return workspaceErrorResponse(err);
   }

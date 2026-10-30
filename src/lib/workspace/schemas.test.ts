@@ -4,7 +4,7 @@ import { createEventSchema, createTodoSchema, moveEventSchema, updateTodoSchema 
 describe("workspace schemas", () => {
   it("createEvent applies defaults and trims the subject", () => {
     const r = createEventSchema.parse({ subject: "  Review ", start: "2026-11-02T09:00", end: "2026-11-02T10:00" });
-    expect(r).toEqual({ subject: "Review", start: "2026-11-02T09:00", end: "2026-11-02T10:00", attendees: [], teams: false });
+    expect(r).toEqual({ subject: "Review", start: "2026-11-02T09:00", end: "2026-11-02T10:00", attendees: [], video: false });
   });
   it("rejects end <= start, bad emails, and offset-bearing times", () => {
     const base = { subject: "x", start: "2026-11-02T09:00", end: "2026-11-02T10:00" };

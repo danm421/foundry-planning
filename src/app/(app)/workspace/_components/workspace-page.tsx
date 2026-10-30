@@ -269,7 +269,7 @@ export function WorkspacePage({
       start: d.start,
       end: d.end,
       attendees: d.attendees,
-      teams: d.teams,
+      video: d.teams,
     });
     if (!r.ok) {
       if (!r.pane) throw new Error("create failed"); // the dialog says so and stays open

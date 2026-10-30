@@ -56,9 +56,13 @@ const eventPath = (id: string) => `/me/events/${encodeURIComponent(id)}`;
  * mailbox never opened in Outlook has none yet and Graph answers 204; UTC is
  * what Graph itself uses until one is set.
  */
-export async function getMailboxTimeZone(ctx: GraphContext): Promise<string> {
+export async function readMailboxTimeZone(ctx: GraphContext): Promise<string | null> {
   const res = await graphJson<{ value?: string } | undefined>(ctx, "/me/mailboxSettings/timeZone");
-  return res?.value || "UTC";
+  return res?.value || null;
+}
+
+export async function getMailboxTimeZone(ctx: GraphContext): Promise<string> {
+  return (await readMailboxTimeZone(ctx)) ?? "UTC";
 }
 
 /** Non-cancelled events overlapping `[startDate, startDate + days)` local days, as wall-clock times in `timeZone`. */
@@ -83,11 +87,6 @@ export async function listEvents(
     .filter((e) => e.start < hi && e.end > lo);
 }
 
-/** Only an organizer can change a live event. */
-export function canEditEvent(e: WorkspaceEvent): boolean {
-  return e.isOrganizer && !e.isCancelled;
-}
-
 /** Fresh organizer/attendee facts, read just before an edit. */
 export async function getEventForEdit(
   ctx: GraphContext,
@@ -100,7 +99,7 @@ export async function getEventForEdit(
   return { isOrganizer: e.isOrganizer, hasAttendees: (e.attendees ?? []).length > 0 };
 }
 
-/** Creates an event; with `teams`, adds a Teams meeting when the calendar allows it. */
+/** Creates an event; with `video`, adds a Teams meeting when the calendar allows it. */
 export async function createEvent(
   ctx: GraphContext,
   input: {
@@ -108,12 +107,12 @@ export async function createEvent(
     start: WallClock;
     end: WallClock;
     attendees: string[];
-    teams: boolean;
+    video: boolean;
     timeZone: string;
   },
-): Promise<{ event: WorkspaceEvent; teamsFailed: boolean }> {
+): Promise<{ event: WorkspaceEvent; videoFailed: boolean }> {
   let teamsAllowed = false;
-  if (input.teams) {
+  if (input.video) {
     const cal = await graphJson<{ allowedOnlineMeetingProviders?: string[] }>(
       ctx,
       "/me/calendar?$select=allowedOnlineMeetingProviders",
@@ -128,7 +127,7 @@ export async function createEvent(
     ...(teamsAllowed ? { isOnlineMeeting: true, onlineMeetingProvider: "teamsForBusiness" } : {}),
   };
   const created = await graphJson<GraphEvent>(ctx, "/me/events", jsonInit("POST", body, input.timeZone));
-  return { event: toWorkspaceEvent(created), teamsFailed: input.teams && !teamsAllowed };
+  return { event: toWorkspaceEvent(created), videoFailed: input.video && !teamsAllowed };
 }
 
 /** Moves an event; Outlook notifies the attendees. */

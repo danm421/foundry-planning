@@ -696,7 +696,7 @@ describe("WorkspacePage — creating a meeting", () => {
       start: "2026-10-29T15:00",
       end: "2026-10-29T15:30",
       attendees: [],
-      teams: true,
+      video: true,
     });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await waitFor(() => expect(weekReads()).toHaveLength(2));
