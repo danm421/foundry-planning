@@ -10,6 +10,7 @@ import {
   WorkspaceReconnectRequiredError,
 } from "./errors";
 import { MicrosoftAuthError } from "./microsoft/oauth";
+import { GoogleAuthError } from "./google/oauth";
 
 async function read(res: Response): Promise<{ status: number; body: unknown }> {
   return { status: res.status, body: await res.json() };
@@ -48,8 +49,8 @@ describe("workspaceErrorResponse", () => {
     });
   });
 
-  it("(Review Focus 2) ProviderThrottledError → 503 throttled", async () => {
-    expect(await read(workspaceErrorResponse(new ProviderThrottledError("microsoft", null)))).toEqual({
+  it.each(["microsoft", "google"] as const)("(Review Focus 2) ProviderThrottledError (%s) → 503 throttled", async (provider) => {
+    expect(await read(workspaceErrorResponse(new ProviderThrottledError(provider, null)))).toEqual({
       status: 503,
       body: { error: "throttled" },
     });
@@ -91,6 +92,18 @@ describe("workspaceErrorResponse", () => {
     expect(logged()).toContain("req-400");
   });
 
+  it("a Google ProviderRequestError logs its provider and status", async () => {
+    const res = workspaceErrorResponse(new ProviderRequestError("google", 400, "badRequest", null));
+
+    expect(await read(res)).toEqual({ status: 500, body: { error: "Internal server error" } });
+    expect(consoleError).toHaveBeenCalledWith(expect.any(String), {
+      name: "ProviderRequestError",
+      provider: "google",
+      status: 400,
+      requestId: null,
+    });
+  });
+
   it("an unknown error → 500, logging its name and never its message", async () => {
     // A rethrown DB error's message carries query parameters (encrypted tokens, email).
     const dbError = new Error('Failed query: update "workspace_connections" params: v1:secret-ciphertext');
@@ -114,7 +127,22 @@ describe("workspaceErrorResponse", () => {
     const res = workspaceErrorResponse(new MicrosoftAuthError("invalid_client", 401));
 
     expect(await read(res)).toEqual({ status: 500, body: { error: "Internal server error" } });
-    expect(consoleError).toHaveBeenCalledWith(expect.any(String), { name: "MicrosoftAuthError", code: "invalid_client" });
+    expect(consoleError).toHaveBeenCalledWith(expect.any(String), {
+      name: "MicrosoftAuthError",
+      provider: "microsoft",
+      code: "invalid_client",
+    });
+  });
+
+  it("a Google sign-in failure → 500, logging Google's short code and never its description", async () => {
+    const res = workspaceErrorResponse(new GoogleAuthError("invalid_client", 401));
+
+    expect(await read(res)).toEqual({ status: 500, body: { error: "Internal server error" } });
+    expect(consoleError).toHaveBeenCalledWith(expect.any(String), {
+      name: "GoogleAuthError",
+      provider: "google",
+      code: "invalid_client",
+    });
   });
 
   it("a thrown non-Error → 500 without crashing the mapper", async () => {

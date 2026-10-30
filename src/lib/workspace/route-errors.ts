@@ -7,7 +7,9 @@ import {
   WorkspaceNotConnectedError,
   WorkspaceReconnectRequiredError,
 } from "./errors";
+import { GoogleAuthError } from "./google/oauth";
 import { MicrosoftAuthError } from "./microsoft/oauth";
+import type { WorkspaceProvider } from "./types";
 
 /**
  * Shared error mapper for `/api/workspace/*` route handlers:
@@ -15,15 +17,14 @@ import { MicrosoftAuthError } from "./microsoft/oauth";
  * - `WorkspaceNotConnectedError` → 409 `{ error: <pane state> }`
  * - `WorkspaceReconnectRequiredError` → 409 `{ error: "needs_reconnect" }`
  *   (the pane shows "Needs to reconnect", never an empty week)
- * - `ProviderThrottledError` → 503 `{ error: "throttled" }` ("Microsoft is busy",
+ * - `ProviderThrottledError` → 503 `{ error: "throttled" }` ("the provider is busy",
  *   never "no meetings")
  * - `ProviderRequestError` 403 / 404 → the same status, `not_allowed` / `not_found`
  * - access denials → `authErrorResponse`
- * - anything else → 500, logging only the error's name plus, for a Graph
- *   error, its status and `request-id`, and for a Microsoft sign-in error its
- *   short code (`invalid_client` is an expired secret, not an outage). Never
- *   `err.message`: a rethrown DB error's message carries query parameters
- *   (encrypted tokens, email, Microsoft user id).
+ * - anything else → 500, logging only `safeErrorFields` (`invalid_client` is
+ *   an expired secret, not an outage). Never `err.message`: a rethrown DB
+ *   error's message carries query parameters (encrypted tokens, email,
+ *   provider user id).
  */
 export function workspaceErrorResponse(err: unknown): Response {
   const denial = authErrorResponse(err);
@@ -50,19 +51,25 @@ export function workspaceErrorResponse(err: unknown): Response {
 }
 
 /**
- * The error's name plus, for a Graph error, its status and `request-id`, and
- * for a Microsoft sign-in error its short `code`: all a log line may carry.
+ * All a log line may carry: the error's name; for a provider error, the
+ * provider plus a request error's status and request id; for a sign-in error,
+ * the provider and its short `code`.
  */
 export function safeErrorFields(err: unknown): {
   name: string;
+  provider?: WorkspaceProvider;
   status?: number;
   requestId?: string | null;
   code?: string;
 } {
   return {
     name: err instanceof Error ? err.name : typeof err,
-    ...(err instanceof ProviderRequestError ? { status: err.status, requestId: err.requestId } : {}),
-    ...(err instanceof MicrosoftAuthError ? { code: err.code } : {}),
+    ...(err instanceof ProviderThrottledError ? { provider: err.provider } : {}),
+    ...(err instanceof ProviderRequestError
+      ? { provider: err.provider, status: err.status, requestId: err.requestId }
+      : {}),
+    ...(err instanceof MicrosoftAuthError ? { provider: "microsoft" as const, code: err.code } : {}),
+    ...(err instanceof GoogleAuthError ? { provider: "google" as const, code: err.code } : {}),
   };
 }
 
