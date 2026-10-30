@@ -88,11 +88,16 @@ describe("GET /api/workspace/todos", () => {
     expect(mocks.readTodos).not.toHaveBeenCalled();
   });
 
-  it("a connection store failure is a 500 that logs its name only, never its message", async () => {
+  it("a connection that can't be read (e.g. a token that won't decrypt) never hides Foundry tasks, and logs its name only", async () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    mocks.listActingConnections.mockRejectedValue(new Error("secret detail"));
-    expect((await GET()).status).toBe(500);
+    mocks.listActingConnections.mockRejectedValue(new Error("Unsupported state: secret detail"));
+    const res = await GET();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ foundry: FOUNDRY, accounts: [], blocked: null });
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(spy.mock.calls)).toContain("Error");
     expect(JSON.stringify(spy.mock.calls)).not.toContain("secret detail");
+    expect(mocks.readTodos).not.toHaveBeenCalled();
   });
 
   it("is 500 when the Foundry side fails", async () => {

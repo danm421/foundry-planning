@@ -12,15 +12,17 @@ import { isWorkspaceEnabled } from "@/lib/workspace/flag";
 import type { GraphContext } from "@/lib/workspace/microsoft/graph";
 import { createTodo } from "@/lib/workspace/microsoft/todo";
 import { readTodos } from "@/lib/workspace/readers";
-import { workspaceErrorResponse } from "@/lib/workspace/route-errors";
+import { safeErrorFields, workspaceErrorResponse } from "@/lib/workspace/route-errors";
 import { createTodoSchema } from "@/lib/workspace/schemas";
 
 export const dynamic = "force-dynamic";
 
 /**
  * Every connected account's open to-dos, or that account's error. An
- * impersonation session reads no account, and says so as `blocked`, so the
- * Foundry tasks beside them still load.
+ * impersonation session reads no account, and says so as `blocked`. Any other
+ * failure to list the accounts (e.g. a row whose token won't decrypt) is
+ * logged by name only and reads as no accounts, so the Foundry tasks beside
+ * them still load.
  */
 async function loadAccounts(
   firmId: string,
@@ -31,7 +33,8 @@ async function loadAccounts(
     return { accounts: await readTodos({ connections }), blocked: null };
   } catch (err) {
     if (err instanceof WorkspaceImpersonationError) return { accounts: [], blocked: "impersonating" };
-    throw err;
+    console.error("Workspace to-dos: accounts failed:", safeErrorFields(err));
+    return { accounts: [], blocked: null };
   }
 }
 
