@@ -11,14 +11,8 @@ import {
   type DistributionRow,
   type MonthlyMode,
 } from "@/lib/solver/monthly-distributions";
-import { BasisButton } from "./solver-monthly-cash-flow-panel";
 import { MonthlyModeSwitch } from "./solver-monthly-mode-switch";
-
-const fmt = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
+import { BasisButton, fmt } from "./solver-monthly-shared";
 
 /** Under a dollar a month a line would print as "$0" or be float dust. */
 const MIN_LINE = 1;
@@ -266,10 +260,13 @@ export const SolverMonthlyDistributionsPanel = memo(
                     <Row
                       label={
                         <>
-                          {g.name}{" "}
-                          <span className="text-ink-3">
-                            ← {g.setAsideAccountNames.join(", ")}
-                          </span>
+                          {g.name}
+                          {g.setAsideAccountNames.length > 0 && (
+                            <span className="text-ink-3">
+                              {" "}
+                              ← {g.setAsideAccountNames.join(", ")}
+                            </span>
+                          )}
                         </>
                       }
                       amount={fmt.format(g.fromSetAside)}

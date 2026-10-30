@@ -23,7 +23,7 @@ import {
 import { colorsLight, dataLight } from "@/brand";
 import { PRESENTATION_THEME } from "../../theme";
 import type { ChartSpec } from "../../charts/types";
-import { filterYearsToRange, type RangeOption } from "../../shared/year-filter";
+import { filterYearsToRange } from "../../shared/year-filter";
 import { buildMarkers } from "../../shared/markers";
 import type { TableMarker } from "../../types";
 import { buildDrillChartSpec, type DrillStackSeries } from "../../shared/build-chart-spec";
@@ -134,7 +134,7 @@ export function buildMonthlyCashFlowPageData(
     };
   }
 
-  const visibleYears = filterYearsToRange(years, options.range as RangeOption);
+  const visibleYears = filterYearsToRange(years, options.range);
   const visible = new Set(visibleYears.map((y) => y.year));
   const rowsInRange = allRows.filter((r) => visible.has(r.year));
 
@@ -185,7 +185,7 @@ function buildDistributionsBranch(
   const allRows = buildMonthlyDistributionRows(years, clientData, options.basis);
   const summary = allRows.find((r) => r.year === captionYear) ?? allRows[0] ?? null;
 
-  const visible = new Set(filterYearsToRange(years, options.range as RangeOption).map((y) => y.year));
+  const visible = new Set(filterYearsToRange(years, options.range).map((y) => y.year));
   const rows = allRows.filter((r) => visible.has(r.year));
   // One ranking for the table and the chart, so both roll the same accounts
   // into "Other accounts".
@@ -244,10 +244,9 @@ function distributionsChartSpec(
       : []),
   ];
   // Ids come from the label, which can collide when two accounts share a name.
-  stacks.forEach((s, i) => (s.seriesId = `${s.seriesId}-${i}`));
   return buildDrillChartSpec({
     years: rows.map((r) => r.year),
-    stacks,
+    stacks: stacks.map((s, i) => ({ ...s, seriesId: `${s.seriesId}-${i}` })),
     lines: [
       {
         seriesId: "spending-need",

@@ -10,12 +10,7 @@ import {
 import type { MonthRow } from "@/lib/solver/monthly-allocation";
 import type { MonthlyMode } from "@/lib/solver/monthly-distributions";
 import { MonthlyModeSwitch } from "./solver-monthly-mode-switch";
-
-const fmt = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
+import { BasisButton, fmt } from "./solver-monthly-shared";
 
 /** Below a dollar a month the leftover is float dust that would render as "$0".
  *  Above it, it is a real number the parts could not account for and it gets
@@ -325,31 +320,6 @@ export const SolverMonthlyCashFlowPanel = memo(function SolverMonthlyCashFlowPan
     </div>
   );
 });
-
-export function BasisButton({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={`rounded border px-2 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-accent ${
-        active
-          ? "border-accent font-medium text-accent"
-          : "border-transparent text-ink-3 hover:text-ink"
-      }`}
-    >
-      {label}
-    </button>
-  );
-}
 
 function Line({
   label,

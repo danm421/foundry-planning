@@ -1,7 +1,7 @@
 "use client";
 
 import type { MonthlyMode } from "@/lib/solver/monthly-distributions";
-import { BasisButton } from "./solver-monthly-cash-flow-panel";
+import { BasisButton } from "./solver-monthly-shared";
 
 /** Cash flow / Distributions, shared by both Monthly panels. */
 export function MonthlyModeSwitch({

@@ -310,7 +310,11 @@ export function DistributionsCard({ row: r }: { row: DistributionRow }) {
               {r.goals.map((g) => (
                 <View key={g.goalId}>
                   <Row
-                    label={`${g.name} ← ${g.setAsideAccountNames.join(", ")}`}
+                    label={
+                      g.setAsideAccountNames.length > 0
+                        ? `${g.name} ← ${g.setAsideAccountNames.join(", ")}`
+                        : g.name
+                    }
                     amount={money(g.fromSetAside)}
                   />
                   {g.fromGeneral >= MIN_LINE && (
