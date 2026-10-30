@@ -371,18 +371,20 @@ export function SolverChartPanel({
 
   const [monthlyView, setMonthlyView] = useState<"plan" | "months">("months");
 
-  // Cash flow or Distributions. Until the advisor picks one, the report opens on
-  // Distributions when the year it opens on is a retirement year. That year is
-  // `selectMonthlyRow(monthlyRows, null)`, never `selectedYear`, so clicking a
-  // year can never flip the mode on its own.
+  // Cash flow or Distributions, decided ONCE: the first time the Monthly
+  // sub-tab renders with a projection, it opens on Distributions when the year
+  // it captions (`selectMonthlyRow(monthlyRows, selectedYear)`) is a retirement
+  // year. After that only the advisor changes it — never a year click, a lever
+  // edit or a recompute (spec: "never flips the switch on its own"). Set during
+  // render, so the first paint already shows the decided mode.
   const [monthlyModeChoice, setMonthlyModeChoice] = useState<MonthlyMode | null>(null);
-  const openingYearIsRetired = useMemo(() => {
-    const opening = selectMonthlyRow(monthlyRows, null);
+  let monthlyMode: MonthlyMode = monthlyModeChoice ?? "cashflow";
+  if (monthlyModeChoice === null && isMonthlySubTab && monthlyRows.length > 0) {
+    const opening = selectMonthlyRow(monthlyRows, selectedYear);
     const year = opening ? currentProjection.find((p) => p.year === opening.year) : undefined;
-    return year ? isRetirementYear(year, workingTree.client) : false;
-  }, [monthlyRows, currentProjection, workingTree.client]);
-  const monthlyMode: MonthlyMode =
-    monthlyModeChoice ?? (openingYearIsRetired ? "distributions" : "cashflow");
+    monthlyMode = year && isRetirementYear(year, workingTree.client) ? "distributions" : "cashflow";
+    setMonthlyModeChoice(monthlyMode);
+  }
 
   // One row set for the Distributions chart and panel (they rank accounts from
   // the same rows). Built only on the Monthly sub-tab in Distributions mode.

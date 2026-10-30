@@ -308,6 +308,7 @@ function ControlledPanel({
   mutations = [],
   currentProjection = [] as ProjectionYear[],
   tree = workingTree,
+  initialSelectedYear = null,
 }: {
   initialReport?: ReportKey;
   computeStatus?: "fresh" | "stale" | "computing" | "error";
@@ -317,10 +318,11 @@ function ControlledPanel({
   mutations?: SolverMutation[];
   currentProjection?: ProjectionYear[];
   tree?: ClientData;
+  initialSelectedYear?: number | null;
 }) {
   const [activeReport, setActiveReport] = useState<ReportKey>(initialReport);
   const [cashflowSubTab, setCashflowSubTab] = useState<CashflowSubTab>("cashflow");
-  const [selectedYear, setSelectedYear] = useState<number | null>(null);
+  const [selectedYear, setSelectedYear] = useState<number | null>(initialSelectedYear);
   return (
     <SolverChartPanel
       currentProjection={currentProjection}
@@ -864,15 +866,17 @@ describe("SolverChartPanel", () => {
       client: { ...workingTree.client, retirementAge: 67 },
     } as unknown as ClientData;
 
-    async function openMonthly(tree: ClientData) {
-      render(
+    async function openMonthly(tree: ClientData, initialSelectedYear: number | null = null) {
+      const utils = render(
         <ControlledPanel
           initialReport="cashflow"
           currentProjection={agedProjection}
           tree={tree}
+          initialSelectedYear={initialSelectedYear}
         />,
       );
       await userEvent.click(screen.getByRole("button", { name: "Monthly" }));
+      return utils;
     }
 
     it("opens on Distributions when the opening year is a retirement year", async () => {
@@ -937,6 +941,30 @@ describe("SolverChartPanel", () => {
       await userEvent.click(screen.getByRole("button", { name: "cash click 2027" }));
       expect(screen.getByTestId("panel-monthly")).toBeInTheDocument();
       expect(screen.queryByTestId("panel-distributions")).not.toBeInTheDocument();
+    });
+
+    it("decides from the year the report captions — a selected retirement year opens Distributions", async () => {
+      // Arriving with 2027 selected: the report captions 2027, the first
+      // year this household is retired, so it opens on Distributions…
+      await openMonthly(retiresIn2027Tree, 2027);
+      expect(screen.getByTestId("panel-distributions")).toBeInTheDocument();
+    });
+
+    it("…and with a working year selected, Cash flow", async () => {
+      await openMonthly(retiresIn2027Tree, 2026);
+      expect(screen.getByTestId("panel-monthly")).toHaveTextContent("mode:cashflow");
+    });
+
+    it("never flips on its own after opening — not on a recompute that changes the opening year", async () => {
+      const { rerender } = await openMonthly(retiredTree);
+      expect(screen.getByTestId("panel-distributions")).toBeInTheDocument();
+      // A lever edit recomputes the plan: the household now works through
+      // every year shown. The report stays where it opened.
+      rerender(
+        <ControlledPanel initialReport="cashflow" currentProjection={agedProjection} tree={workingTree} />,
+      );
+      expect(screen.getByTestId("panel-distributions")).toBeInTheDocument();
+      expect(screen.queryByTestId("panel-monthly")).not.toBeInTheDocument();
     });
 
     it("keeps a chosen mode when another year is clicked", async () => {
