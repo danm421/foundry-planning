@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactElement } from "react";
+import { useId, useState, type ReactElement } from "react";
 import { useDismissableMenu } from "@/lib/use-dismissable-menu";
 import { MAX_ACCOUNTS_PER_ADVISOR } from "@/lib/workspace/accounts";
 import type { AccountSummary } from "@/lib/workspace/types";
@@ -18,7 +18,12 @@ const SMALL_BUTTON =
 /**
  * The connected addresses above the week. One address keeps the plain
  * "Connected as … · Disconnect" line; two or more become a row of chips, each
- * with its own menu. Either way `+ Add account` opens the connect menu.
+ * with its own menu. Either way `+ Add account` opens the connect panel.
+ *
+ * Below md a panel anchored under its trigger can run off a phone screen, so
+ * every panel here hangs from this bar's left edge instead (the bar is
+ * `relative`, the triggers' wrappers only `md:relative`). From md up the to-do
+ * column to the right leaves room for it under the trigger.
  */
 export function AccountBar({
   accounts,
@@ -43,7 +48,6 @@ export function AccountBar({
   googleClientId: string | null;
 }): ReactElement {
   const sole = accounts.length === 1 ? accounts[0] : null;
-  // `relative`: below md the Add account panel hangs from this bar (see AddAccountMenu).
   return (
     <div className="relative flex flex-wrap items-center gap-2">
       {sole ? (
@@ -69,7 +73,7 @@ export function AccountBar({
           />
         ))
       )}
-      <AddAccountMenu
+      <AddAccountPanel
         atCap={accounts.length >= MAX_ACCOUNTS_PER_ADVISOR}
         googleEnabled={googleEnabled}
         itApprovalUrl={itApprovalUrl}
@@ -94,7 +98,7 @@ function AccountChip({
 }): ReactElement {
   const { open, setOpen, ref } = useDismissableMenu<HTMLDivElement>();
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="md:relative">
       <button
         type="button"
         aria-haspopup="menu"
@@ -107,6 +111,8 @@ function AccountChip({
           <span aria-hidden className="size-1.5 rounded-full bg-warn" />
         ) : null}
         {label}
+        {/* The strike-through says it to the eye; this says it aloud. */}
+        {isHidden ? <span className="sr-only"> (hidden)</span> : null}
         {account.status === "needs_reconnect" ? <span className="sr-only"> (needs to reconnect)</span> : null}
       </button>
       {open ? (
@@ -144,7 +150,7 @@ function AccountChip({
   );
 }
 
-function AddAccountMenu({
+function AddAccountPanel({
   atCap,
   googleEnabled,
   itApprovalUrl,
@@ -156,33 +162,34 @@ function AddAccountMenu({
   googleClientId: string | null;
 }): ReactElement {
   const { open, setOpen, ref } = useDismissableMenu<HTMLDivElement>();
-  // Plain anchors: the connect routes answer with a redirect to the provider.
+  const panelId = useId();
+  // A disclosure, not a menu: the panel holds help text and Copy buttons a
+  // screen reader's menu mode would skip. Its connect entries are plain links
+  // (the routes answer with a redirect to the provider).
   const item = (label: string, href: string) =>
     atCap ? (
-      <span key={label} role="menuitem" aria-disabled="true" className={`${ITEM} cursor-not-allowed opacity-50 hover:bg-transparent hover:text-ink-2`}>
+      <span key={label} aria-disabled="true" className={`${ITEM} cursor-not-allowed opacity-50 hover:bg-transparent hover:text-ink-2`}>
         {label}
       </span>
     ) : (
-      <a key={label} role="menuitem" href={href} className={ITEM}>
+      <a key={label} href={href} className={ITEM}>
         {label}
       </a>
     );
-  // Below md, a panel anchored under the trigger can run off a phone screen, so
-  // it hangs from the bar's left edge, at most the bar's width. From md up the
-  // to-do column to the right leaves room for it under the trigger.
+  // At most the bar's width below md (see AccountBar).
   return (
     <div ref={ref} className="md:relative">
       <button
         type="button"
-        aria-haspopup="menu"
         aria-expanded={open}
+        aria-controls={open ? panelId : undefined}
         onClick={() => setOpen((v) => !v)}
         className={`inline-flex h-7 items-center rounded-full border border-hair-2 px-2.5 text-[12px] text-ink-2 hover:border-ink-4 hover:text-ink ${FOCUS}`}
       >
         + Add account
       </button>
       {open ? (
-        <div role="menu" className={`${PANEL} w-[min(340px,100%)] md:w-[340px]`}>
+        <div id={panelId} className={`${PANEL} w-[min(340px,100%)] md:w-[340px]`}>
           {googleEnabled ? item("Google", GOOGLE_CONNECT_URL) : null}
           {item("Microsoft 365", MICROSOFT_CONNECT_URL)}
           {atCap ? (

@@ -32,13 +32,17 @@ export function normalizeUid(uid: string): string {
 /**
  * A meeting on two of an advisor's calendars should show once. Events group by
  * normalized UID plus start; the organizer's copy wins, otherwise the account
- * listed first. Events with no UID, or with two copies inside one account
- * (separate events that happen to share a UID), are never merged.
+ * listed first. Events with no UID (or one that normalizes to nothing), or
+ * with two copies inside one account (separate events that happen to share a
+ * UID), are never merged.
  */
 export function dedupeEvents<
   E extends { iCalUid: string | null; start: string; isOrganizer: boolean; connectionId: string },
 >(events: E[], accountOrder: string[]): E[] {
-  const keyOf = (e: E) => (e.iCalUid ? `${normalizeUid(e.iCalUid)}|${e.start}` : null);
+  const keyOf = (e: E) => {
+    const uid = e.iCalUid && normalizeUid(e.iCalUid);
+    return uid ? `${uid}|${e.start}` : null;
+  };
   const groups = new Map<string, E[]>();
   for (const e of events) {
     const key = keyOf(e);

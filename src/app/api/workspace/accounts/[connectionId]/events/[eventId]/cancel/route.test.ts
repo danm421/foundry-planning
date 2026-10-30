@@ -64,6 +64,8 @@ describe("POST /api/workspace/accounts/[connectionId]/events/[eventId]/cancel", 
   it("a Google connection cancels through the Google adapter", async () => {
     mocks.resolveActingConnection.mockResolvedValue(GOOGLE);
     expect((await call("conn_g")).status).toBe(200);
+    // (M8) The path's connection id is the one the gate checks.
+    expect(mocks.resolveActingConnection).toHaveBeenCalledWith({ firmId: "org_1", actorUserId: "user_ada", connectionId: "conn_g" });
     expect(mocks.g.cancelEvent).toHaveBeenCalledTimes(1);
     expect(mocks.ms.cancelEvent).not.toHaveBeenCalled();
   });

@@ -12,6 +12,12 @@ const ALLOWED_URL_PREFIXES = [
 
 /** Google's "busy" answers. A 403 is busy too when its reason is a rate limit. */
 const BUSY_STATUSES = new Set([429, 500, 502, 503, 504]);
+/**
+ * Busy answers a POST is never retried on: Google can finish an insert before
+ * answering 500 or 502, so a retry could make a second meeting (and invite
+ * everyone twice) or a second to-do.
+ */
+const MAYBE_DONE_STATUSES = new Set([500, 502]);
 const RATE_LIMIT_REASONS = new Set(["rateLimitExceeded", "userRateLimitExceeded"]);
 
 export type GoogleContext = {
@@ -28,7 +34,9 @@ export type GoogleContext = {
  * - A 401 forces one token refresh and one retry.
  * - A 429/500/502/503/504, or a 403 whose reason is `rateLimitExceeded` /
  *   `userRateLimitExceeded`, waits `Retry-After` seconds (default 1, at most
- *   5) and retries up to twice, then throws `ProviderThrottledError`.
+ *   5) and retries up to twice, then throws `ProviderThrottledError`. A POST
+ *   is never retried on a 500 or 502 (it may have landed); that throws
+ *   `ProviderRequestError` at once.
  * - Any other non-2xx throws `ProviderRequestError` with Google's
  *   `error.errors[0].reason`. The body is read for that reason only; it is
  *   never logged or kept. Google sends no request-id header, so it is null.
@@ -46,6 +54,7 @@ export async function googleFetch(
   }
   const fetchImpl = ctx.fetchImpl ?? fetch;
   const sleep = ctx.sleep ?? defaultSleep;
+  const isPost = init.method?.toUpperCase() === "POST";
 
   let token = await getAccessToken(ctx.conn);
   let refreshed = false;
@@ -67,7 +76,8 @@ export async function googleFetch(
     // reading it here also frees a busy response's connection before the retry.
     const reason = await readGoogleReason(res);
     const busy =
-      BUSY_STATUSES.has(res.status) || (res.status === 403 && reason !== null && RATE_LIMIT_REASONS.has(reason));
+      (BUSY_STATUSES.has(res.status) && !(isPost && MAYBE_DONE_STATUSES.has(res.status))) ||
+      (res.status === 403 && reason !== null && RATE_LIMIT_REASONS.has(reason));
     if (busy) {
       if (busyRetries >= MAX_BUSY_RETRIES) throw new ProviderThrottledError("google", null);
       busyRetries++;

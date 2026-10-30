@@ -217,7 +217,7 @@ export function TodoPanel({
       ? []
       : accounts
           .filter((a) => a.status === "connected" && !reconnecting.has(a.id))
-          .map((a) => ({ connectionId: a.id, label: (labels ?? accountLabels(accounts)).get(a.id) ?? a.email }));
+          .map((a) => ({ connectionId: a.id, label: labels?.get(a.id) ?? a.email }));
   // One notice per account that failed, in the connection order the route answered.
   const notices = (ready?.accounts ?? []).flatMap((a) => {
     const account = accounts.find((x) => x.id === a.connectionId);

@@ -54,6 +54,13 @@ describe("AccountBar", () => {
     expect(screen.queryByText(/Connected as/)).toBeNull();
   });
 
+  it("(M6) a hidden chip says so aloud, not only by its strike-through", () => {
+    bar([MS, GOOGLE], { hidden: new Set(["g-1"]) });
+    // jsdom loads no CSS, so it reads the sr-only span as inline and drops its leading space; a browser keeps it.
+    expect(screen.getByRole("button", { name: /^gmail ?\(hidden\)$/ })).toHaveClass("line-through");
+    expect(screen.getByRole("button", { name: "foundryplanning" })).not.toHaveClass("line-through");
+  });
+
   it("a chip's menu hides, shows and disconnects", async () => {
     const user = userEvent.setup();
     const p = bar([MS, GOOGLE], { hidden: new Set(["g-1"]) });
@@ -77,12 +84,34 @@ describe("AccountBar", () => {
     );
   });
 
+  /** Opens `+ Add account` and returns the panel it controls. */
+  async function openAddAccount(user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement> {
+    const trigger = screen.getByRole("button", { name: "+ Add account" });
+    await user.click(trigger);
+    const panel = document.getElementById(trigger.getAttribute("aria-controls") ?? "");
+    expect(panel).not.toBeNull();
+    return panel!;
+  }
+
+  it("(M6) + Add account is a disclosure: the trigger says open or closed and names its panel, which is no menu", async () => {
+    const user = userEvent.setup();
+    bar([MS]);
+    const trigger = screen.getByRole("button", { name: "+ Add account" });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(trigger).not.toHaveAttribute("aria-haspopup");
+    const panel = await openAddAccount(user);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(panel).not.toHaveAttribute("role");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(screen.queryAllByRole("menuitem")).toHaveLength(0);
+  });
+
   it("+ Add account lists Google and Microsoft 365 as plain links, with both help lines", async () => {
     const user = userEvent.setup();
     bar([MS]);
-    await user.click(screen.getByRole("button", { name: "+ Add account" }));
-    expect(screen.getByRole("menuitem", { name: "Google" })).toHaveAttribute("href", "/api/workspace/google/connect");
-    expect(screen.getByRole("menuitem", { name: "Microsoft 365" })).toHaveAttribute(
+    const panel = await openAddAccount(user);
+    expect(within(panel).getByRole("link", { name: "Google" })).toHaveAttribute("href", "/api/workspace/google/connect");
+    expect(within(panel).getByRole("link", { name: "Microsoft 365" })).toHaveAttribute(
       "href",
       "/api/workspace/microsoft/connect",
     );
@@ -110,21 +139,36 @@ describe("AccountBar", () => {
       acct({ id: `id-${i}`, email: `dan@${x}.com`, provider: i % 2 ? "google" : "microsoft" }),
     );
     bar(five);
-    await user.click(screen.getByRole("button", { name: "+ Add account" }));
-    const menu = screen.getByRole("menu");
-    expect(within(menu).getByRole("menuitem", { name: "Google" })).toHaveAttribute("aria-disabled", "true");
-    expect(within(menu).getByRole("menuitem", { name: "Microsoft 365" })).toHaveAttribute("aria-disabled", "true");
-    expect(within(menu).getByRole("menuitem", { name: "Google" })).not.toHaveAttribute("href");
-    expect(within(menu).getByText("5 addresses connected — the most Workspace allows.")).toBeInTheDocument();
+    const panel = await openAddAccount(user);
+    expect(within(panel).getByText("Google")).toHaveAttribute("aria-disabled", "true");
+    expect(within(panel).getByText("Microsoft 365")).toHaveAttribute("aria-disabled", "true");
+    expect(within(panel).queryByRole("link")).toBeNull();
+    expect(within(panel).getByText("5 addresses connected — the most Workspace allows.")).toBeInTheDocument();
   });
 
   it("googleEnabled=false: no Google item and no Google help", async () => {
     const user = userEvent.setup();
     bar([MS], { googleEnabled: false, googleClientId: null });
-    await user.click(screen.getByRole("button", { name: "+ Add account" }));
-    expect(screen.queryByRole("menuitem", { name: "Google" })).toBeNull();
+    await openAddAccount(user);
+    expect(screen.queryByRole("link", { name: "Google" })).toBeNull();
     expect(screen.queryByText(/Google says your administrator/)).toBeNull();
-    expect(screen.getByRole("menuitem", { name: "Microsoft 365" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Microsoft 365" })).toBeInTheDocument();
+  });
+
+  it("(M10) below md every panel hangs from the bar, so none runs off a phone screen", async () => {
+    const user = userEvent.setup();
+    bar([MS, GOOGLE]);
+    const chip = screen.getByRole("button", { name: /^foundryplanning/ });
+    const add = screen.getByRole("button", { name: "+ Add account" });
+    // The bar is the panels' containing block below md; each trigger's wrapper only from md up.
+    const barEl = chip.parentElement!.parentElement!;
+    expect(barEl).toHaveClass("relative");
+    for (const trigger of [chip, add]) {
+      expect(trigger.parentElement).toHaveClass("md:relative");
+      expect(trigger.parentElement).not.toHaveClass("relative");
+    }
+    await user.click(chip);
+    expect(screen.getByRole("menu")).toHaveClass("absolute", "left-0", "top-full");
   });
 
   it("no itApprovalUrl: no Microsoft help line", async () => {

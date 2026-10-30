@@ -42,12 +42,6 @@ describe("CalendarPaneState", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
-  it("needs reconnect: says the sign-in expired and links to reconnect", () => {
-    render(<CalendarPaneState state="needs_reconnect" googleEnabled={false} />);
-    expect(screen.getByText("Your sign-in expired.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Reconnect" })).toHaveAttribute("href", MICROSOFT_CONNECT_URL);
-  });
-
   it("unavailable: says it couldn't load, not 'busy', and Retry calls back", () => {
     const onRetry = vi.fn();
     render(<CalendarPaneState state="unavailable" googleEnabled={false} onRetry={onRetry} />);

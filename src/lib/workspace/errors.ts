@@ -42,8 +42,10 @@ export class WorkspaceReconnectRequiredError extends Error {
 const PROVIDER_NAME: Record<WorkspaceProvider, string> = { microsoft: "Microsoft", google: "Google" };
 
 /**
- * The provider kept answering 429/503/504 after our retries. "The provider is
- * busy", never "nothing there". `requestId` is the provider's request-id header.
+ * The provider kept answering "busy" after our retries: Microsoft's
+ * 429/503/504; Google's 429/500/502/503/504 or a rate-limit 403 (each client
+ * keeps its own set). "The provider is busy", never "nothing there".
+ * `requestId` is the provider's request-id header (Google sends none).
  */
 export class ProviderThrottledError extends Error {
   constructor(

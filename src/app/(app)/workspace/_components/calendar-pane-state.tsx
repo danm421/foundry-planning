@@ -2,11 +2,11 @@ import type { ReactElement, ReactNode } from "react";
 import type { CalendarPaneState as PaneState, WorkspaceProvider } from "@/lib/workspace/types";
 
 /**
- * Every calendar pane that isn't the week itself. `needs_reconnect` is a
- * write's 409; `unavailable` is any failure to read the week, which a retry
- * may not fix.
+ * Every calendar pane that isn't the week itself. `unavailable` is any failure
+ * to read the week, which a retry may not fix. An expired sign-in is never a
+ * pane: it is that one account's banner, and the others stay.
  */
-export type PaneView = Exclude<PaneState, "ready"> | "needs_reconnect" | "unavailable";
+export type PaneView = Exclude<PaneState, "ready"> | "unavailable";
 
 // Plain anchors, never fetch(): the routes answer with a redirect to the provider.
 export const MICROSOFT_CONNECT_URL = "/api/workspace/microsoft/connect";
@@ -52,18 +52,6 @@ export function CalendarPaneState({
         <Pane
           title="Hidden while you're signed in as someone else"
           body="Workspace never shows an advisor's Google or Microsoft calendar or to-dos to Foundry staff."
-        />
-      );
-    case "needs_reconnect":
-      return (
-        <Pane
-          title="Your sign-in expired."
-          body="Sign in again to see your week."
-          action={
-            <a href={MICROSOFT_CONNECT_URL} className="btn-primary text-sm">
-              Reconnect
-            </a>
-          }
         />
       );
     case "unavailable":

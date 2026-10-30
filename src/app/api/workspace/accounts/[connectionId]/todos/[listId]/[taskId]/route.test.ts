@@ -68,6 +68,8 @@ describe("PATCH /api/workspace/accounts/[connectionId]/todos/[listId]/[taskId]",
   it("a Google connection updates through the Google adapter", async () => {
     mocks.resolveActingConnection.mockResolvedValue(GOOGLE);
     expect((await call(undefined, "conn_g")).status).toBe(200);
+    // (M8) The path's connection id is the one the gate checks.
+    expect(mocks.resolveActingConnection).toHaveBeenCalledWith({ firmId: "org_1", actorUserId: "user_ada", connectionId: "conn_g" });
     expect(mocks.g.updateTodo).toHaveBeenCalledTimes(1);
     expect(mocks.ms.updateTodo).not.toHaveBeenCalled();
   });

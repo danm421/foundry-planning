@@ -69,6 +69,13 @@ describe("POST /api/workspace/accounts/[connectionId]/disconnect", () => {
   it("a Google connection revokes at Google", async () => {
     mocks.resolveActingConnection.mockResolvedValue(GOOGLE);
     expect((await call("conn_g")).status).toBe(200);
+    // (M8) The path's connection id is the one the gate checks.
+    expect(mocks.resolveActingConnection).toHaveBeenCalledWith({
+      firmId: "org_1",
+      actorUserId: "user_ada",
+      connectionId: "conn_g",
+      allowNeedsReconnect: true,
+    });
     expect(mocks.g.revoke).toHaveBeenCalledWith(GOOGLE);
     expect(mocks.ms.revoke).not.toHaveBeenCalled();
     expect(mocks.recordAudit).toHaveBeenCalledWith(

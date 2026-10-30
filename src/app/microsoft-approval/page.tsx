@@ -4,16 +4,16 @@ import type { ReactElement } from "react";
 export const metadata: Metadata = { title: "Microsoft 365 approval" };
 
 const MESSAGES = {
-  approved: "Microsoft 365 is approved for your firm. You can close this tab.",
-  declined: "Microsoft 365 wasn't approved. Your Foundry admin can send a new link.",
+  approved: "Microsoft 365 is approved for your organization. You can close this tab.",
+  declined: "Microsoft 365 wasn't approved. Whoever sent you this link can send it again.",
   expired: "This approval link has expired or was already used. Ask your Foundry admin for a new one.",
 } as const;
 
 /**
  * Where Microsoft's admin-consent callback lands someone who isn't signed in
- * to the approving firm — usually the firm's IT admin, who may have no Foundry
- * account. PUBLIC and static: `result` only picks the message, and anything
- * unrecognised reads as expired.
+ * to Foundry — usually an organization's IT admin, sent the approval link by
+ * an advisor, with no Foundry account. PUBLIC and static: `result` only picks
+ * the message, and anything unrecognised reads as expired.
  */
 export default async function MicrosoftApprovalPage({
   searchParams,

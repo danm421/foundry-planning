@@ -213,6 +213,38 @@ describe("googleFetch", () => {
   });
 
   it.each([
+    ["POST", 500],
+    ["POST", 502],
+    ["post", 500],
+  ])("(M5) a %s answering %i is sent once, never retried (it may have landed)", async (method, status) => {
+    const { fetchImpl, mock } = stubFetch(respond(status, googleError(status, "backendError")), respond(200, {}));
+    const { ctx, sleep } = context(connection(), fetchImpl);
+
+    const err = await googleFetch(ctx, EVENTS_URL, { method, body: "{}" }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ProviderRequestError);
+    expect(err).toMatchObject({ provider: "google", status, code: "backendError" });
+    expect(mock).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it.each([429, 503])("(M5) a POST answering %i is still retried as busy (Google refused it)", async (status) => {
+    const { fetchImpl, mock } = stubFetch(respond(status), respond(200, {}));
+    const { ctx } = context(connection(), fetchImpl);
+
+    expect((await googleFetch(ctx, EVENTS_URL, { method: "POST", body: "{}" })).status).toBe(200);
+    expect(mock).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["GET", "PATCH", "DELETE"])("(M5) a %s answering 502 is still retried", async (method) => {
+    const { fetchImpl, mock } = stubFetch(respond(502), respond(200, {}));
+    const { ctx } = context(connection(), fetchImpl);
+
+    expect((await googleFetch(ctx, EVENTS_URL, { method })).status).toBe(200);
+    expect(mock).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
     ["missing", undefined, 1000],
     ["unparseable", "soon", 1000],
     ["in range", "3", 3000],

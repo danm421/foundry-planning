@@ -1,6 +1,6 @@
 // src/lib/workspace/types.ts
 
-/** A Microsoft identity-platform token response, normalized. */
+/** A provider's token response (Microsoft identity platform or Google), normalized. */
 export type ProviderTokenSet = {
   accessToken: string;
   refreshToken: string;
@@ -50,9 +50,10 @@ export type WorkspaceEvent = {
 };
 
 /**
- * One open Microsoft To Do task. `dueDate` is `YYYY-MM-DD`. `notes` is the
- * plain-text body; formatted (HTML) notes arrive as "" with `notesAreHtml`,
- * and are edited in Outlook only.
+ * One open to-do: a Microsoft To Do or Google Tasks task. `dueDate` is
+ * `YYYY-MM-DD`. `notes` is the plain-text body; Microsoft's formatted (HTML)
+ * notes arrive as "" with `notesAreHtml`, and are edited in Outlook only
+ * (Google's notes are always plain text).
  */
 export type WorkspaceTodo = {
   provider: WorkspaceProvider;

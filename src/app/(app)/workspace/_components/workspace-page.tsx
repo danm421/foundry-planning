@@ -51,8 +51,8 @@ function connectBanner(params: URLSearchParams): string | null {
 
 const TIME_ZONE_FALLBACK = "Times in UTC — none of your accounts reports a time zone.";
 
-/** The panes a Workspace route's 409 (no account, an expired sign-in) or 403 (impersonating) can name. */
-const BLOCKING_PANES = new Set<PaneView>(["connect", "needs_reconnect", "impersonating"]);
+/** The panes a Workspace route's 409 (no account) or 403 (impersonating) can name. */
+const BLOCKING_PANES: ReadonlySet<unknown> = new Set<PaneView>(["connect", "impersonating"]);
 
 const MOVE_FAILED = "Couldn't move the meeting — it's back where it was.";
 const VIDEO_FAILED = {
@@ -68,12 +68,19 @@ type WeekResult =
   | { events: WeekEvent[]; accounts: AccountResult[]; timeZone: string; timeZoneFallback: boolean }
   | { blocked: PaneView };
 
-/** The pane a 409 or 403 names (no account left, an expired sign-in, an impersonation session), or null. */
-async function blockingPane(res: Response): Promise<PaneView | null> {
+/**
+ * What a refused request names: a pane (no account left, an impersonation
+ * session), or a write's 409 `needs_reconnect` — one account's expired
+ * sign-in, which is that account's banner, never a pane (see `writeBlocked`).
+ */
+type Refusal = PaneView | "needs_reconnect";
+
+/** What a 409 or 403 names, or null. */
+async function refusalOf(res: Response): Promise<Refusal | null> {
   if (res.status !== 409 && res.status !== 403) return null;
   const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
-  const pane = body?.error as PaneView;
-  return BLOCKING_PANES.has(pane) ? pane : null;
+  const error = body?.error;
+  return error === "needs_reconnect" || BLOCKING_PANES.has(error) ? (error as Refusal) : null;
 }
 
 /**
@@ -103,8 +110,9 @@ async function loadWeek(start: string, hidden: string, signal: AbortSignal): Pro
         };
       }
     } else {
-      const pane = await blockingPane(res);
-      if (pane) return { blocked: pane };
+      // The week never answers needs_reconnect (each account's failure arrives in a 200); one that did can't load.
+      const pane = await refusalOf(res);
+      if (pane && pane !== "needs_reconnect") return { blocked: pane };
     }
   } catch {
     // Falls through to "can't load".
@@ -112,9 +120,9 @@ async function loadWeek(start: string, hidden: string, signal: AbortSignal): Pro
   return { blocked: "unavailable" };
 }
 
-type WriteResult = { ok: true; body: unknown } | { ok: false; pane: PaneView | null };
+type WriteResult = { ok: true; body: unknown } | { ok: false; pane: Refusal | null };
 
-/** One Workspace write. A failure carries the pane a 409 or 403 names, if any. */
+/** One Workspace write. A failure carries what a 409 or 403 names, if anything. */
 async function write(url: string, method: "POST" | "PATCH", body?: unknown): Promise<WriteResult> {
   try {
     const res = await fetch(url, {
@@ -127,7 +135,7 @@ async function write(url: string, method: "POST" | "PATCH", body?: unknown): Pro
           }),
     });
     if (res.ok) return { ok: true, body: await res.json().catch(() => null) };
-    return { ok: false, pane: await blockingPane(res) };
+    return { ok: false, pane: await refusalOf(res) };
   } catch {
     return { ok: false, pane: null };
   }
@@ -306,7 +314,7 @@ export function WorkspacePage({
    * the whole pane: re-read, so that account's banner shows and the others stay.
    * Any other pane shows in place of the week.
    */
-  function writeBlocked(pane: PaneView) {
+  function writeBlocked(pane: Refusal) {
     setEditor(null);
     if (pane === "needs_reconnect") {
       setRefresh((n) => n + 1);

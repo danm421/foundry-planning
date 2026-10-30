@@ -52,15 +52,16 @@ function toWorkspaceEvent(e: GraphEvent): WorkspaceEvent {
 const eventPath = (id: string) => `/me/events/${encodeURIComponent(id)}`;
 
 /**
- * The mailbox's own time zone name (Windows or IANA, as Graph reports it). A
- * mailbox never opened in Outlook has none yet and Graph answers 204; UTC is
- * what Graph itself uses until one is set.
+ * The mailbox's own time zone name (Windows or IANA, as Graph reports it), or
+ * null: a mailbox never opened in Outlook has none yet and Graph answers 204.
+ * The week then takes its zone from the next account (`resolveDisplayZone`).
  */
 export async function readMailboxTimeZone(ctx: GraphContext): Promise<string | null> {
   const res = await graphJson<{ value?: string } | undefined>(ctx, "/me/mailboxSettings/timeZone");
   return res?.value || null;
 }
 
+/** The mailbox's zone for a to-do's due date: UTC, as Graph itself uses, until one is set. */
 export async function getMailboxTimeZone(ctx: GraphContext): Promise<string> {
   return (await readMailboxTimeZone(ctx)) ?? "UTC";
 }

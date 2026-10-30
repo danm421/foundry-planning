@@ -86,6 +86,13 @@ describe("dedupeEvents", () => {
     const out = dedupeEvents([ev({ iCalUid: null }), ev({ iCalUid: null, connectionId: "m" })], order);
     expect(out).toHaveLength(2);
   });
+  it("(M1) never groups events whose UID normalizes to nothing", () => {
+    const blank = dedupeEvents([ev({ iCalUid: "   " }), ev({ iCalUid: "\t", connectionId: "m" })], order);
+    expect(blank.map((e) => e.connectionId)).toEqual(["g", "m"]);
+    // An Outlook wrapper whose external UID is empty (a NUL straight after the version).
+    const empty = dedupeEvents([ev({ iCalUid: wrappedUid("") }), ev({ iCalUid: wrappedUid(""), connectionId: "m" })], order);
+    expect(empty).toHaveLength(2);
+  });
   it("never merges two events from the same connection", () => {
     expect(dedupeEvents([ev({}), ev({})], order)).toHaveLength(2);
   });

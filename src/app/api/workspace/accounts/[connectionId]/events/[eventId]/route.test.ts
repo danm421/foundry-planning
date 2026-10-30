@@ -68,6 +68,8 @@ describe("PATCH /api/workspace/accounts/[connectionId]/events/[eventId]", () => 
   it("a Google connection moves through the Google adapter", async () => {
     mocks.resolveActingConnection.mockResolvedValue(GOOGLE);
     expect((await call(body, "conn_g")).status).toBe(200);
+    // (M8) The path's connection id is the one the gate checks.
+    expect(mocks.resolveActingConnection).toHaveBeenCalledWith({ firmId: "org_1", actorUserId: "user_ada", connectionId: "conn_g" });
     expect(mocks.g.moveEvent).toHaveBeenCalledWith(GOOGLE, "evt/1=", body);
     expect(mocks.ms.moveEvent).not.toHaveBeenCalled();
     expect(mocks.recordAudit).toHaveBeenCalledWith(

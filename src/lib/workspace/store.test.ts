@@ -287,6 +287,9 @@ describe("connections", () => {
       const row = (await connectAs(firmId, "u1", "google", "sub-1")) as { id: string };
       expect(await deleteConnection(firmId, row.id, { userId: "other" })).toBe(false);
       expect(await getConnectionById(row.id)).not.toBeNull();
+      // (M7) An empty owner id restricts to nobody; it never drops the restriction.
+      expect(await deleteConnection(firmId, row.id, { userId: "" })).toBe(false);
+      expect(await getConnectionById(row.id)).not.toBeNull();
       expect(await deleteConnection(firmId, row.id, { userId: "u1" })).toBe(true);
       expect(await getConnectionById(row.id)).toBeNull();
     });

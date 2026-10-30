@@ -312,6 +312,7 @@ describe("WorkspacePage — the week", () => {
     ["a network failure", () => Promise.reject(new TypeError("Failed to fetch"))],
     ["an unknown 409", () => Promise.resolve(respond(409, { error: "something_new" }))],
     ["a 409 naming a retired pane", () => Promise.resolve(respond(409, { error: "member_off" }))],
+    ["(M3) a 409 needs_reconnect (the week never sends one; it is never a pane)", () => Promise.resolve(respond(409, { error: "needs_reconnect" }))],
     ["a 200 without its time zone", () => Promise.resolve(respond(200, { events: [] }))],
   ])("%s says it couldn't load the calendar, not 'busy', never an empty week", async (_label, impl) => {
     fetchMock.mockImplementationOnce(impl);

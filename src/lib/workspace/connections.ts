@@ -159,7 +159,7 @@ export async function listFirmConnections(firmId: string): Promise<Array<Account
   return rows.map((r) => ({ ...toSummary(r), userId: r.userId }));
 }
 
-/** True when a row went; `opts.userId` restricts the delete to that owner. */
+/** True when a row went; `opts.userId` (whenever given, even "") restricts the delete to that owner. */
 export async function deleteConnection(firmId: string, connectionId: string, opts?: { userId?: string }): Promise<boolean> {
   const deleted = await db
     .delete(workspaceConnections)
@@ -167,7 +167,7 @@ export async function deleteConnection(firmId: string, connectionId: string, opt
       and(
         eq(workspaceConnections.firmId, firmId),
         eq(workspaceConnections.id, connectionId),
-        opts?.userId ? eq(workspaceConnections.userId, opts.userId) : undefined,
+        opts?.userId !== undefined ? eq(workspaceConnections.userId, opts.userId) : undefined,
       ),
     )
     .returning({ id: workspaceConnections.id });
