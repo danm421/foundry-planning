@@ -1,4 +1,5 @@
 // src/lib/workspace/microsoft/calendar.ts
+import { idSegment } from "../provider-http";
 import type { WallClock, WorkspaceEvent } from "../types";
 import { addDays, overlappingDays } from "../week";
 import { graphJson, graphPages, jsonInit, type GraphContext } from "./graph";
@@ -49,7 +50,7 @@ function toWorkspaceEvent(e: GraphEvent): WorkspaceEvent {
   };
 }
 
-const eventPath = (id: string) => `/me/events/${encodeURIComponent(id)}`;
+const eventPath = (id: string) => `/me/events/${idSegment("microsoft", id)}`;
 
 /**
  * The mailbox's own time zone name (Windows or IANA, as Graph reports it), or

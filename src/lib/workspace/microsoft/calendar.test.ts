@@ -269,4 +269,13 @@ describe("cancelEvent", () => {
     expect(call(0).method).toBe("DELETE");
     expect(call(0).url).toBe("https://graph.microsoft.com/v1.0/me/events/AAMk%2Fabc%3D");
   });
+
+  it.each([".", ".."])("refuses the id %j (the URL would climb out of the event) as not found, before any request", async (id) => {
+    const { ctx, fetchImpl } = setup();
+    await expect(cancelEvent(ctx, id, { hasAttendees: false })).rejects.toMatchObject({
+      provider: "microsoft",
+      status: 404,
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
 });

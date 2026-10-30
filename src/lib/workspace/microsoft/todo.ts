@@ -1,6 +1,7 @@
 // src/lib/workspace/microsoft/todo.ts
 import type { WorkspaceTodo } from "../types";
 import { mapLimited } from "../map-limited";
+import { idSegment } from "../provider-http";
 import { getMailboxTimeZone } from "./calendar";
 import { graphJson, graphPages, jsonInit, type GraphContext } from "./graph";
 
@@ -19,7 +20,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** Midnight in the mailbox's zone, so To Do shows the same day the advisor picked. */
 const toDueDateTime = (date: string, timeZone: string) => ({ dateTime: `${date}T00:00:00`, timeZone });
 const toBody = (notes: string) => ({ content: notes, contentType: "text" });
-const taskPath = (listId: string) => `/me/todo/lists/${encodeURIComponent(listId)}/tasks`;
+const taskPath = (listId: string) => `/me/todo/lists/${idSegment("microsoft", listId)}/tasks`;
 
 /**
  * A due date as the mailbox's own day. To Do keeps a due date as the instant
@@ -100,5 +101,5 @@ export async function updateTodo(
   }
   if (patch.notes !== undefined) body.body = toBody(patch.notes);
   if (patch.completed !== undefined) body.status = patch.completed ? "completed" : "notStarted";
-  await graphJson<unknown>(ctx, `${taskPath(input.listId)}/${encodeURIComponent(input.taskId)}`, jsonInit("PATCH", body));
+  await graphJson<unknown>(ctx, `${taskPath(input.listId)}/${idSegment("microsoft", input.taskId)}`, jsonInit("PATCH", body));
 }

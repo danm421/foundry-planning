@@ -239,6 +239,17 @@ describe("updateTodo", () => {
     );
   });
 
+  it.each([
+    { listId: "..", taskId: "T1" },
+    { listId: "L1", taskId: "." },
+  ])("refuses a dot-segment id (%j) as not found, before any request", async (ids) => {
+    const fetchImpl = vi.fn(async () => json(task("t")));
+    await expect(
+      updateTodo({ conn, fetchImpl: fetchImpl as unknown as typeof fetch }, { ...ids, patch: { title: "x" } }),
+    ).rejects.toMatchObject({ provider: "microsoft", status: 404 });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("clears the due date", async () => {
     expect((await patchOf({ dueDate: null })).body).toEqual({ dueDateTime: null });
   });

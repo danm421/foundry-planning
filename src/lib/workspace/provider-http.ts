@@ -1,5 +1,6 @@
 // src/lib/workspace/provider-http.ts
-import type { ProviderTokenSet } from "./types";
+import { ProviderRequestError } from "./errors";
+import type { ProviderTokenSet, WorkspaceProvider } from "./types";
 
 /*
  * Plumbing the Google and Microsoft clients share. What each provider counts
@@ -19,6 +20,16 @@ export function retryAfterMs(header: string | null): number {
   const sec = header === null || header.trim() === "" ? NaN : Number(header);
   const wait = Number.isFinite(sec) && sec >= 0 ? sec : DEFAULT_RETRY_AFTER_SEC;
   return Math.min(wait, MAX_RETRY_AFTER_SEC) * 1000;
+}
+
+/**
+ * A provider id as one URL path segment. `.` and `..` pass through
+ * `encodeURIComponent`, and the URL would then climb to the parent path, so
+ * they are refused as the provider's 404 before any request.
+ */
+export function idSegment(provider: WorkspaceProvider, id: string): string {
+  if (id === "." || id === "..") throw new ProviderRequestError(provider, 404, null, null);
+  return encodeURIComponent(id);
 }
 
 /** Frees the connection of a response we won't read. */
