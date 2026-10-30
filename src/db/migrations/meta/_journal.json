@@ -2010,6 +2010,13 @@
       "when": 1793375152128,
       "tag": "0286_workspace_google",
       "breakpoints": true
+    },
+    {
+      "idx": 287,
+      "version": "7",
+      "when": 1793378339321,
+      "tag": "0287_drop_workspace_member_access",
+      "breakpoints": true
     }
   ]
 }

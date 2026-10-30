@@ -25,7 +25,6 @@ const mocks = vi.hoisted(() => ({
   deleteIntegrationSyncRuns: vi.fn(),
   deleteWorkspaceConnections: vi.fn(),
   deleteWorkspaceFirmApprovals: vi.fn(),
-  deleteWorkspaceMemberAccess: vi.fn(),
   deleteWorkspaceOauthStates: vi.fn(),
   deleteIntakeForms: vi.fn(),
   deleteIntakeEmailSettings: vi.fn(),
@@ -107,7 +106,6 @@ vi.mock("@/db", async () => {
           if (tbl === s.integrationSyncRuns) return mocks.deleteIntegrationSyncRuns();
           if (tbl === s.workspaceConnections) return mocks.deleteWorkspaceConnections();
           if (tbl === s.workspaceFirmApprovals) return mocks.deleteWorkspaceFirmApprovals();
-          if (tbl === s.workspaceMemberAccess) return mocks.deleteWorkspaceMemberAccess();
           if (tbl === s.workspaceOauthStates) return mocks.deleteWorkspaceOauthStates();
           if (tbl === s.intakeForms) return mocks.deleteIntakeForms();
           if (tbl === s.intakeEmailSettings) return mocks.deleteIntakeEmailSettings();
@@ -434,7 +432,6 @@ describe("purgeFirmById", () => {
       integration_sync_runs: mocks.deleteIntegrationSyncRuns,
       workspace_connections: mocks.deleteWorkspaceConnections,
       workspace_firm_approvals: mocks.deleteWorkspaceFirmApprovals,
-      workspace_member_access: mocks.deleteWorkspaceMemberAccess,
       workspace_oauth_states: mocks.deleteWorkspaceOauthStates,
       intake_forms: mocks.deleteIntakeForms,
       intake_email_settings: mocks.deleteIntakeEmailSettings,

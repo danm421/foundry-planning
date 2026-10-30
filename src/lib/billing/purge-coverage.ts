@@ -32,7 +32,6 @@ export const PURGED_FIRM_TABLES: readonly string[] = [
   "integration_sync_runs",
   "workspace_connections", // encrypted Microsoft tokens
   "workspace_firm_approvals",
-  "workspace_member_access",
   "workspace_oauth_states",
   "intake_forms",
   "intake_email_settings",

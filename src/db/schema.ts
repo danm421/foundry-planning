@@ -6565,21 +6565,6 @@ export const workspaceFirmApprovals = pgTable(
   }),
 );
 
-export const workspaceMemberAccess = pgTable(
-  "workspace_member_access",
-  {
-    firmId: text("firm_id").notNull(),
-    userId: text("user_id").notNull(),
-    provider: workspaceProviderEnum("provider").notNull(),
-    enabled: boolean("enabled").notNull().default(false),
-    updatedByUserId: text("updated_by_user_id").notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    pk: primaryKey({ columns: [t.firmId, t.userId, t.provider] }),
-  }),
-);
-
 export const workspaceConnections = pgTable(
   "workspace_connections",
   {

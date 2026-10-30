@@ -5,7 +5,6 @@ import { db } from "@/db";
 import {
   workspaceConnections,
   workspaceFirmApprovals,
-  workspaceMemberAccess,
   workspaceOauthStates,
 } from "@/db/schema";
 import type { ProviderTokenSet } from "./types";
@@ -64,7 +63,6 @@ beforeAll(() => {
 afterAll(async () => {
   if (firmIds.length === 0) return;
   await db.delete(workspaceConnections).where(inArray(workspaceConnections.firmId, firmIds));
-  await db.delete(workspaceMemberAccess).where(inArray(workspaceMemberAccess.firmId, firmIds));
   await db.delete(workspaceFirmApprovals).where(inArray(workspaceFirmApprovals.firmId, firmIds));
   await db.delete(workspaceOauthStates).where(inArray(workspaceOauthStates.firmId, firmIds));
 });
@@ -185,11 +183,6 @@ describe("connections", () => {
   it("deleteFirmWorkspace clears both providers' rows for that firm only", async () => {
     async function seed(firmId: string) {
       await upsertFirmApproval({ firmId, provider: "microsoft", tenantId: "t", approvedScopes: "s", approvedByUserId: "admin" });
-      // The phase-1 switches table is no longer written; old rows may remain.
-      await db.insert(workspaceMemberAccess).values([
-        { firmId, userId: "u1", provider: "microsoft", enabled: true, updatedByUserId: "admin" },
-        { firmId, userId: "u2", provider: "google", enabled: true, updatedByUserId: "admin" },
-      ]);
       await connectAs(firmId, "u1", "microsoft", `oid-${firmId}`);
       await connectAs(firmId, "u1", "google", `sub-${firmId}`);
       await connectAs(firmId, "u2", "google", `sub2-${firmId}`);
@@ -204,14 +197,14 @@ describe("connections", () => {
 
     await deleteFirmWorkspace(firmId);
 
-    const tables = [workspaceFirmApprovals, workspaceMemberAccess, workspaceConnections, workspaceOauthStates];
+    const tables = [workspaceFirmApprovals, workspaceConnections, workspaceOauthStates];
     for (const t of tables) {
       expect(await db.select().from(t).where(eq(t.firmId, firmId))).toHaveLength(0);
     }
-    const [approvals, access, connections, states] = await Promise.all(
+    const [approvals, connections, states] = await Promise.all(
       tables.map((t) => db.select().from(t).where(eq(t.firmId, otherFirmId))),
     );
-    expect([approvals.length, access.length, connections.length, states.length]).toEqual([1, 2, 3, 2]);
+    expect([approvals.length, connections.length, states.length]).toEqual([1, 3, 2]);
   });
 
   describe("several accounts per advisor", () => {

@@ -4,7 +4,6 @@ import { db } from "@/db";
 import {
   workspaceConnections,
   workspaceFirmApprovals,
-  workspaceMemberAccess,
   workspaceOauthStates,
 } from "@/db/schema";
 import type { WorkspaceProvider } from "./types";
@@ -52,13 +51,11 @@ export async function upsertFirmApproval(input: {
 
 /**
  * "Disconnect everyone": every advisor's connected addresses, pending
- * sign-ins, the approval and the old phase-1 switches, every provider,
- * atomically.
+ * sign-ins and the approval, every provider, atomically.
  */
 export async function deleteFirmWorkspace(firmId: string): Promise<void> {
   await db.transaction(async (tx) => {
     await tx.delete(workspaceConnections).where(eq(workspaceConnections.firmId, firmId));
-    await tx.delete(workspaceMemberAccess).where(eq(workspaceMemberAccess.firmId, firmId));
     await tx.delete(workspaceOauthStates).where(eq(workspaceOauthStates.firmId, firmId));
     await tx.delete(workspaceFirmApprovals).where(eq(workspaceFirmApprovals.firmId, firmId));
   });
