@@ -224,6 +224,15 @@ describe("createEvent", () => {
     expect(videoFailed).toBe(false);
   });
 
+  it("returns the times sent even when Google answers in the calendar's own zone", async () => {
+    const { ctx } = setup(
+      json(googleEvent({ start: { dateTime: "2026-11-02T10:00:00-05:00" }, end: { dateTime: "2026-11-02T11:00:00-05:00" } })),
+    );
+    const { event } = await createEvent(ctx, input);
+    expect(event.start).toBe("2026-11-02T09:00");
+    expect(event.end).toBe("2026-11-02T10:00");
+  });
+
   it("asks for a Meet link when video is on", async () => {
     const { ctx, call } = setup(json(googleEvent({ hangoutLink: "https://meet.google.com/x" })));
     const { event, videoFailed } = await createEvent(ctx, { ...input, video: true });
@@ -271,6 +280,17 @@ describe("moveEvent", () => {
       end: { dateTime: "2026-11-03T10:00:00", timeZone: "America/Chicago" },
     });
     expect(moved.start).toBe("2026-11-03T09:00");
+  });
+});
+
+describe("moveEvent zones", () => {
+  it("returns the times sent even when Google answers in the calendar's own zone", async () => {
+    const { ctx } = setup(
+      json(googleEvent({ start: { dateTime: "2026-11-03T10:00:00-05:00" }, end: { dateTime: "2026-11-03T11:00:00-05:00" } })),
+    );
+    const moved = await moveEvent(ctx, "e1", { start: "2026-11-03T09:00", end: "2026-11-03T10:00", timeZone: "America/Chicago" });
+    expect(moved.start).toBe("2026-11-03T09:00");
+    expect(moved.end).toBe("2026-11-03T10:00");
   });
 });
 

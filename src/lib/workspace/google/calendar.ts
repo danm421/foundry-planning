@@ -156,7 +156,8 @@ export async function createEvent(
   } else {
     created = await create(false);
   }
-  return { event: toWorkspaceEvent(created), videoFailed };
+  // Insert answers in the calendar's own zone, so the times sent (already in `timeZone`) stand in for the response's.
+  return { event: { ...toWorkspaceEvent(created), start: input.start, end: input.end }, videoFailed };
 }
 
 /** Moves an event; Google emails the guests. */
@@ -167,7 +168,8 @@ export async function moveEvent(
 ): Promise<WorkspaceEvent> {
   const body = { start: toGoogleTime(input.start, input.timeZone), end: toGoogleTime(input.end, input.timeZone) };
   const moved = await googleJson<GoogleEvent>(ctx, `${eventUrl(eventId)}?sendUpdates=all`, jsonInit("PATCH", body));
-  return toWorkspaceEvent(moved);
+  // Patch answers in the calendar's own zone; the times sent are in the requested zone.
+  return { ...toWorkspaceEvent(moved), start: input.start, end: input.end };
 }
 
 /** Deletes the event; with `sendUpdates=all` Google tells any guests, so `hasAttendees` needs no branch. */
