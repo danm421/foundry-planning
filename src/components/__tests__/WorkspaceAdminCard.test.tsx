@@ -122,6 +122,21 @@ describe("WorkspaceAdminCard — connected addresses", () => {
     expect(refresh).not.toHaveBeenCalled();
   });
 
+  it("a Disconnect refused as a sign-in-as session says why, without inviting a retry", async () => {
+    fetchMock.mockReturnValue(
+      Promise.resolve(new Response(JSON.stringify({ error: "impersonating" }), { status: 403 })),
+    );
+    render(<WorkspaceAdminCard members={MEMBERS} approval={null} flash={null} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect dana@gmail.com" }));
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Disconnecting is turned off while you're signed in as someone else.",
+    );
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
   it("the Disconnect confirmation can't send twice while it's out", async () => {
     const answer = deferred<Response>();
     fetchMock.mockReturnValue(answer.promise);

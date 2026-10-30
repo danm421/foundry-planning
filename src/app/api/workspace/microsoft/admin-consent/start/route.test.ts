@@ -71,6 +71,15 @@ describe("POST /api/workspace/microsoft/admin-consent/start", () => {
     expect(mocks.createWorkspaceOauthState).not.toHaveBeenCalled();
   });
 
+  it("refuses an ops 'sign in as' session with 403, even as an admin, before the rate limit or any state", async () => {
+    mocks.auth.mockResolvedValue({ userId: "user_admin", orgId: "org_1", orgRole: "org:admin", actor: { sub: "user_ops" } });
+    const res = await POST(post({ mode: "link" }));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "impersonating" });
+    expect(mocks.checkIntegrationOauthLimit).not.toHaveBeenCalled();
+    expect(mocks.createWorkspaceOauthState).not.toHaveBeenCalled();
+  });
+
   it("refuses a lapsed firm with 403, after the admin check, and mints no state", async () => {
     mocks.requireActiveSubscription.mockRejectedValue(new ForbiddenError("Active subscription required"));
     const res = await POST(post({ mode: "redirect" }));

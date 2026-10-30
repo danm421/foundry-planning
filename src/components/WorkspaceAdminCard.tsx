@@ -31,6 +31,7 @@ const CONSENT_START = "/api/workspace/microsoft/admin-consent/start";
 /** This card's page, without the flash's `?approved=1` / `?error=consent_*`. */
 const PAGE_PATH = "/settings/integrations/microsoft_365";
 const LINK_COPIED = "Link copied — it works once and expires in 7 days.";
+const IMPERSONATING = "Disconnecting is turned off while you're signed in as someone else.";
 
 const FLASH_COPY: Record<Exclude<Flash, null>, string> = {
   approved: "Microsoft 365 is approved for your organization.",
@@ -62,6 +63,13 @@ async function post(url: string, body?: unknown): Promise<Response> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body ?? {}),
   });
+}
+
+/** The route's 403 for an ops "sign in as" session: retrying won't help. */
+async function refusedAsImpersonation(res: Response): Promise<boolean> {
+  if (res.status !== 403) return false;
+  const body = (await res.json().catch(() => null)) as { error?: string } | null;
+  return body?.error === "impersonating";
 }
 
 /** A new single-use admin-consent URL; throws when the route refuses. */
@@ -154,6 +162,10 @@ export function WorkspaceAdminCard({ members, approval, flash }: Props): ReactEl
         : `${ADMIN_BASE}/connections/${encodeURIComponent(c.account.connectionId)}/disconnect`;
     try {
       const res = await post(url);
+      if (await refusedAsImpersonation(res)) {
+        setError(IMPERSONATING);
+        return;
+      }
       if (!res.ok) throw new Error();
       router.refresh();
     } catch {
