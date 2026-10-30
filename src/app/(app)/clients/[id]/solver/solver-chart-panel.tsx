@@ -25,6 +25,13 @@ import { SolverMonthlyCashFlowChart } from "@/components/charts/solver-monthly-c
 import { SolverMonthlyCashFlowPanel } from "./solver-monthly-cash-flow-panel";
 import { buildMonthlyCashFlowRows, selectMonthlyRow } from "@/lib/solver/monthly-cash-flow";
 import { buildMonthlyAllocation } from "@/lib/solver/monthly-allocation";
+import {
+  buildMonthlyDistributionRows,
+  isRetirementYear,
+  type MonthlyMode,
+} from "@/lib/solver/monthly-distributions";
+import { SolverMonthlyDistributionsChart } from "@/components/charts/solver-monthly-distributions-chart";
+import { SolverMonthlyDistributionsPanel } from "./solver-monthly-distributions-panel";
 import { useDollarBasis } from "@/lib/solver/dollar-basis-store";
 import { EstateComparisonChart } from "@/components/charts/estate-comparison-chart";
 import { TaxBracketChart } from "@/components/cashflow/charts/tax-bracket-chart";
@@ -364,6 +371,29 @@ export function SolverChartPanel({
 
   const [monthlyView, setMonthlyView] = useState<"plan" | "months">("months");
 
+  // Cash flow or Distributions. Until the advisor picks one, the report opens on
+  // Distributions when the year it opens on is a retirement year. That year is
+  // `selectMonthlyRow(monthlyRows, null)`, never `selectedYear`, so clicking a
+  // year can never flip the mode on its own.
+  const [monthlyModeChoice, setMonthlyModeChoice] = useState<MonthlyMode | null>(null);
+  const openingYearIsRetired = useMemo(() => {
+    const opening = selectMonthlyRow(monthlyRows, null);
+    const year = opening ? currentProjection.find((p) => p.year === opening.year) : undefined;
+    return year ? isRetirementYear(year, workingTree.client) : false;
+  }, [monthlyRows, currentProjection, workingTree.client]);
+  const monthlyMode: MonthlyMode =
+    monthlyModeChoice ?? (openingYearIsRetired ? "distributions" : "cashflow");
+
+  // One row set for the Distributions chart and panel (they rank accounts from
+  // the same rows). Built only on the Monthly sub-tab in Distributions mode.
+  const distributionRows = useMemo(
+    () =>
+      isMonthlySubTab && monthlyMode === "distributions"
+        ? buildMonthlyDistributionRows(currentProjection, workingTree, dollarBasis)
+        : [],
+    [isMonthlySubTab, monthlyMode, currentProjection, workingTree, dollarBasis],
+  );
+
   // The twelve months of whichever year the panel below is captioning. The year
   // comes from `selectMonthlyRow` — the panel's OWN rule, shared rather than
   // re-stated, because it opens on the first shortfall year and not on the first
@@ -376,12 +406,13 @@ export function SolverChartPanel({
   // looking at once the advisor switches to "Across the plan". Memoized because a
   // chart-height drag re-renders this panel on every pointermove.
   const monthRows = useMemo(() => {
-    if (!isMonthlySubTab || monthlyView !== "months") return [];
+    if (!isMonthlySubTab || monthlyMode !== "cashflow" || monthlyView !== "months") return [];
     const selected = selectMonthlyRow(monthlyRows, selectedYear);
     const year = selected ? currentProjection.find((p) => p.year === selected.year) : undefined;
     return year ? buildMonthlyAllocation(year, workingTree, dollarBasis) : [];
   }, [
     isMonthlySubTab,
+    monthlyMode,
     monthlyView,
     monthlyRows,
     selectedYear,
@@ -529,6 +560,17 @@ export function SolverChartPanel({
         clientLifeExpectancy={ltcClient.lifeExpectancy}
         spouseLifeExpectancy={ltcClient.spouseLifeExpectancy}
       />
+    ) : isMonthlySubTab && monthlyMode === "distributions" ? (
+      <SolverMonthlyDistributionsPanel
+        rows={distributionRows}
+        cashFlowRows={monthlyRows}
+        selectedYear={selectedYear}
+        onYearClick={onYearClick}
+        basis={dollarBasis}
+        onBasisChange={setDollarBasis}
+        mode={monthlyMode}
+        onModeChange={setMonthlyModeChoice}
+      />
     ) : isMonthlySubTab ? (
       <SolverMonthlyCashFlowPanel
         rows={monthlyRows}
@@ -539,6 +581,8 @@ export function SolverChartPanel({
         monthRows={monthRows}
         view={monthlyView}
         onViewChange={setMonthlyView}
+        mode={monthlyMode}
+        onModeChange={setMonthlyModeChoice}
       />
     ) : null;
 
@@ -739,7 +783,14 @@ export function SolverChartPanel({
             onYearClick={onYearClick}
           />
         ) : null}
-        {isMonthlySubTab ? (
+        {isMonthlySubTab && monthlyMode === "distributions" ? (
+          <SolverMonthlyDistributionsChart
+            rows={distributionRows}
+            selectedYear={selectedYear}
+            onYearClick={onYearClick}
+          />
+        ) : null}
+        {isMonthlySubTab && monthlyMode === "cashflow" ? (
           <SolverMonthlyCashFlowChart
             rows={monthlyRows}
             selectedYear={selectedYear}

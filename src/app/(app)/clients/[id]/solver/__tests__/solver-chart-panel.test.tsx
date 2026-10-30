@@ -123,21 +123,71 @@ vi.mock("../solver-monthly-cash-flow-panel", () => ({
     monthRows,
     view,
     onViewChange,
+    onModeChange,
+    onYearClick,
+    mode,
   }: {
     rows: { year: number }[];
     basis: string;
+    onModeChange?: (m: string) => void;
+    onYearClick?: (y: number) => void;
+    mode?: string;
     onBasisChange: (b: string) => void;
     monthRows?: unknown[];
     view?: string;
     onViewChange?: (v: string) => void;
   }) => (
     <div data-testid="panel-monthly">
-      rows:{rows.length} basis:{basis} months:{monthRows?.length ?? 0} view:{view}
+      rows:{rows.length} basis:{basis} months:{monthRows?.length ?? 0} view:{view} mode:{mode}
+      <button type="button" onClick={() => onModeChange?.("distributions")}>
+        to distributions
+      </button>
+      <button type="button" onClick={() => onYearClick?.(2027)}>
+        cash click 2027
+      </button>
       <button type="button" onClick={() => onBasisChange(basis === "today" ? "nominal" : "today")}>
         flip basis
       </button>
       <button type="button" onClick={() => onViewChange?.(view === "plan" ? "months" : "plan")}>
         flip view
+      </button>
+    </div>
+  ),
+}));
+// Distributions mode: the real row builder runs, spied, so "built only in the
+// Monthly sub-tab's Distributions mode" is a checked claim.
+const buildDistributionRows = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/solver/monthly-distributions", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/solver/monthly-distributions")>();
+  buildDistributionRows.mockImplementation(actual.buildMonthlyDistributionRows);
+  return { ...actual, buildMonthlyDistributionRows: buildDistributionRows };
+});
+vi.mock("@/components/charts/solver-monthly-distributions-chart", () => ({
+  SolverMonthlyDistributionsChart: ({ rows }: { rows: { year: number }[] }) => (
+    <div data-testid="chart-distributions">rows:{rows.length}</div>
+  ),
+}));
+vi.mock("../solver-monthly-distributions-panel", () => ({
+  SolverMonthlyDistributionsPanel: ({
+    rows,
+    cashFlowRows,
+    basis,
+    onYearClick,
+    onModeChange,
+  }: {
+    rows: { year: number }[];
+    cashFlowRows: { year: number }[];
+    basis: string;
+    onYearClick: (y: number) => void;
+    onModeChange: (m: string) => void;
+  }) => (
+    <div data-testid="panel-distributions">
+      rows:{rows.length} cashflowrows:{cashFlowRows.length} basis:{basis}
+      <button type="button" onClick={() => onModeChange("cashflow")}>
+        to cash flow
+      </button>
+      <button type="button" onClick={() => onYearClick(2027)}>
+        dist click 2027
       </button>
     </div>
   ),
@@ -181,6 +231,10 @@ const workingTree = {
     firstName: "Pat",
     lastName: "Lee",
     dateOfBirth: "1960-01-01",
+    // Still working in every fixture year (age 66 → 67), so the Monthly report
+    // opens on Cash flow unless a case says otherwise.
+    retirementAge: 70,
+    lifeExpectancy: 95,
   },
   accounts: [],
   // The month allocator reads all three lists to find each row's chosen payment
@@ -266,6 +320,7 @@ function ControlledPanel({
 }) {
   const [activeReport, setActiveReport] = useState<ReportKey>(initialReport);
   const [cashflowSubTab, setCashflowSubTab] = useState<CashflowSubTab>("cashflow");
+  const [selectedYear, setSelectedYear] = useState<number | null>(null);
   return (
     <SolverChartPanel
       currentProjection={currentProjection}
@@ -291,8 +346,8 @@ function ControlledPanel({
       onSummaryChange={() => undefined}
       cashflowSubTab={cashflowSubTab}
       onCashflowSubTabChange={setCashflowSubTab}
-      selectedYear={null}
-      onYearClick={() => undefined}
+      selectedYear={selectedYear}
+      onYearClick={setSelectedYear}
       layout={layout}
       onLayoutChange={onLayoutChange}
       baseGifts={baseGifts}
@@ -305,6 +360,7 @@ describe("SolverChartPanel", () => {
     fullProjectionStub.current = { projection: { years: [] }, loading: false };
     buildMonthlyRows.mockClear();
     buildAllocation.mockClear();
+    buildDistributionRows.mockClear();
   });
 
   it("shows the Portfolio chart by default", () => {
@@ -790,5 +846,107 @@ describe("SolverChartPanel", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "flip basis" }));
     expect(buildAllocation.mock.calls.at(-1)?.[2]).toBe("nominal");
+    // The basis store is module-level: hand it back as found.
+    await userEvent.click(screen.getByRole("button", { name: "flip basis" }));
+  });
+
+  describe("Monthly report mode (Cash flow / Distributions)", () => {
+    // One year per age, so a case can retire the household part-way through.
+    const agedProjection = withdrawalProjection.map(
+      (y) => ({ ...y, ages: { client: 66 + (y.year - 2026) } }) as ProjectionYear,
+    );
+    const retiredTree = {
+      ...workingTree,
+      client: { ...workingTree.client, retirementAge: 60 },
+    } as unknown as ClientData;
+    const retiresIn2027Tree = {
+      ...workingTree,
+      client: { ...workingTree.client, retirementAge: 67 },
+    } as unknown as ClientData;
+
+    async function openMonthly(tree: ClientData) {
+      render(
+        <ControlledPanel
+          initialReport="cashflow"
+          currentProjection={agedProjection}
+          tree={tree}
+        />,
+      );
+      await userEvent.click(screen.getByRole("button", { name: "Monthly" }));
+    }
+
+    it("opens on Distributions when the opening year is a retirement year", async () => {
+      await openMonthly(retiredTree);
+      expect(screen.getByTestId("panel-distributions")).toHaveTextContent("rows:2");
+      expect(screen.getByTestId("chart-distributions")).toHaveTextContent("rows:2");
+      expect(screen.queryByTestId("panel-monthly")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("chart-monthly")).not.toBeInTheDocument();
+    });
+
+    it("opens on Cash flow for a household still working", async () => {
+      await openMonthly(workingTree);
+      expect(screen.getByTestId("panel-monthly")).toBeInTheDocument();
+      expect(screen.getByTestId("chart-monthly")).toBeInTheDocument();
+      expect(screen.queryByTestId("panel-distributions")).not.toBeInTheDocument();
+      expect(buildDistributionRows).not.toHaveBeenCalled();
+    });
+
+    it("swaps the chart and the panel together, and builds each mode's rows only in it", async () => {
+      await openMonthly(retiredTree);
+      expect(buildMonthlyRows).toHaveBeenCalled();
+      // Cash flow's month grid is not built while Distributions is showing.
+      expect(buildAllocation).not.toHaveBeenCalled();
+
+      await userEvent.click(screen.getByRole("button", { name: "to cash flow" }));
+      expect(screen.getByTestId("panel-monthly")).toHaveTextContent("mode:cashflow");
+      expect(screen.getByTestId("chart-monthly")).toBeInTheDocument();
+      expect(screen.queryByTestId("panel-distributions")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("chart-distributions")).not.toBeInTheDocument();
+      expect(buildAllocation).toHaveBeenCalled();
+
+      buildDistributionRows.mockClear();
+      await userEvent.click(screen.getByRole("button", { name: "to distributions" }));
+      expect(screen.getByTestId("panel-distributions")).toBeInTheDocument();
+      expect(screen.getByTestId("chart-distributions")).toBeInTheDocument();
+      expect(buildDistributionRows).toHaveBeenCalled();
+    });
+
+    it("builds no Distributions rows outside the Monthly sub-tab", () => {
+      render(
+        <ControlledPanel
+          initialReport="cashflow"
+          currentProjection={agedProjection}
+          tree={retiredTree}
+        />,
+      );
+      expect(buildDistributionRows).not.toHaveBeenCalled();
+    });
+
+    it("hands the chart and the panel one row set on the shared dollar basis", async () => {
+      await openMonthly(retiredTree);
+      expect(buildDistributionRows).toHaveBeenCalledTimes(1);
+      expect(buildDistributionRows.mock.calls[0]?.[2]).toBe("today");
+      expect(screen.getByTestId("panel-distributions")).toHaveTextContent(
+        "cashflowrows:2 basis:today",
+      );
+    });
+
+    it("keeps Cash flow when a click selects a retirement year", async () => {
+      await openMonthly(retiresIn2027Tree);
+      expect(screen.getByTestId("panel-monthly")).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "cash click 2027" }));
+      expect(screen.getByTestId("panel-monthly")).toBeInTheDocument();
+      expect(screen.queryByTestId("panel-distributions")).not.toBeInTheDocument();
+    });
+
+    it("keeps a chosen mode when another year is clicked", async () => {
+      await openMonthly(retiredTree);
+      await userEvent.click(screen.getByRole("button", { name: "to cash flow" }));
+      await userEvent.click(screen.getByRole("button", { name: "cash click 2027" }));
+      expect(screen.getByTestId("panel-monthly")).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "to distributions" }));
+      await userEvent.click(screen.getByRole("button", { name: "dist click 2027" }));
+      expect(screen.getByTestId("panel-distributions")).toBeInTheDocument();
+    });
   });
 });
