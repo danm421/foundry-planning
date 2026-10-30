@@ -277,8 +277,12 @@ export function WorkspacePage({
   const shownWeek = onScreen && "events" in onScreen ? onScreen : null;
   const days = showWeekends ? 7 : 5;
   const labels = accounts.length >= 2 ? accountLabels(accounts) : null;
-  // The server already leaves hidden accounts out; this covers the moment between a Hide and its re-read.
-  const visibleEvents = shownWeek ? shownWeek.events.filter((e) => !shownHidden.has(e.connectionId)) : [];
+  // A meeting shows when its account is still connected and not hidden. The
+  // server already leaves hidden accounts out; this covers the moment between
+  // a Hide, or a Disconnect, and the re-read that follows it.
+  const liveIds = new Set(accounts.map((a) => a.id));
+  const isShown = (e: WeekEvent) => liveIds.has(e.connectionId) && !shownHidden.has(e.connectionId);
+  const visibleEvents = shownWeek ? shownWeek.events.filter(isShown) : [];
   // The zone line follows the week on screen; a missing, invalid or fallback zone reads as the fixed UTC line.
   const zoneLine = shownWeek
     ? shownWeek.timeZoneFallback || !isValidIanaZone(shownWeek.timeZone)
@@ -317,15 +321,20 @@ export function WorkspacePage({
   const [disconnectTarget, setDisconnectTarget] = useState<AccountSummary | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
 
-  /** Drops the confirmed account; the refreshed page lists the rest, or shows Connect. */
+  /**
+   * Drops the confirmed account: the week is re-read without its meetings, and
+   * the refreshed page lists the rest, or shows Connect.
+   */
   async function disconnectAccount(): Promise<void> {
     if (!disconnectTarget) return;
     setDisconnecting(true);
     const r = await write(`/api/workspace/accounts/${disconnectTarget.id}/disconnect`, "POST");
     setDisconnecting(false);
     setDisconnectTarget(null);
-    if (r.ok) router.refresh();
-    else showToast({ message: `Couldn't disconnect ${disconnectTarget.email}. Try again.` });
+    if (r.ok) {
+      setRefresh((n) => n + 1);
+      router.refresh();
+    } else showToast({ message: `Couldn't disconnect ${disconnectTarget.email}. Try again.` });
   }
 
   /**
@@ -335,7 +344,7 @@ export function WorkspacePage({
    * Outlook holds.
    */
   async function moveMeeting(key: string, start: WallClock, end: WallClock): Promise<void> {
-    const before = week?.find((e) => e.key === key);
+    const before = week?.find((e) => e.key === key && isShown(e));
     if (!before || !weekZone) return;
     const setTimes = (to: Times) =>
       updateEvents((events) => events.map((e) => (e.key === key ? { ...e, ...to } : e)));
@@ -411,7 +420,7 @@ export function WorkspacePage({
   }
 
   function openMeeting(key: string) {
-    const event = week?.find((e) => e.key === key);
+    const event = week?.find((e) => e.key === key && isShown(e));
     if (event) setEditor({ mode: "edit", event });
   }
 

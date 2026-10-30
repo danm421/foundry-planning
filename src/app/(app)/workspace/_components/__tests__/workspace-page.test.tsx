@@ -606,6 +606,35 @@ describe("WorkspacePage — accounts", () => {
     expect(grid()!).not.toHaveTextContent("hartwell");
   });
 
+  it("(I3) disconnecting one of two addresses re-reads the week, so its meetings leave without a reload", async () => {
+    writeMock.mockResolvedValueOnce(respond(200, { ok: true }));
+    readQueue.push(Promise.resolve(mixed(null)));
+    // The server no longer holds Google: the re-read is Outlook's half alone.
+    readQueue.push(Promise.resolve(respond(200, WEEK)));
+    const user = userEvent.setup();
+    renderPage("ready", [ACCOUNT, GOOGLE]);
+    await screen.findByText("Gym");
+    await user.click(screen.getByRole("button", { name: "gmail" }));
+    await user.click(screen.getByRole("menuitem", { name: "Disconnect" }));
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Disconnect dana@gmail.com?" })).getByRole("button", { name: "Disconnect" }),
+    );
+    await waitFor(() => expect(weekReads()).toHaveLength(2));
+    await waitFor(() => expect(screen.queryByText("Gym")).toBeNull());
+    expect(screen.getByText("Annual review")).toBeInTheDocument();
+    expect(refreshMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("(I3) the refreshed address list drops a disconnected address's meetings before any re-read lands", async () => {
+    readQueue.push(Promise.resolve(mixed(null)));
+    const view = renderPage("ready", [ACCOUNT, GOOGLE]);
+    await screen.findByText("Gym");
+    readQueue.push(new Promise(() => {})); // any re-read never answers
+    view.rerender(page("ready", [ACCOUNT]));
+    expect(screen.queryByText("Gym")).toBeNull();
+    expect(screen.getByText("Annual review")).toBeInTheDocument();
+  });
+
   it("still renders when storage throws on the hidden list", async () => {
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("blocked");
