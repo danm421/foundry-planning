@@ -18,7 +18,11 @@ const FULL: AssumptionsPageData = {
     { category: "Taxable", source: "Model: 60/40 Growth", rate: "6.2%" },
     { category: "Cash", source: "Inflation", rate: "3.0%" },
   ],
-  withdrawalOrder: ["Checking", "Joint Brokerage"],
+  withdrawal: {
+    method: "Split by percentage",
+    steps: [{ label: "Taxable", share: "60%" }, { label: "Tax-deferred", share: "40%" }],
+    neverSold: ["Roth IRA"],
+  },
   stressTests: [{ label: "Market shock", value: "30.0% drawdown in 2030" }],
   accounts: [
     { name: "Joint Brokerage", category: "Taxable", value: 500000, rate: "6.2%", source: "Model: 60/40 Growth" },
@@ -35,7 +39,7 @@ const MINIMAL: AssumptionsPageData = {
   ...FULL,
   overviewSections: [],
   categoryGrowth: [],
-  withdrawalOrder: [],
+  withdrawal: { method: "Proportional to each account's balance", steps: [], neverSold: [] },
   stressTests: [],
   accounts: null,
   referencedPortfolios: null,

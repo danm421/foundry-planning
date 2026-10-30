@@ -67,7 +67,8 @@ const styles = StyleSheet.create({
   th: { fontFamily: "Inter", fontSize: 8, fontWeight: 700, color: PRESENTATION_THEME.ink },
   td: { fontFamily: "Inter", fontSize: 9, color: PRESENTATION_THEME.ink2 },
   right: { textAlign: "right" },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 },
+  withdrawal: { gap: 6, marginBottom: 12 },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   chip: {
     flexDirection: "row",
     alignItems: "center",
@@ -81,6 +82,8 @@ const styles = StyleSheet.create({
   },
   chipNum: { fontFamily: "JetBrains Mono", fontSize: 8, color: PRESENTATION_THEME.accent },
   chipText: { fontFamily: "Inter", fontSize: 9, color: PRESENTATION_THEME.ink },
+  methodLine: { fontFamily: "Inter", fontSize: 9, color: PRESENTATION_THEME.ink2 },
+  neverSold: { fontFamily: "Inter", fontSize: 8.5, color: PRESENTATION_THEME.ink3 },
   portfolioBlock: { marginBottom: 10 },
   portfolioTitle: { fontFamily: "Inter", fontSize: 9.5, fontWeight: 700, color: PRESENTATION_THEME.ink, marginBottom: 3 },
   footnote: { fontFamily: "Inter", fontSize: 7.5, color: PRESENTATION_THEME.ink3, marginTop: 8, fontStyle: "italic" },
@@ -241,19 +244,23 @@ export function AssumptionsPagePdf({
         </>
       )}
 
-      {data.withdrawalOrder.length > 0 && (
-        <>
-          <Text style={styles.sectionLabel}>WITHDRAWAL ORDER</Text>
+      <Text style={styles.sectionLabel}>WITHDRAWAL STRATEGY</Text>
+      <View style={styles.withdrawal}>
+        <Text style={styles.methodLine}>{data.withdrawal.method}</Text>
+        {data.withdrawal.steps.length > 0 && (
           <View style={styles.chips}>
-            {data.withdrawalOrder.map((name, i) => (
+            {data.withdrawal.steps.map((step, i) => (
               <View key={i} style={styles.chip}>
-                <Text style={styles.chipNum}>{i + 1}</Text>
-                <Text style={styles.chipText}>{name}</Text>
+                <Text style={styles.chipNum}>{step.share ?? i + 1}</Text>
+                <Text style={styles.chipText}>{step.label}</Text>
               </View>
             ))}
           </View>
-        </>
-      )}
+        )}
+        {data.withdrawal.neverSold.length > 0 && (
+          <Text style={styles.neverSold}>Never sold: {data.withdrawal.neverSold.join(", ")}</Text>
+        )}
+      </View>
 
       {data.stressTests.length > 0 && (
         <>

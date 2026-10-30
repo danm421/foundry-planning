@@ -15,8 +15,8 @@ function clientData(): ClientData {
   return {
     client: { dateOfBirth: "1966-01-01", spouseDob: "1968-01-01", spouseName: "Jane" },
     accounts: [
-      { id: "a1", name: "Joint Brokerage", category: "taxable", growthRate: 0.062, value: 500000 },
-      { id: "a2", name: "Checking", category: "cash", growthRate: 0.02, value: 25000 },
+      { id: "a1", name: "Joint Brokerage", category: "taxable", growthRate: 0.062, value: 500000, owners: [] },
+      { id: "a2", name: "Checking", category: "cash", growthRate: 0.02, value: 25000, owners: [] },
     ],
     withdrawalStrategy: [
       { accountId: "a2", priorityOrder: 1, startYear: 2026, endYear: 2055 },
@@ -111,8 +111,53 @@ describe("buildAssumptionsData", () => {
     expect(retirement).toEqual({ category: "Retirement", source: "Fund portfolio", rate: "—" });
   });
 
-  it("resolves withdrawal order to account names by priority", () => {
-    expect(buildAssumptionsData(input()).withdrawalOrder).toEqual(["Checking", "Joint Brokerage"]);
+  describe("withdrawal strategy", () => {
+    const withPolicy = (withdrawalPolicy: ClientData["planSettings"]["withdrawalPolicy"], rows = true) => {
+      const cd = clientData();
+      cd.accounts.push({ id: "a3", name: "Rollover IRA", category: "retirement", subType: "traditional_ira", value: 300000, owners: [] } as unknown as ClientData["accounts"][number]);
+      cd.planSettings.withdrawalPolicy = withdrawalPolicy;
+      if (!rows) cd.withdrawalStrategy = [];
+      return buildAssumptionsData(input({ clientData: cd })).withdrawal;
+    };
+    const ORDER = ["tax_deferred", "taxable", "cash", "roth", "annuity"] as const;
+
+    it("account by account: the accounts by priority (nothing saved, the client has rows)", () => {
+      expect(buildAssumptionsData(input()).withdrawal).toEqual({
+        method: "Account by account",
+        steps: [{ label: "Checking" }, { label: "Joint Brokerage" }],
+        neverSold: [],
+      });
+    });
+
+    it("in order: the groups the household holds, in the saved order, and what is never sold", () => {
+      expect(withPolicy({ method: "order", groupOrder: [...ORDER], excludedAccountIds: ["a1"] })).toEqual({
+        method: "In order",
+        steps: [{ label: "Tax-deferred" }, { label: "Cash & savings" }],
+        neverSold: ["Joint Brokerage"],
+      });
+    });
+
+    it("nothing saved and no rows: the default order", () => {
+      expect(withPolicy(null, false).steps.map((s) => s.label)).toEqual(["Cash & savings", "Taxable", "Tax-deferred"]);
+    });
+
+    it("split: each group with a share, beside its percent", () => {
+      expect(
+        withPolicy({ method: "split", groupOrder: [...ORDER], splitPct: { taxable: 0.6, tax_deferred: 0.4 }, excludedAccountIds: [] }),
+      ).toEqual({
+        method: "Split by percentage",
+        steps: [{ label: "Tax-deferred", share: "40%" }, { label: "Taxable", share: "60%" }],
+        neverSold: [],
+      });
+    });
+
+    it("proportional: the method alone", () => {
+      expect(withPolicy({ method: "proportional", groupOrder: [...ORDER], excludedAccountIds: [] })).toEqual({
+        method: "Proportional to each account's balance",
+        steps: [],
+        neverSold: [],
+      });
+    });
   });
 
   it("lists active stress tests only", () => {

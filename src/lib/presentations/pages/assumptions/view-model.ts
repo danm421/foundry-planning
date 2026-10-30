@@ -3,6 +3,7 @@
 // effective); account/CMA sections come from the base-case investments bundle.
 
 import type { ClientData, PlanSettings, WithdrawalPriority } from "@/engine/types";
+import { householdDrawGroup, resolveWithdrawalPolicy, WITHDRAWAL_GROUP_LABELS } from "@/engine/withdrawal-policy";
 import { applyLtcEvent, resolveLtcEvent } from "@/engine/ltc-event";
 import { ltcPersonFirstName } from "@/lib/ltc/ltc-event-name";
 import type { InvestmentsBundle, CategoryGrowthDefault } from "@/lib/presentations/investments-bundle";
@@ -24,6 +25,7 @@ import type {
   AccountGrowthRow,
   ReferencedPortfolio,
   CmaRow,
+  WithdrawalStrategySummary,
 } from "./types";
 
 export function buildAssumptionsData(input: BuildAssumptionsInput): AssumptionsPageData {
@@ -49,7 +51,7 @@ export function buildAssumptionsData(input: BuildAssumptionsInput): AssumptionsP
   const categoryGrowth = investments
     ? buildCategoryGrowth(investments, ps.inflationRate, geoByClassId, portfolioNameById)
     : [];
-  const withdrawalOrder = buildWithdrawalOrder(clientData.withdrawalStrategy, clientData.accounts);
+  const withdrawal = buildWithdrawal(clientData);
   const stressTests = buildStressTests(ps, clientData);
 
   const accounts = options.includeAccountTable
@@ -67,7 +69,7 @@ export function buildAssumptionsData(input: BuildAssumptionsInput): AssumptionsP
     subtitle: scenarioLabel,
     overviewSections,
     categoryGrowth,
-    withdrawalOrder,
+    withdrawal,
     stressTests,
     accounts,
     referencedPortfolios,
@@ -173,6 +175,35 @@ function buildCategoryGrowth(
     };
   });
 }
+
+/** The policy the plan runs (scenario-effective), as the page prints it. */
+function buildWithdrawal(tree: ClientData): WithdrawalStrategySummary {
+  const policy = resolveWithdrawalPolicy(tree.planSettings.withdrawalPolicy, tree.withdrawalStrategy.length > 0);
+  if (policy.method === "custom") {
+    return {
+      method: "Account by account",
+      steps: buildWithdrawalOrder(tree.withdrawalStrategy, tree.accounts).map((label) => ({ label })),
+      neverSold: [],
+    };
+  }
+  const excluded = new Set(policy.excludedAccountIds);
+  const neverSold = tree.accounts.filter((a) => excluded.has(a.id)).map((a) => a.name);
+  if (policy.method === "proportional") {
+    return { method: "Proportional to each account's balance", steps: [], neverSold };
+  }
+  if (policy.method === "split") {
+    const steps = policy.groupOrder
+      .filter((g) => (policy.splitPct?.[g] ?? 0) > 0)
+      .map((g) => ({ label: WITHDRAWAL_GROUP_LABELS[g], share: formatShare(policy.splitPct![g]!) }));
+    return { method: "Split by percentage", steps, neverSold };
+  }
+  // Only the groups the household can actually draw from.
+  const held = new Set(tree.accounts.filter((a) => !excluded.has(a.id)).map((a) => householdDrawGroup(a).group));
+  const steps = policy.groupOrder.filter((g) => held.has(g)).map((g) => ({ label: WITHDRAWAL_GROUP_LABELS[g] }));
+  return { method: "In order", steps, neverSold };
+}
+
+const formatShare = (fraction: number) => `${Number((fraction * 100).toFixed(2))}%`;
 
 function buildWithdrawalOrder(
   strategy: WithdrawalPriority[],
