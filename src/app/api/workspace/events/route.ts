@@ -19,23 +19,27 @@ function isMonday(date: string): boolean {
 }
 
 /**
- * The signed-in advisor's week (Monday start) across every connected account,
- * in one display time zone, with household links. One account failing is that
- * account's `error` in `accounts`, never a failed week.
+ * The signed-in advisor's week (Monday start) across every connected account
+ * they haven't hidden (`hidden=<id>,<id>`), in one display time zone, with
+ * household links. One account failing is that account's `error` in
+ * `accounts`, never a failed week. Hidden ids only ever narrow the caller's own
+ * connections; anyone else's id matches nothing.
  */
 export async function GET(req: Request): Promise<Response> {
   if (!isWorkspaceEnabled()) return new Response("Not found", { status: 404 });
   try {
-    const start = new URL(req.url).searchParams.get("start");
+    const params = new URL(req.url).searchParams;
+    const start = params.get("start");
     if (!start || !isMonday(start)) {
       return NextResponse.json({ error: "start must be a Monday (YYYY-MM-DD)" }, { status: 400 });
     }
+    const hidden = new Set((params.get("hidden") ?? "").split(",").filter(Boolean));
     const { orgId: firmId, userId } = await requireOrgAndUser();
     const { orgRole } = await auth();
 
     const connections = await listActingConnections({ firmId, actorUserId: userId });
     if (connections.length === 0) throw new WorkspaceNotConnectedError("connect");
-    const week = await readWeek({ connections, startDate: start, days: 7 });
+    const week = await readWeek({ connections, hidden, startDate: start, days: 7 });
 
     const links = await findHouseholdsByEmail({
       firmId,

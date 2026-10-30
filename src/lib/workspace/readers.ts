@@ -42,8 +42,16 @@ export async function resolveDisplayZone(
 
 type TaggedEvent = WorkspaceEvent & { connectionId: string; provider: WorkspaceProvider };
 
+/**
+ * The week across the advisor's shown accounts, in one display zone. A hidden
+ * account is never read, so it can't win the dedupe for a meeting a shown one
+ * also holds; the zone still comes from every account, hidden or not. `hidden`
+ * ids that aren't among `connections` change nothing. `accounts` lists the
+ * shown ones only.
+ */
 export async function readWeek(input: {
   connections: WorkspaceConnection[];
+  hidden?: ReadonlySet<string>;
   startDate: string;
   days: number;
   adapters?: AdapterLookup;
@@ -53,10 +61,11 @@ export async function readWeek(input: {
   events: TaggedEvent[];
   accounts: Array<{ connectionId: string; error: AccountError | null }>;
 }> {
-  const { connections, startDate, days, adapters = adapterFor } = input;
+  const { connections, hidden, startDate, days, adapters = adapterFor } = input;
   const { timeZone, fallback } = await resolveDisplayZone(connections, adapters);
+  const shown = hidden ? connections.filter((c) => !hidden.has(c.id)) : connections;
 
-  const results = await mapLimited(connections, MAX_ACCOUNTS_PER_ADVISOR, async (conn) => {
+  const results = await mapLimited(shown, MAX_ACCOUNTS_PER_ADVISOR, async (conn) => {
     if (conn.status !== "connected") return { events: [] as TaggedEvent[], error: "needs_reconnect" as AccountError };
     try {
       const events = await adapters(conn.provider).listEvents(conn, { startDate, days, timeZone });
@@ -74,9 +83,9 @@ export async function readWeek(input: {
     timeZoneFallback: fallback,
     events: dedupeEvents(
       results.flatMap((r) => r.events),
-      connections.map((c) => c.id),
+      shown.map((c) => c.id),
     ),
-    accounts: connections.map((c, i) => ({ connectionId: c.id, error: results[i].error })),
+    accounts: shown.map((c, i) => ({ connectionId: c.id, error: results[i].error })),
   };
 }
 

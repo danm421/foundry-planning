@@ -161,6 +161,44 @@ describe("readers", () => {
       expect(res.events[0].connectionId).toBe("a");
     });
 
+    it("(I1) a meeting shared with a hidden account is listed via the shown one, even when the hidden copy would win", async () => {
+      // `a` is connected first, so its copy wins the dedupe when both are read.
+      const a = conn("a", "microsoft");
+      const b = conn("b", "google");
+      const shared = { iCalUid: "uid-1", start: "2026-11-02T09:00" };
+      const fakes = {
+        a: fake({ tz: "America/Chicago", events: [event("outlook-copy", shared)] }),
+        b: fake({ events: [event("google-copy", shared)] }),
+      };
+      const res = await readWeek({
+        connections: [a, b],
+        hidden: new Set(["a"]),
+        startDate: "2026-11-02",
+        days: 7,
+        adapters: lookup(fakes, [a, b]),
+      });
+      expect(res.events.map((e) => [e.id, e.connectionId])).toEqual([["google-copy", "b"]]);
+      expect(fakes.a.listEvents).not.toHaveBeenCalled();
+      expect(res.accounts).toEqual([{ connectionId: "b", error: null }]);
+      // The zone is still the first-connected address's, hidden or not.
+      expect(res.timeZone).toBe("America/Chicago");
+    });
+
+    it("(I1) a hidden id that isn't one of the connections changes nothing", async () => {
+      const a = conn("a", "microsoft");
+      const b = conn("b", "google");
+      const fakes = { a: fake({ events: [event("ma")] }), b: fake({ events: [event("gb", { start: "2026-11-03T09:00" })] }) };
+      const res = await readWeek({
+        connections: [a, b],
+        hidden: new Set(["someone-elses-connection"]),
+        startDate: "2026-11-02",
+        days: 7,
+        adapters: lookup(fakes, [a, b]),
+      });
+      expect(res.events.map((e) => e.connectionId)).toEqual(["a", "b"]);
+      expect(res.accounts.map((x) => x.connectionId)).toEqual(["a", "b"]);
+    });
+
     it("maps a reconnect error and an unknown error, logging no message", async () => {
       const a = conn("a", "google");
       const b = conn("b", "microsoft");

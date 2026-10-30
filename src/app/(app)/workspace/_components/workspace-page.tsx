@@ -77,14 +77,16 @@ async function blockingPane(res: Response): Promise<PaneView | null> {
 }
 
 /**
- * Reads one week across every account. Anything but the week itself becomes a
- * pane, never an empty grid: a 409 or 403 names its pane, and every other
- * failure — a 500, a mailbox the provider can't serve, the network — can't
- * load, with a Retry. One account's own failure arrives inside a 200.
+ * Reads one week across every account but the hidden ones (`hidden`, a
+ * comma-separated query value; the server leaves them out before it dedupes).
+ * Anything but the week itself becomes a pane, never an empty grid: a 409 or
+ * 403 names its pane, and every other failure — a 500, a mailbox the provider
+ * can't serve, the network — can't load, with a Retry. One account's own
+ * failure arrives inside a 200.
  */
-async function loadWeek(start: string, signal: AbortSignal): Promise<WeekResult> {
+async function loadWeek(start: string, hidden: string, signal: AbortSignal): Promise<WeekResult> {
   try {
-    const res = await fetch(`/api/workspace/events?start=${start}`, { signal });
+    const res = await fetch(`/api/workspace/events?start=${start}${hidden ? `&hidden=${hidden}` : ""}`, { signal });
     if (res.ok) {
       const body = (await res.json()) as {
         events?: unknown;
@@ -199,18 +201,24 @@ export function WorkspacePage({
   }
 
   // Accounts the advisor has hidden from the week: kept on this device, read like the weekends choice.
-  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
+  // Null until storage is read: the week waits for it, so the first read already leaves them out.
+  const [hidden, setHidden] = useState<ReadonlySet<string> | null>(null);
   useEffect(() => {
+    let stored: string[] = [];
     try {
-      const stored: unknown = JSON.parse(localStorage.getItem(HIDDEN_ACCOUNTS_KEY) ?? "[]");
-      if (Array.isArray(stored)) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot localStorage hydration on mount; nothing depends on it, so no cascade.
-        setHidden(new Set(stored.filter((id): id is string => typeof id === "string")));
-      }
+      const parsed: unknown = JSON.parse(localStorage.getItem(HIDDEN_ACCOUNTS_KEY) ?? "[]");
+      if (Array.isArray(parsed)) stored = parsed.filter((id): id is string => typeof id === "string");
     } catch {
       // Storage blocked or unreadable: every account shows.
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot localStorage hydration on mount; the week read waits on it.
+    setHidden(new Set(stored));
   }, []);
+  // Hiding exists only on the chips (2+ accounts): a sole account is never hidden, whatever storage still holds.
+  const shownHidden: ReadonlySet<string> =
+    hidden && accounts.length >= 2 ? new Set(accounts.filter((a) => hidden.has(a.id)).map((a) => a.id)) : new Set();
+  // What the week read sends: a Hide or Show changes it, and so re-reads the week.
+  const hiddenQuery = hidden === null ? null : [...shownHidden].map(encodeURIComponent).join(",");
   function toggleHidden(connectionId: string) {
     const next = new Set(shownHidden);
     if (!next.delete(connectionId)) next.add(connectionId);
@@ -229,17 +237,18 @@ export function WorkspacePage({
 
   // A result counts only for the request it answered: a new week or a Retry
   // changes the key, and the pane shows "loading" until that answer lands.
-  // A refresh (after a create, a cancel or a move) re-reads under the same key,
-  // so the week stays on screen until the new answer replaces it; starting one
-  // aborts a read already out, whose answer may predate the write.
+  // A refresh (after a create, a cancel or a move) or a Hide/Show re-reads
+  // under the same key, so the week stays on screen until the new answer
+  // replaces it; starting one aborts a read already out, whose answer may
+  // predate the change.
   const [attempt, setAttempt] = useState(0);
   const [refresh, setRefresh] = useState(0);
   const requestKey = `${weekStart}#${attempt}`;
   const [result, setResult] = useState<(WeekResult & { key: string; weekStart: string; today: string }) | null>(null);
   useEffect(() => {
-    if (paneState !== "ready") return;
+    if (paneState !== "ready" || hiddenQuery === null) return;
     const ctrl = new AbortController();
-    void loadWeek(weekStart, ctrl.signal).then((r) => {
+    void loadWeek(weekStart, hiddenQuery, ctrl.signal).then((r) => {
       if (ctrl.signal.aborted) return;
       // A meeting mid-move stays where it was dragged; its own answer settles it.
       const moving = movesInFlight.current;
@@ -256,7 +265,7 @@ export function WorkspacePage({
       setResult({ ...read, key: requestKey, weekStart, today: localToday() });
     });
     return () => ctrl.abort();
-  }, [paneState, weekStart, requestKey, refresh]);
+  }, [paneState, weekStart, hiddenQuery, requestKey, refresh]);
 
   const current = result?.key === requestKey ? result : null;
   const week = current && "events" in current ? current.events : null;
@@ -268,9 +277,7 @@ export function WorkspacePage({
   const shownWeek = onScreen && "events" in onScreen ? onScreen : null;
   const days = showWeekends ? 7 : 5;
   const labels = accounts.length >= 2 ? accountLabels(accounts) : null;
-  // Hiding exists only on the chips (2+ accounts): a sole account is never hidden, whatever storage still holds.
-  const shownHidden: ReadonlySet<string> =
-    accounts.length >= 2 ? new Set(accounts.filter((a) => hidden.has(a.id)).map((a) => a.id)) : new Set();
+  // The server already leaves hidden accounts out; this covers the moment between a Hide and its re-read.
   const visibleEvents = shownWeek ? shownWeek.events.filter((e) => !shownHidden.has(e.connectionId)) : [];
   // The zone line follows the week on screen; a missing, invalid or fallback zone reads as the fixed UTC line.
   const zoneLine = shownWeek

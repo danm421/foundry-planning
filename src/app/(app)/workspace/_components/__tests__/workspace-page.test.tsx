@@ -538,6 +538,43 @@ describe("WorkspacePage — accounts", () => {
     expect(JSON.parse(localStorage.getItem("workspace.hiddenAccounts")!)).toEqual([G]);
   });
 
+  it("(I1) the first read already sends the stored hidden ids, and Show re-reads without them", async () => {
+    localStorage.setItem("workspace.hiddenAccounts", JSON.stringify([G]));
+    const user = userEvent.setup();
+    renderPage("ready", [ACCOUNT, GOOGLE]);
+    await screen.findByText("Annual review");
+    expect(weekReads().map(([url]) => url)).toEqual([`/api/workspace/events?start=2026-10-26&hidden=${G}`]);
+    await user.click(screen.getByRole("button", { name: /gmail/ }));
+    await user.click(screen.getByRole("menuitem", { name: "Show" }));
+    await waitFor(() => expect(weekReads()).toHaveLength(2));
+    expect(weekReads()[1][0]).toBe("/api/workspace/events?start=2026-10-26");
+  });
+
+  it("(I1) hiding the address whose copy of a shared meeting was shown re-reads, and the other copy shows", async () => {
+    const user = userEvent.setup();
+    // Outlook (connected first) holds the shown copy; Google holds the same meeting.
+    readQueue.push(Promise.resolve(mixed(null)));
+    const googleCopy = { ...WEEK.events[0], key: `${G}:review-copy`, id: "review-copy", connectionId: G, provider: "google" };
+    readQueue.push(
+      Promise.resolve(respond(200, { ...WEEK, events: [googleCopy, gym], accounts: [{ connectionId: G, error: null }] })),
+    );
+    renderPage("ready", [ACCOUNT, GOOGLE]);
+    await screen.findByText("Gym");
+    await user.click(screen.getByRole("button", { name: /^hartwell/ }));
+    await user.click(screen.getByRole("menuitem", { name: "Hide" }));
+    await waitFor(() => expect(weekReads()).toHaveLength(2));
+    expect(weekReads()[1][0]).toBe(`/api/workspace/events?start=2026-10-26&hidden=${MS_ID}`);
+    expect(await screen.findByText("Annual review")).toBeInTheDocument();
+    expect(screen.getByText("Gym")).toBeInTheDocument();
+  });
+
+  it("(I1) a sole account stored as hidden sends no hidden ids", async () => {
+    localStorage.setItem("workspace.hiddenAccounts", JSON.stringify([MS_ID]));
+    renderPage();
+    await screen.findByText("Annual review");
+    expect(weekReads().map(([url]) => url)).toEqual(["/api/workspace/events?start=2026-10-26"]);
+  });
+
   it("reads hidden accounts after mount, and a hidden account's banner is not shown", async () => {
     localStorage.setItem("workspace.hiddenAccounts", JSON.stringify([G]));
     readQueue.push(Promise.resolve(mixed("unavailable")));

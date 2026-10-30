@@ -47,8 +47,9 @@ function week(over: Record<string, unknown> = {}) {
   return { timeZone: "America/Chicago", timeZoneFallback: false, events: [], accounts: [], ...over };
 }
 
-function get(start?: string) {
-  return GET(new Request(`https://app.test/api/workspace/events${start ? `?start=${start}` : ""}`));
+function get(start?: string, hidden?: string) {
+  const query = [start ? `start=${start}` : null, hidden !== undefined ? `hidden=${hidden}` : null].filter(Boolean);
+  return GET(new Request(`https://app.test/api/workspace/events${query.length ? `?${query.join("&")}` : ""}`));
 }
 
 beforeEach(() => {
@@ -103,7 +104,12 @@ describe("GET /api/workspace/events", () => {
       ["conn_g:b", "conn_g", "google", false, null],
     ]);
 
-    expect(mocks.readWeek).toHaveBeenCalledWith({ connections: [MS, GOOGLE], startDate: "2026-11-02", days: 7 });
+    expect(mocks.readWeek).toHaveBeenCalledWith({
+      connections: [MS, GOOGLE],
+      hidden: new Set(),
+      startDate: "2026-11-02",
+      days: 7,
+    });
     expect(mocks.listActingConnections).toHaveBeenCalledWith({ firmId: "org_1", actorUserId: "user_ada" });
     expect(mocks.findHouseholdsByEmail).toHaveBeenCalledTimes(1);
     expect(mocks.findHouseholdsByEmail).toHaveBeenCalledWith({
@@ -112,6 +118,16 @@ describe("GET /api/workspace/events", () => {
       orgRole: "org:member",
       emails: ["x@c.com", "y@c.com", "z@c.com"],
     });
+  });
+
+  it("(I1) hands the hidden ids to the readers, which read only the caller's own connections", async () => {
+    mocks.listActingConnections.mockResolvedValue([MS, GOOGLE]);
+    await get("2026-11-02", "conn_g,someone-elses-id,");
+    expect(mocks.readWeek).toHaveBeenCalledWith(
+      expect.objectContaining({ connections: [MS, GOOGLE], hidden: new Set(["conn_g", "someone-elses-id"]) }),
+    );
+    // The list comes from the session alone; the query can't add to it.
+    expect(mocks.listActingConnections).toHaveBeenCalledWith({ firmId: "org_1", actorUserId: "user_ada" });
   });
 
   it("a cancelled meeting is never editable, even for its organizer", async () => {
