@@ -79,5 +79,8 @@ export type WorkspaceTodo = {
  */
 export type OutlookError = "needs_reconnect" | "throttled" | "unavailable" | "not_connected";
 
+/** Why one connected account's half of the week or to-do list is missing. */
+export type AccountError = "needs_reconnect" | "throttled" | "unavailable";
+
 /** One attendee type-ahead suggestion: a CRM contact or a teammate. */
 export type AttendeeSuggestion = { email: string; name: string; kind: "client" | "team" };

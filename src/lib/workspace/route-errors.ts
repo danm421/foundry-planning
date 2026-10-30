@@ -52,7 +52,7 @@ export function workspaceErrorResponse(err: unknown): Response {
 
 /**
  * All a log line may carry: the error's name; for a provider error, the
- * provider plus a request error's status and request id; for a sign-in error,
+ * provider plus a request error's status, request id and code; for a sign-in error,
  * the provider and its short `code`.
  */
 export function safeErrorFields(err: unknown): {
@@ -66,7 +66,13 @@ export function safeErrorFields(err: unknown): {
     name: err instanceof Error ? err.name : typeof err,
     ...(err instanceof ProviderThrottledError ? { provider: err.provider } : {}),
     ...(err instanceof ProviderRequestError
-      ? { provider: err.provider, status: err.status, requestId: err.requestId }
+      ? {
+          provider: err.provider,
+          status: err.status,
+          requestId: err.requestId,
+          // Google sends no request id, so the code is the only reason a failure logs.
+          ...(err.code ? { code: err.code } : {}),
+        }
       : {}),
     ...(err instanceof MicrosoftAuthError ? { provider: "microsoft" as const, code: err.code } : {}),
     ...(err instanceof GoogleAuthError ? { provider: "google" as const, code: err.code } : {}),

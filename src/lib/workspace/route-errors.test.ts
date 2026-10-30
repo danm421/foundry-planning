@@ -101,6 +101,17 @@ describe("workspaceErrorResponse", () => {
       provider: "google",
       status: 400,
       requestId: null,
+      code: "badRequest",
+    });
+  });
+
+  it("(R15) a ProviderRequestError with no code omits the code field", async () => {
+    workspaceErrorResponse(new ProviderRequestError("google", 400, null, null));
+    expect(consoleError).toHaveBeenCalledWith(expect.any(String), {
+      name: "ProviderRequestError",
+      provider: "google",
+      status: 400,
+      requestId: null,
     });
   });
 
