@@ -640,11 +640,33 @@ describe("WorkspacePage — the to-do panel", () => {
     (paneState) => {
       renderPage(paneState);
       expect(screen.getByRole("complementary", { name: "To-dos" })).toBeInTheDocument();
-      expect(todoPanelProps).toHaveBeenLastCalledWith(
-        expect.objectContaining({ userId: "user_me", households: HOUSEHOLDS, accounts: expect.any(Array) }),
-      );
+      expect(todoPanelProps).toHaveBeenLastCalledWith({
+        userId: "user_me",
+        households: HOUSEHOLDS,
+        accounts: paneState === "ready" ? [ACCOUNT] : [],
+      });
     },
   );
+
+  it("(R21) hiding an address hides its meetings only: the panel still gets every account", async () => {
+    const G = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+    const GOOGLE: AccountSummary = { ...ACCOUNT, id: G, provider: "google", email: "dana@gmail.com" };
+    localStorage.setItem("workspace.hiddenAccounts", JSON.stringify([G]));
+    renderPage("ready", [ACCOUNT, GOOGLE]);
+    expect(await screen.findByText("Annual review")).toBeInTheDocument();
+    expect(todoPanelProps).toHaveBeenLastCalledWith(expect.objectContaining({ accounts: [ACCOUNT, GOOGLE] }));
+  });
+
+  it("disconnecting one of two addresses remounts the panel, so its to-dos are read afresh", async () => {
+    const G = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+    const GOOGLE: AccountSummary = { ...ACCOUNT, id: G, provider: "google", email: "dana@gmail.com" };
+    const view = renderPage("ready", [ACCOUNT, GOOGLE]);
+    await screen.findByText("Annual review");
+    expect(todoPanelMounts).toHaveBeenCalledTimes(1);
+    view.rerender(page("ready", [ACCOUNT]));
+    await waitFor(() => expect(todoPanelMounts).toHaveBeenCalledTimes(2));
+    expect(todoPanelProps).toHaveBeenLastCalledWith(expect.objectContaining({ accounts: [ACCOUNT] }));
+  });
 
   it("stays beside the can't-load pane when the week fails", async () => {
     fetchMock.mockResolvedValue(respond(500, { error: "Internal server error" }));

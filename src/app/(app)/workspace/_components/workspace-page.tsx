@@ -527,8 +527,8 @@ export function WorkspacePage({
           </div>
         </div>
         {/* Beside every calendar state: Foundry tasks don't wait on Microsoft.
-            A new connection state (after Disconnect) reads the to-dos afresh. */}
-        <TodoPanel key={paneState} userId={userId} households={households} accounts={accounts} />
+            A new connection state or address set (after Disconnect) reads the to-dos afresh. */}
+        <TodoPanel key={`${paneState}:${accounts.map((a) => a.id).join(",")}`} userId={userId} households={households} accounts={accounts} />
       </div>
 
       <DialogShell

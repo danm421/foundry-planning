@@ -219,7 +219,7 @@ describe("TodoPanel — Outlook's side", () => {
     expect(screen.getByText("dan@gmail.com's to-dos are unavailable right now.")).toBeInTheDocument();
   });
 
-  it("two accounts: each to-do's chip is its address label; one account keeps Outlook", async () => {
+  it("two accounts: each to-do's chip is its address label, not the provider name", async () => {
     serverTodos = answer([], [account([OUTLOOK_TODO]), account([GOOGLE_TODO], null, GOOGLE_ID, "google")]);
     renderPanel([MS_ACCOUNT, GOOGLE_ACCOUNT]);
     await screen.findByText("Book the Schwab call");
@@ -408,7 +408,7 @@ describe("TodoPanel — adding one", () => {
       expect(localStorage.getItem("workspace.lastTodoDestination")).toBe(GOOGLE_ID);
     });
 
-    it("starts on the last destination used, and falls back to the first when it's gone", async () => {
+    it("starts on the last destination used", async () => {
       localStorage.setItem("workspace.lastTodoDestination", GOOGLE_ID);
       await openTwo();
       expect(screen.getByLabelText("Add to")).toHaveValue(GOOGLE_ID);
@@ -430,15 +430,30 @@ describe("TodoPanel — adding one", () => {
       expect(sent().url).toBe("/api/crm/tasks");
     });
 
-    it("an address that needs to reconnect is not a destination", async () => {
-      serverTodos = answer([], [account(null, "needs_reconnect"), account([GOOGLE_TODO], null, GOOGLE_ID, "google")]);
+    it("an address that needs to reconnect is not a destination, even without a route error", async () => {
+      writeMock.mockResolvedValueOnce(respond(201, { todo: {} }));
+      serverTodos = answer([], [account([OUTLOOK_TODO]), account([GOOGLE_TODO], null, GOOGLE_ID, "google")]);
       const user = userEvent.setup();
-      renderPanel([MS_ACCOUNT, GOOGLE_ACCOUNT]);
+      renderPanel([{ ...MS_ACCOUNT, status: "needs_reconnect" }, GOOGLE_ACCOUNT]);
       await screen.findByText("Book the Schwab call");
       await user.click(screen.getByRole("button", { name: "+ Add a to-do" }));
       // One destination left: the phase-1 switch, posting to Google.
       expect(screen.queryByLabelText("Add to")).toBeNull();
       expect(screen.getByRole("switch", { name: "Make it a Foundry task" })).not.toBeChecked();
+      await user.type(screen.getByLabelText("Title"), "Call Schwab{Enter}");
+      expect(sent().url).toBe(`/api/workspace/accounts/${GOOGLE_ID}/todos`);
+    });
+
+    it("a route-reported needs_reconnect address is not a destination either, and the other one receives the to-do", async () => {
+      writeMock.mockResolvedValueOnce(respond(201, { todo: {} }));
+      serverTodos = answer([], [account(null, "needs_reconnect"), account([GOOGLE_TODO], null, GOOGLE_ID, "google")]);
+      const user = userEvent.setup();
+      renderPanel([MS_ACCOUNT, GOOGLE_ACCOUNT]);
+      await screen.findByText("Book the Schwab call");
+      await user.click(screen.getByRole("button", { name: "+ Add a to-do" }));
+      expect(screen.queryByLabelText("Add to")).toBeNull();
+      await user.type(screen.getByLabelText("Title"), "Call Schwab{Enter}");
+      expect(sent().url).toBe(`/api/workspace/accounts/${GOOGLE_ID}/todos`);
     });
   });
 
