@@ -21,7 +21,22 @@ export interface ResolvedBenefit {
   spousal: number;
   survivor: number;
   total: number;
+  /** What each calendar month pays, January first; adds up to `total`.
+   *  Reporting only — the month-by-month reports place the year's benefit
+   *  with it, and no engine math reads it. */
+  byMonth: number[];
 }
+
+/** `perMonth` in each of the year's LAST `n` months — a benefit that switches
+ *  on mid-year — or, `fromJanuary`, its FIRST `n`. */
+function paidMonths(perMonth: number, n: number, fromJanuary = false): number[] {
+  const out = new Array<number>(12).fill(0);
+  for (let i = 0; i < n; i++) out[fromJanuary ? i : 11 - i] = perMonth;
+  return out;
+}
+
+const addMonths = (...parts: number[][]): number[] =>
+  parts.reduce((acc, p) => acc.map((v, i) => v + p[i]), new Array<number>(12).fill(0));
 
 function birthYear(dob: string): number {
   return parseInt(dob.slice(0, 4), 10);
@@ -89,7 +104,13 @@ function claimAgeMonthsOf(row: Income): number {
  * @returns `{ retirement, spousal, survivor, total }` — all in annual dollars.
  */
 export function resolveAnnualBenefit(input: ResolveAnnualBenefitInput): ResolvedBenefit {
-  const zero: ResolvedBenefit = { retirement: 0, spousal: 0, survivor: 0, total: 0 };
+  const zero: ResolvedBenefit = {
+    retirement: 0,
+    spousal: 0,
+    survivor: 0,
+    total: 0,
+    byMonth: new Array<number>(12).fill(0),
+  };
   const thisDob = ownerDob(input.row, input.client);
   if (!thisDob) return zero;
 
@@ -202,6 +223,10 @@ export function resolveAnnualBenefit(input: ResolveAnnualBenefitInput): Resolved
       spousal: 0,
       survivor: survivorTopUp + survivorAlone,
       total: retirement + survivorTopUp + survivorAlone,
+      byMonth: addMonths(
+        paidMonths(Math.max(own, survivor) * growthFactor, ownMonths),
+        paidMonths(survivor * growthFactor, soloSurvivorMonths, true),
+      ),
     };
   }
 
@@ -236,6 +261,10 @@ export function resolveAnnualBenefit(input: ResolveAnnualBenefitInput): Resolved
       spousal: spousalPortion,
       survivor: 0,
       total: retirement + spousalPortion,
+      byMonth: addMonths(
+        paidMonths(t.retirement * growthFactor, ownMonths),
+        paidMonths(t.spousalPortion * growthFactor, spousalMonths),
+      ),
     };
   }
 
@@ -245,5 +274,6 @@ export function resolveAnnualBenefit(input: ResolveAnnualBenefitInput): Resolved
     spousal: 0,
     survivor: 0,
     total: annualize(own, ownMonths),
+    byMonth: paidMonths(own * growthFactor, ownMonths),
   };
 }

@@ -9021,6 +9021,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         ...grantorIncome.bySource,
         ...businessDistributionsBySource, // entity-id keys for the Business drill-down
       },
+      ...(income.monthlyBySource ? { monthlyBySource: income.monthlyBySource } : {}),
       ...(income.socialSecurityDetail
         ? { socialSecurityDetail: income.socialSecurityDetail }
         : {}),

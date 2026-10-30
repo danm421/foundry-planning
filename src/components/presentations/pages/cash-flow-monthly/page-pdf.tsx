@@ -18,7 +18,6 @@ import { PageFrame } from "../../shared/page-frame";
 import { SectionHead } from "../../shared/section-head";
 import { CashflowChartPdf } from "../cash-flow/chart-pdf";
 import {
-  DISTRIBUTIONS_PRINT_LEGEND_NOTE,
   DistributionsCard,
   DistributionsTable,
   DistributionsTableHead,
@@ -153,7 +152,11 @@ export function MonthlyCashFlowPagePdf({
     const chart = data.chartSpec && (
       <>
         <CashflowChartPdf spec={data.chartSpec} />
-        <Text style={s.note}>{DISTRIBUTIONS_PRINT_LEGEND_NOTE}</Text>
+        {dist.chartNotes.map((n) => (
+          <Text key={n} style={s.note}>
+            {n}
+          </Text>
+        ))}
       </>
     );
     const firstTableSheet = pageIndex + (dist.chartOnOwnSheet ? 2 : 1);

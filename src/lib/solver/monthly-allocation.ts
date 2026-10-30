@@ -1,6 +1,8 @@
-import type { ClientData, ProjectionYear } from "@/engine";
+import type { ClientData, ClientInfo, ProjectionYear } from "@/engine";
+import type { Expense, Income } from "@/engine/types";
 import { isHeldFlatLiability } from "@/engine/liability-kind";
 import { buildLiabilitySchedule } from "@/engine/liability-schedules";
+import { retirementMonthWindow } from "@/engine/retirement-proration";
 import { deflator, householdLiquidAccountIds, type DollarBasis } from "./monthly-cash-flow";
 
 const MONTHS = [
@@ -33,28 +35,77 @@ export interface MonthRow {
  *
  * `month` null → an even split. `month` 1-12 → the whole amount in that month.
  *
- * EXACT BY CONSTRUCTION, not by tolerance. Twelve additions of `total / 12` do
- * not always return `total` in binary floating point, so the first eleven
- * months take the rounded twelfth and December takes whatever is left.
+ * EXACT BY CONSTRUCTION, not by tolerance — see `spreadRange`.
  *
  * Exported for its own unit test: this exactness is the module's contract at the
  * single-row level, and it is the only level where `toBe` is achievable — summing
  * ACROSS rows re-associates the same terms and drifts in the last bits.
  */
 export function spread(total: number, month: number | null | undefined): number[] {
+  if (month != null && month >= 1 && month <= 12) return spreadRange(total, month, month);
+  return spreadRange(total, 1, 12);
+}
+
+/**
+ * Spread one amount evenly across months `first`..`last` (1-12).
+ *
+ * Twelve additions of `total / 12` do not always return `total` in binary
+ * floating point, so every month but the last takes the rounded share and the
+ * last takes whatever is left.
+ */
+export function spreadRange(total: number, first: number, last: number): number[] {
   const out = new Array(12).fill(0);
-  if (month != null && month >= 1 && month <= 12) {
-    out[month - 1] = total;
-    return out;
-  }
-  const each = total / 12;
+  const count = last - first + 1;
+  const each = total / count;
   let assigned = 0;
-  for (let i = 0; i < 11; i++) {
-    out[i] = each;
+  for (let m = first; m < last; m++) {
+    out[m - 1] = each;
     assigned += each;
   }
-  out[11] = total - assigned;
+  out[last - 1] = total - assigned;
   return out;
+}
+
+/**
+ * The months of `year` a plan row's amount belongs in, as a 12-month split.
+ *
+ *  · `paymentMonth` — the advisor's "paid in" month — takes the whole amount.
+ *  · `paidByMonth`, when the engine reports one, shapes it: Social Security
+ *    in its claim year starts in the entitlement month, and a survivor year
+ *    splits at the survivor's own claim (`income.monthlyBySource`).
+ *  · A retirement-linked row in the retirement year runs only in the months
+ *    `retirementMonthWindow` gives it — the months the engine prorated it to.
+ *  · Anything else, including a key with no plan row, spreads evenly.
+ */
+export function placeInMonths(
+  total: number,
+  row: Income | Expense | undefined,
+  year: number,
+  client: ClientInfo,
+  paidByMonth?: number[],
+): number[] {
+  if (row?.paymentMonth != null) return spread(total, row.paymentMonth);
+  if (paidByMonth) return spreadLike(total, paidByMonth);
+  if (!row) return spreadRange(total, 1, 12);
+  const { first, last } = retirementMonthWindow(row, year, client);
+  // A row that starts at one spouse's retirement and ends at the other's can
+  // leave no months; the money still lands somewhere.
+  return first <= last ? spreadRange(total, first, last) : spreadRange(total, 1, 12);
+}
+
+/** `total` in the proportions of `weights`; the last paid month takes the
+ *  remainder, so the split adds back to `total` exactly. */
+function spreadLike(total: number, weights: number[]): number[] {
+  const sum = weights.reduce((a, b) => a + b, 0);
+  if (sum <= 0) return spreadRange(total, 1, 12);
+  const last = weights.findLastIndex((w) => w > 0);
+  let assigned = 0;
+  return weights.map((w, i) => {
+    if (i === last) return total - assigned;
+    const part = (total * w) / sum;
+    assigned += part;
+    return part;
+  });
 }
 
 /** Spread a loan's annual payment across the months it actually paid. */
@@ -98,7 +149,8 @@ export function buildMonthlyAllocation(
 ): MonthRow[] {
   const k = deflator(year.year, basis, clientData.planSettings);
 
-  const incomeMonth = new Map(clientData.incomes.map((i) => [i.id, i.paymentMonth ?? null]));
+  const client = clientData.client;
+  const incomeById = new Map(clientData.incomes.map((i) => [i.id, i]));
 
   const acc = {
     income: new Array(12).fill(0),
@@ -122,14 +174,19 @@ export function buildMonthlyAllocation(
   let otherExplained = 0;
   let debtExplained = 0;
 
-  // ── Income: per row, by its own month (or evenly when it has none) ────────
+  // ── Income: per row, in the months it was paid ────────────────────────────
+  // A synthetic key with no matching row spreads evenly.
   for (const [key, amount] of Object.entries(year.income.bySource)) {
-    // A synthetic key with no matching row spreads evenly, exactly like a real
-    // row that carries no month. (`.has` is written out for the reader's sake,
-    // not for behaviour: the map's values are already `number | null`, so
-    // `.get(key) ?? null` answers identically — measured.)
-    const month = incomeMonth.has(key) ? incomeMonth.get(key)! : null;
-    add(acc.income, spread(amount * k, month));
+    add(
+      acc.income,
+      placeInMonths(
+        amount * k,
+        incomeById.get(key),
+        year.year,
+        client,
+        year.income.monthlyBySource?.[key],
+      ),
+    );
     incomeExplained += amount;
   }
 
@@ -137,7 +194,7 @@ export function buildMonthlyAllocation(
   const byId = new Map(clientData.expenses.map((e) => [e.id, e]));
   for (const [key, amount] of Object.entries(year.expenses.bySource)) {
     const row = byId.get(key);
-    const parts = spread(amount * k, row?.paymentMonth ?? null);
+    const parts = placeInMonths(amount * k, row, year.year, client);
     if (row?.type === "living") {
       livingExplained += amount;
       add(acc.living, parts);

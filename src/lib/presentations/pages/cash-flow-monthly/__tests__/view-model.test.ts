@@ -5,6 +5,7 @@ import { buildDistributionsChartData } from "@/components/charts/solver-monthly-
 import { buildMonthlyCashFlowRows, selectMonthlyRow } from "@/lib/solver/monthly-cash-flow";
 import { otherAccountsAmount } from "../view-model";
 import {
+  buildDistributionMonths,
   buildMonthlyDistributionRows,
   rankDistributionAccounts,
 } from "@/lib/solver/monthly-distributions";
@@ -245,8 +246,25 @@ describe("buildMonthlyCashFlowPageData — Distributions", () => {
   it("chart series labels match the screen chart's dataset labels", () => {
     const data = build({ mode: "distributions" });
     const spec = data.chartSpec!;
-    const screen = buildDistributionsChartData(data.distribution!.rows, "light").datasets.map((ds) => ds.label);
+    const summary = data.distribution!.summary!;
+    const months = buildDistributionMonths(
+      years().find((y) => y.year === summary.year)!,
+      summary,
+      makeMonthlyClientData(),
+      "today",
+    );
+    const screen = buildDistributionsChartData(data.distribution!.rows, months, "light").datasets.map((ds) => ds.label);
     expect([...spec.stacks.map((s) => s.label), ...spec.lines.map((l) => l.label)]).toEqual(screen);
+  });
+
+  it("charts the captioned year's twelve months, labelled Jan-Dec, with a note naming the year", () => {
+    const data = build({ mode: "distributions" });
+    const spec = data.chartSpec!;
+    expect(spec.xAxis.ticks).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    expect(spec.xAxis.labelFormat!(1)).toBe("Jan");
+    expect(spec.xAxis.labelFormat!(12)).toBe("Dec");
+    for (const st of spec.stacks) expect(st.values).toHaveLength(12);
+    expect(data.distribution!.chartNotes[0]).toMatch(/^Each bar is one month of 2041;/);
   });
 
   it("prints the taxes-and-goals note, and the depleted note when a printed year is depleted", () => {
@@ -289,10 +307,24 @@ describe("buildMonthlyCashFlowPageData — Distributions on a real engine projec
     }
   });
 
-  it("the chart's Other accounts stack equals the table's, year by year", () => {
-    const other = data.chartSpec!.stacks.find((s) => s.label === "Other accounts")!;
-    expect(other.values).toHaveLength(d.rows.length);
-    d.rows.forEach((r, i) => expect(other.values[i], `${r.year}`).toBeCloseTo(otherAccountsAmount(r, d.columns), 6));
+  it("the chart's Other accounts months add up to the captioned year's table figure", () => {
+    // Only a year that draws from an unranked account has the stack at all.
+    const year = d.rows.find((r) => otherAccountsAmount(r, d.columns) >= 1)!.year;
+    expect(otherAccountsAmount(d.summary!, d.columns)).toBeLessThan(0.5);
+    expect(data.chartSpec!.stacks.map((s) => s.label)).not.toContain("Other accounts");
+
+    const shown = buildMonthlyCashFlowPageData({
+      years: realYears,
+      clientData,
+      options: { view: "plan", basis: "today", range: "full", year, mode: "distributions" },
+      scenarioLabel: "Base Case",
+      clientName: "John",
+      spouseName: "Jane",
+    });
+    const other = shown.chartSpec!.stacks.find((s) => s.label === "Other accounts")!;
+    expect(other.values).toHaveLength(12);
+    const total = other.values.reduce((s, v) => s + v, 0);
+    expect(total).toBeCloseTo(otherAccountsAmount(shown.distribution!.summary!, d.columns) * 12, 4);
   });
 
   it("ranks the columns as the screen does — full projection, either basis, any range", () => {

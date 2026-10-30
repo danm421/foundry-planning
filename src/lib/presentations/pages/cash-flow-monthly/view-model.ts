@@ -16,12 +16,20 @@ import {
 import { buildMonthlyAllocation } from "@/lib/solver/monthly-allocation";
 import { exactCurrency } from "../../format";
 import {
+  buildDistributionMonths,
   buildMonthlyDistributionRows,
+  distributionChartSeries,
   hasOtherAccounts,
   rankDistributionAccounts,
+  unrankedAmount,
+  usesCashCushion,
+  type DistributionMonth,
   type DistributionRow,
 } from "@/lib/solver/monthly-distributions";
-import { DISTRIBUTIONS_DEPLETED_NOTE } from "@/lib/solver/distribution-card-lines";
+import {
+  CASH_CUSHION_NOTE,
+  DISTRIBUTIONS_DEPLETED_NOTE,
+} from "@/lib/solver/distribution-card-lines";
 import { distributionsChartPlacement } from "./distributions-layout";
 import { colorsLight, dataLight } from "@/brand";
 import { PRESENTATION_THEME } from "../../theme";
@@ -51,6 +59,11 @@ const DISTRIBUTIONS_NOTE =
   "Taxes and goals paid from set-aside accounts are shown separately and are not part of the monthly spending need.";
 
 const DISTRIBUTIONS_LEGEND_PER_ROW = 4;
+
+/** Under the month chart. The screen's own note says "dashed line"; the
+ *  printed chart draws the need solid, so this one names it. */
+const distributionsPrintLegendNote = (year: number) =>
+  `Each bar is one month of ${year}; the year card shows the average month. The part of each bar above the Spending need line pays taxes and anything else listed under Total from accounts.`;
 
 /** Account stacks take these in rank order, as the screen chart does, so the
  *  largest account is the same colour on both. */
@@ -204,13 +217,23 @@ function buildDistributionsBranch(
   if (rows.some((r) => r.depleted)) notes.push(DISTRIBUTIONS_DEPLETED_NOTE);
   notes.push(DISTRIBUTIONS_NOTE);
 
-  const chart = distributionsChartPlacement(summary);
+  // The chart is the captioned year's twelve months, as on screen.
+  const summaryYear = summary && years.find((y) => y.year === summary.year);
+  const months =
+    rows.length > 0 && summary && summaryYear
+      ? buildDistributionMonths(summaryYear, summary, clientData, options.basis)
+      : null;
+  const chartNotes =
+    months && summary
+      ? [
+          distributionsPrintLegendNote(summary.year),
+          ...(usesCashCushion(months) ? [CASH_CUSHION_NOTE] : []),
+        ]
+      : [];
+  const chart = distributionsChartPlacement(summary, chartNotes);
   return {
-    distribution: { summary, rows, columns, showOther, chartOnOwnSheet: chart.ownSheet },
-    chartSpec:
-      rows.length > 0
-        ? { ...distributionsChartSpec(rows, columns, showOther), height: chart.height }
-        : undefined,
+    distribution: { summary, rows, columns, showOther, chartOnOwnSheet: chart.ownSheet, chartNotes },
+    chartSpec: months ? { ...distributionsChartSpec(months, columns), height: chart.height } : undefined,
     planRows: [],
     monthRows: [],
     notes,
@@ -222,55 +245,61 @@ export function otherAccountsAmount(
   r: DistributionRow,
   columns: { accountId: string }[],
 ): number {
-  const ranked = new Set(columns.map((c) => c.accountId));
-  return r.fromAccounts.accounts.reduce((s, a) => (ranked.has(a.accountId) ? s : s + a.amount), 0);
+  return unrankedAmount(r.fromAccounts.accounts, columns);
 }
 
-/** Same series, order and colours as the screen chart. "Other accounts" is the
- *  neutral slate (never a semantic hue); the Spending need line is solid here,
+/** Same series, order and colours as the screen chart, on the twelve months
+ *  of one year. "Other accounts" is the neutral slate (never a semantic hue);
+ *  the cash cushion the brand indigo; the Spending need line is solid here,
  *  named in the legend, because the print chart draws no dashes. */
 function distributionsChartSpec(
-  rows: DistributionRow[],
+  months: DistributionMonth[],
   columns: { accountId: string; name: string }[],
-  showOther: boolean,
 ): ChartSpec {
+  const series = distributionChartSeries(months, columns);
   const stacks: DrillStackSeries[] = [
-    stack("Income", rows.map((r) => r.income.total), dataLight.grey),
-    ...columns.map((c, i) =>
-      stack(
-        c.name,
-        rows.map((r) => r.fromAccounts.accounts.find((a) => a.accountId === c.accountId)?.amount ?? 0),
-        ACCOUNT_COLORS[i],
-      ),
-    ),
-    ...(showOther
-      ? [
-          stack(
-            "Other accounts",
-            rows.map((r) => Math.max(0, otherAccountsAmount(r, columns))),
-            colorsLight.ink2,
-          ),
-        ]
-      : []),
+    stack("Income", series.income, dataLight.grey),
+    ...series.accounts.map((a) => stack(a.name, a.values, ACCOUNT_COLORS[a.rank])),
+    ...(series.other ? [stack("Other accounts", series.other, colorsLight.ink2)] : []),
+    ...(series.cash ? [stack("Cash cushion", series.cash, colorsLight.secondary)] : []),
   ];
   // Ids come from the label, which can collide when two accounts share a name.
   const spec = buildDrillChartSpec({
-    years: rows.map((r) => r.year),
+    years: months.map((m) => m.month),
     stacks: stacks.map((s, i) => ({ ...s, seriesId: `${s.seriesId}-${i}` })),
     lines: [
       {
         seriesId: "spending-need",
         label: "Spending need",
         color: PRESENTATION_THEME.chartLine,
-        values: rows.map((r) => r.need.total),
+        values: series.need,
       },
     ],
     markers: [],
   });
   // Account names are free text, longer than the default legend pitch was
-  // sized for: at most seven items (Income, four accounts, Other accounts,
-  // Spending need) at four to a row, a long name cut to its slot.
-  return { ...spec, legend: { ...spec.legend, itemsPerRow: DISTRIBUTIONS_LEGEND_PER_ROW } };
+  // sized for: at most eight items (Income, four accounts, Other accounts,
+  // Cash cushion, Spending need) at four to a row, a long name cut to its slot.
+  return onMonthAxis(
+    { ...spec, legend: { ...spec.legend, itemsPerRow: DISTRIBUTIONS_LEGEND_PER_ROW } },
+    months.map((m) => m.label),
+  );
+}
+
+/** The x-axis is months, not years. `buildDrillChartSpec` thins ticks for a
+ *  multi-decade span; twelve of them all fit, and an unlabelled month is a
+ *  month the reader has to count to. Labels come from the rows, never from a
+ *  month-name constant: a constant labels every bar wrong the moment the row
+ *  count is not twelve. */
+function onMonthAxis(spec: ChartSpec, labels: string[]): ChartSpec {
+  return {
+    ...spec,
+    xAxis: {
+      ...spec.xAxis,
+      ticks: labels.map((_, i) => i + 1),
+      labelFormat: (v: number) => labels[v - 1]?.slice(0, 3) ?? String(v),
+    },
+  };
 }
 
 function toSummary(r: MonthlyCashFlowRow): MonthlySummary {
@@ -396,27 +425,19 @@ function monthChartSpec(rows: MonthlyMonthRow[]): ChartSpec {
     markers: [],
   });
 
-  // The x-axis is months, not years. `buildDrillChartSpec` thins ticks for a
-  // multi-decade span; twelve of them all fit, and an unlabelled month is a
-  // month the advisor has to count to.
-  return {
-    ...spec,
-    // Shorter than the shared default, and the reason is a measurement: at the
-    // 260pt every other Cash Flow sheet uses, the summary card plus the chart
-    // pushed November and December onto a second sheet. Twelve months split
-    // across two pages is a worse handout than a shorter chart — and unlike the
-    // plan table, which genuinely runs to forty rows, this one has a fixed
-    // twelve and can be made to fit. Verified by rendering, not by arithmetic.
-    height: MONTH_CHART_HEIGHT,
-    xAxis: {
-      ...spec.xAxis,
-      ticks: months,
-      // Derived from the rows, never from a month-name constant: a constant
-      // is a second source of truth that labels every bar wrong the moment the
-      // row count is not twelve. Same rule as the on-screen chart.
-      labelFormat: (v: number) => rows[v - 1]?.label.slice(0, 3) ?? String(v),
+  return onMonthAxis(
+    {
+      ...spec,
+      // Shorter than the shared default, and the reason is a measurement: at the
+      // 260pt every other Cash Flow sheet uses, the summary card plus the chart
+      // pushed November and December onto a second sheet. Twelve months split
+      // across two pages is a worse handout than a shorter chart — and unlike the
+      // plan table, which genuinely runs to forty rows, this one has a fixed
+      // twelve and can be made to fit. Verified by rendering, not by arithmetic.
+      height: MONTH_CHART_HEIGHT,
     },
-  };
+    rows.map((m) => m.label),
+  );
 }
 
 function stack(label: string, values: number[], color: string): DrillStackSeries {

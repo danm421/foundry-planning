@@ -26,6 +26,7 @@ import { SolverMonthlyCashFlowPanel } from "./solver-monthly-cash-flow-panel";
 import { buildMonthlyCashFlowRows, selectMonthlyRow } from "@/lib/solver/monthly-cash-flow";
 import { buildMonthlyAllocation } from "@/lib/solver/monthly-allocation";
 import {
+  buildDistributionMonths,
   buildMonthlyDistributionRows,
   isRetirementYear,
   type MonthlyMode,
@@ -395,6 +396,18 @@ export function SolverChartPanel({
         : [],
     [isMonthlySubTab, monthlyMode, currentProjection, workingTree, dollarBasis],
   );
+
+  // The twelve months of the year the Distributions panel captions, for its
+  // chart. The year comes from `selectMonthlyRow`, the panel's own rule.
+  const distributionMonths = useMemo(() => {
+    if (distributionRows.length === 0) return null;
+    const year = selectMonthlyRow(monthlyRows, selectedYear)?.year;
+    const row = distributionRows.find((r) => r.year === year);
+    const projectionYear = currentProjection.find((p) => p.year === year);
+    return row && projectionYear
+      ? { year: row.year, months: buildDistributionMonths(projectionYear, row, workingTree, dollarBasis) }
+      : null;
+  }, [distributionRows, monthlyRows, selectedYear, currentProjection, workingTree, dollarBasis]);
 
   // The twelve months of whichever year the panel below is captioning. The year
   // comes from `selectMonthlyRow` — the panel's OWN rule, shared rather than
@@ -785,11 +798,11 @@ export function SolverChartPanel({
             onYearClick={onYearClick}
           />
         ) : null}
-        {isMonthlySubTab && monthlyMode === "distributions" ? (
+        {isMonthlySubTab && monthlyMode === "distributions" && distributionMonths ? (
           <SolverMonthlyDistributionsChart
             rows={distributionRows}
-            selectedYear={selectedYear}
-            onYearClick={onYearClick}
+            months={distributionMonths.months}
+            year={distributionMonths.year}
           />
         ) : null}
         {isMonthlySubTab && monthlyMode === "cashflow" ? (

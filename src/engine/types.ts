@@ -2012,6 +2012,11 @@ export interface ProjectionYear {
     other: number;
     total: number;
     bySource: Record<string, number>;
+    /** What each calendar month paid (January first), keyed like
+     *  `bySource`, for a Social Security row in a year it isn't paid evenly
+     *  (its claim year, a survivor year split at the survivor's own claim).
+     *  Reporting only — see `computeIncome`. */
+    monthlyBySource?: Record<string, number[]>;
   };
 
   /** Per-spouse retirement/spousal/survivor breakdown for SS rows in pia_at_fra mode. */

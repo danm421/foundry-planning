@@ -105,6 +105,9 @@ export interface MonthlyCashFlowPageData {
      *  sheet of its own (`distributionsChartPlacement`). The page count reads
      *  it, so the deck numbers that sheet. */
     chartOnOwnSheet: boolean;
+    /** Printed under the chart: what a bar is, and the cash cushion when a
+     *  month uses it. `distributionsChartPlacement` counts their height. */
+    chartNotes: string[];
   };
   /** Populated in "plan" view only. */
   planRows: MonthlyPlanRow[];

@@ -146,11 +146,6 @@ export function DistributionsTableHead({
   );
 }
 
-/** Printed under the chart: the screen key's `DISTRIBUTIONS_LEGEND_NOTE`,
- *  worded for the printed chart, which draws the need as a solid line. */
-export const DISTRIBUTIONS_PRINT_LEGEND_NOTE =
-  "The part of each bar above the Spending need line pays taxes and anything else listed under Total from accounts.";
-
 /** One sheet's run of the table: the header, then `rows`. */
 export function DistributionsTable({
   distribution,

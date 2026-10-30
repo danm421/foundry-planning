@@ -9,6 +9,7 @@ import type { ClientData, ClientInfo, ProjectionYear } from "@/engine";
 import type { GoalYear } from "@/engine/types";
 import { canHaveGoalFunding, goalDrawAccountIds } from "@/engine/goals/goal-funding";
 import { ageLabel } from "./cashflow-year-detail";
+import { buildMonthlyAllocation, placeInMonths } from "./monthly-allocation";
 import {
   deflator,
   householdLiquidAccountIds,
@@ -161,14 +162,23 @@ function livingAgeLabel(year: ProjectionYear, client: ClientInfo): string {
 /** At most this many accounts get their own column / colour. */
 const MAX_RANKED_ACCOUNTS = 4;
 
-/** True when some row draws from an account `ranked` leaves out — the "Other
- *  accounts" column / stack shows. */
+/** True when some row draws from an account `ranked` leaves out — the table's
+ *  "Other accounts" column shows. */
 export function hasOtherAccounts(
   rows: DistributionRow[],
   ranked: { accountId: string }[],
 ): boolean {
   const ids = new Set(ranked.map((a) => a.accountId));
   return rows.some((r) => r.fromAccounts.accounts.some((a) => !ids.has(a.accountId)));
+}
+
+/** What `accounts` draw from everything outside `ranked` — "Other accounts". */
+export function unrankedAmount(
+  accounts: { accountId: string; amount: number }[],
+  ranked: { accountId: string }[],
+): number {
+  const ids = new Set(ranked.map((a) => a.accountId));
+  return accounts.reduce((s, a) => (ids.has(a.accountId) ? s : s + a.amount), 0);
 }
 
 /** The accounts that get their own column/colour: largest total draw across
@@ -411,4 +421,150 @@ export function buildMonthlyDistributionRows(
       lifeInsuranceProceeds: lifeInsurance * toBasis,
     };
   });
+}
+
+/** One month of the captioned year, for the Distributions chart. Every figure
+ *  is what lands in that month, in the chosen dollar basis. */
+export interface DistributionMonth {
+  /** 1-12 */
+  month: number;
+  /** "January" … "December" */
+  label: string;
+  need: number;
+  income: number;
+  taxes: number;
+  /** Each account's draw this month, in the row's account order. Over the year
+   *  an account's months add up to twelve times its row amount. */
+  accounts: { accountId: string; amount: number }[];
+  /** The cash cushion: + paid from cash held between months, − income this
+   *  month didn't need, held as cash for a month that's short. Nets to zero
+   *  over the year. */
+  cash: number;
+}
+
+/**
+ * Split one year's Distributions row into its twelve months.
+ *
+ * The row's figures are the year's average month. A month differs from the
+ * average only where something lands in particular months — Social Security
+ * from its claim month, a paycheck that stops at retirement, a bill paid in
+ * one month, a loan that starts mid-year — so each month is the average plus
+ * that deviation, read from `buildMonthlyAllocation` (the Cash flow month
+ * table's own placement). That makes every month-series add back to the row
+ * by construction.
+ *
+ * What the accounts send each month is what the month is short:
+ *  · Money the plan kept or reinvested is taken from the months that had
+ *    income to spare first; only what's left (an RMD bigger than the need,
+ *    say) is spread across the year.
+ *  · A month that still has income left over holds it as cash, and that cash
+ *    pays part of the months that are short (`cash`). It nets to zero.
+ *  · The accounts pay the rest, each in its share of the year — so each
+ *    account's months add up to its yearly figure.
+ */
+export function buildDistributionMonths(
+  year: ProjectionYear,
+  row: DistributionRow,
+  clientData: ClientData,
+  basis: DollarBasis,
+): DistributionMonth[] {
+  const months = buildMonthlyAllocation(year, clientData, basis);
+  const toBasis = deflator(year.year, basis, clientData.planSettings);
+  const deviation = (xs: number[]) => {
+    const avg = sumOf(xs, (x) => x) / MONTHS_PER_YEAR;
+    return xs.map((x) => x - avg);
+  };
+  const expenseById = new Map(clientData.expenses.map((e) => [e.id, e]));
+  const placed = (annual: number, expenseId: string) =>
+    deviation(placeInMonths(annual, expenseById.get(expenseId), year.year, clientData.client));
+
+  const needDev = deviation(months.map((m) => m.living + m.debt + m.other + m.savings));
+  const goalDev = new Array<number>(MONTHS_PER_YEAR).fill(0);
+  // A set-aside goal's cost is out of the need; only the part paid from
+  // general accounts is a use of account money, in the goal's own month.
+  for (const g of row.goals) {
+    if (g.setAsideAccountNames.length === 0) continue;
+    const cost = placed((year.expenses.bySource[g.goalId] ?? 0) * toBasis, g.goalId);
+    const outOfPocket = placed(g.fromGeneral * MONTHS_PER_YEAR, g.goalId);
+    for (let i = 0; i < MONTHS_PER_YEAR; i++) {
+      needDev[i] -= cost[i];
+      goalDev[i] += outOfPocket[i];
+    }
+  }
+  const incomeDev = deviation(months.map((m) => m.income));
+
+  const keptAnnual = surplusUnspentAnnual(year) * toBasis;
+  const { total, unexplained, accounts } = row.fromAccounts;
+  // Each month's draw before anything is kept or reinvested.
+  const short = months.map(
+    (_, i) =>
+      total + needDev[i] + goalDev[i] - incomeDev[i] - keptAnnual / MONTHS_PER_YEAR - unexplained,
+  );
+  const spare = short.map((x) => Math.max(0, -x));
+  const spareTotal = sumOf(spare, (x) => x);
+  const keptFromSpare = Math.min(keptAnnual, spareTotal);
+  const keptEven = (keptAnnual - keptFromSpare) / MONTHS_PER_YEAR;
+  const draw = short.map(
+    (x, i) =>
+      x +
+      (spareTotal > 0 ? (keptFromSpare * spare[i]) / spareTotal : 0) +
+      keptEven +
+      unexplained,
+  );
+
+  const positive = sumOf(draw, (d) => Math.max(0, d));
+  const held = sumOf(draw, (d) => Math.max(0, -d));
+
+  return months.map((m, i) => {
+    const d = draw[i];
+    const paid = Math.max(0, d);
+    return {
+      month: m.month,
+      label: m.label,
+      need: row.need.total + needDev[i],
+      income: row.income.total + incomeDev[i],
+      taxes: row.taxes,
+      accounts: accounts.map((a) => ({
+        accountId: a.accountId,
+        amount: positive > 0 ? (paid * a.amount * MONTHS_PER_YEAR) / positive : 0,
+      })),
+      cash: d < 0 ? d : positive > 0 ? (paid * held) / positive : 0,
+    };
+  });
+}
+
+/** Some month uses the cash cushion — its series and its note show. */
+export function usesCashCushion(months: DistributionMonth[]): boolean {
+  return months.some((m) => Math.abs(m.cash) >= MIN_LINE_PER_MONTH);
+}
+
+/** The month chart's series, screen and print alike; each renderer only
+ *  colours them. An account gets its plan-wide `rank` (and so its colour)
+ *  and shows only if this year draws from it; "Other accounts" and the cash
+ *  cushion show only when some month uses them. */
+export function distributionChartSeries(
+  months: DistributionMonth[],
+  ranked: { accountId: string; name: string }[],
+): {
+  income: number[];
+  accounts: { rank: number; name: string; values: number[] }[];
+  other: number[] | null;
+  cash: number[] | null;
+  need: number[];
+} {
+  const real = (values: number[]) => values.some((v) => v >= MIN_LINE_PER_MONTH);
+  const other = months.map((m) => unrankedAmount(m.accounts, ranked));
+  return {
+    income: months.map((m) => m.income),
+    accounts: ranked
+      .map((a, rank) => ({
+        rank,
+        name: a.name,
+        values: months.map((m) => m.accounts.find((x) => x.accountId === a.accountId)?.amount ?? 0),
+      }))
+      .filter((a) => real(a.values)),
+    other: real(other) ? other : null,
+    cash: usesCashCushion(months) ? months.map((m) => m.cash) : null,
+    need: months.map((m) => m.need),
+  };
 }

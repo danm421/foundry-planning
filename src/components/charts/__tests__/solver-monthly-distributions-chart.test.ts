@@ -1,10 +1,8 @@
 import { describe, it, expect } from "vitest";
-import type { DistributionRow } from "@/lib/solver/monthly-distributions";
+import type { DistributionMonth, DistributionRow } from "@/lib/solver/monthly-distributions";
 import {
   buildDistributionsChartData,
-  clickedDistributionYear,
-  selectedDistributionIndex,
-  distributionTooltipExtras,
+  distributionTooltipLabel,
 } from "../solver-monthly-distributions-chart";
 import { data, dataLight } from "@/brand";
 import { separation, SEPARATION_FLOOR } from "./color-separation";
@@ -71,12 +69,31 @@ const MANY = [
   row(2042, [A("a", 3_100), A("b", 2_100), A("c", 900)]),
 ];
 
+/** Twelve months of `r`, every month the average — or as `over` reshapes them. */
+function monthsOf(
+  r: DistributionRow,
+  over: (m: DistributionMonth, i: number) => Partial<DistributionMonth> = () => ({}),
+): DistributionMonth[] {
+  return Array.from({ length: 12 }, (_, i) => {
+    const m: DistributionMonth = {
+      month: i + 1,
+      label: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][i],
+      need: r.need.total,
+      income: r.income.total,
+      taxes: r.taxes,
+      accounts: r.fromAccounts.accounts.map((a) => ({ accountId: a.accountId, amount: a.amount })),
+      cash: 0,
+    };
+    return { ...m, ...over(m, i) };
+  });
+}
+
 const bars = (d: ReturnType<typeof buildDistributionsChartData>) =>
   d.datasets.filter((s) => s.type === "bar");
 
 describe("buildDistributionsChartData", () => {
-  it("labels: Income, ranked accounts, no Other when all fit, then Spending need", () => {
-    const d = buildDistributionsChartData(FEW, "dark");
+  it("labels: Income, ranked accounts, no Other when all fit, then Spending need; Jan-Dec", () => {
+    const d = buildDistributionsChartData(FEW, monthsOf(FEW[1]), "dark");
     expect(d.datasets.map((s) => s.label)).toEqual([
       "Income",
       "Acct a",
@@ -84,11 +101,11 @@ describe("buildDistributionsChartData", () => {
       "Acct c",
       "Spending need",
     ]);
-    expect(d.labels).toEqual(["2040", "2041"]);
+    expect(d.labels).toEqual(["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]);
   });
 
-  it("adds Other accounts when more accounts exist than get a bar", () => {
-    const d = buildDistributionsChartData(MANY, "dark");
+  it("adds Other accounts when the year draws from an account without a bar", () => {
+    const d = buildDistributionsChartData(MANY, monthsOf(MANY[0]), "dark");
     expect(d.datasets.map((s) => s.label)).toEqual([
       "Income",
       "Acct a",
@@ -98,39 +115,62 @@ describe("buildDistributionsChartData", () => {
       "Other accounts",
       "Spending need",
     ]);
+    // A year that draws only from ranked accounts has no Other bar.
+    const plain = buildDistributionsChartData(MANY, monthsOf(MANY[2]), "dark");
+    expect(plain.datasets.map((s) => s.label)).not.toContain("Other accounts");
   });
 
-  it("each year's bars sum to income + fromAccounts.total", () => {
-    for (const rows of [FEW, MANY]) {
-      const d = buildDistributionsChartData(rows, "dark");
-      rows.forEach((r, i) => {
-        const sum = bars(d).reduce((s, ds) => s + (ds.data[i] as number), 0);
-        expect(sum).toBeCloseTo(r.income.total + r.fromAccounts.total, 6);
-      });
-    }
+  it("each month's bars sum to its income + what the accounts and the cushion send", () => {
+    const months = monthsOf(MANY[0], (m, i) => ({
+      income: m.income + i * 100,
+      cash: i === 2 ? -400 : 0,
+    }));
+    const d = buildDistributionsChartData(MANY, months, "dark");
+    months.forEach((m, i) => {
+      const sum = bars(d).reduce((s, ds) => s + (ds.data[i] as number), 0);
+      expect(sum).toBeCloseTo(m.income + m.accounts.reduce((s, a) => s + a.amount, 0) + m.cash, 6);
+    });
   });
 
-  it("uses 0, never undefined, for an account absent in a year", () => {
-    const d = buildDistributionsChartData(MANY, "dark");
-    const c = d.datasets.find((s) => s.label === "Acct d")!;
-    expect(c.data).toEqual([800, 700, 0]);
+  it("shows the cash cushion only when a month uses it, below zero when income is held", () => {
+    expect(
+      buildDistributionsChartData(FEW, monthsOf(FEW[0]), "dark").datasets.map((s) => s.label),
+    ).not.toContain("Cash cushion");
+    const d = buildDistributionsChartData(
+      FEW,
+      monthsOf(FEW[0], (_, i) => ({ cash: i === 2 ? -1_100 : 100 })),
+      "dark",
+    );
+    const cash = d.datasets.find((s) => s.label === "Cash cushion")!;
+    expect(cash.data[2]).toBe(-1_100);
+    expect(cash.data[0]).toBe(100);
   });
 
-  it("draws the need as a dashed stepped line with no points", () => {
-    const d = buildDistributionsChartData(MANY, "dark");
+  it("leaves out an account the year doesn't draw from; the others keep their colours", () => {
+    const full = buildDistributionsChartData(MANY, monthsOf(MANY[0]), "dark");
+    const d = buildDistributionsChartData(MANY, monthsOf(MANY[2]), "dark");
+    expect(d.datasets.map((s) => s.label)).toEqual(["Income", "Acct a", "Acct b", "Acct c", "Spending need"]);
+    const colour = (data: typeof d, label: string) =>
+      (data.datasets.find((s) => s.label === label) as { backgroundColor: string }).backgroundColor;
+    for (const label of ["Acct a", "Acct b", "Acct c"]) expect(colour(d, label)).toBe(colour(full, label));
+  });
+
+  it("draws the month's need as a dashed stepped line with no points", () => {
+    const months = monthsOf(MANY[0], (m, i) => ({ need: i === 7 ? m.need + 30_000 : m.need }));
+    const d = buildDistributionsChartData(MANY, months, "dark");
     const line = d.datasets.find((s) => s.label === "Spending need") as unknown as Record<
       string,
       unknown
     >;
     expect(line.type).toBe("line");
-    expect(line.data).toEqual(MANY.map((r) => r.need.total));
+    expect(line.data).toEqual(months.map((m) => m.need));
     expect(line.borderDash).toEqual([6, 4]);
     expect(line.stepped).toBe("middle");
     expect(line.pointRadius).toBe(0);
   });
 
   it("never makes a dataset out of a goal", () => {
-    const d = buildDistributionsChartData(FEW, "dark");
+    const d = buildDistributionsChartData(FEW, monthsOf(FEW[0]), "dark");
     for (const s of d.datasets) {
       expect(s.label).not.toMatch(/Goal|Lake House|College/);
     }
@@ -139,7 +179,7 @@ describe("buildDistributionsChartData", () => {
   it("keeps an account's colour when the rows arrive in another order", () => {
     const colorOf = (rows: DistributionRow[]) =>
       Object.fromEntries(
-        buildDistributionsChartData(rows, "light").datasets.map((s) => [
+        buildDistributionsChartData(rows, monthsOf(MANY[0]), "light").datasets.map((s) => [
           s.label,
           (s as { backgroundColor?: string }).backgroundColor,
         ]),
@@ -148,8 +188,13 @@ describe("buildDistributionsChartData", () => {
   });
 
   it.each(["dark", "light"] as const)("keeps every bar apart to the eye in %s", (theme) => {
-    const d = buildDistributionsChartData(MANY, theme);
+    const d = buildDistributionsChartData(
+      MANY,
+      monthsOf(MANY[0], (_, i) => ({ cash: i === 2 ? -500 : 50 })),
+      theme,
+    );
     const hexes = bars(d).map((s) => (s as { backgroundColor: string }).backgroundColor);
+    expect(hexes).toHaveLength(7);
     expect(new Set(hexes).size).toBe(hexes.length);
     for (let i = 0; i < hexes.length; i++) {
       for (let j = i + 1; j < hexes.length; j++) {
@@ -166,7 +211,7 @@ describe("buildDistributionsChartData", () => {
 describe("Other accounts colour", () => {
   it.each(["dark", "light"] as const)("is a neutral, not a semantic hue, in %s", (theme) => {
     const p = theme === "light" ? dataLight : data;
-    const other = buildDistributionsChartData(MANY, theme).datasets.find(
+    const other = buildDistributionsChartData(MANY, monthsOf(MANY[0]), theme).datasets.find(
       (s) => s.label === "Other accounts",
     ) as { backgroundColor: string };
     for (const hue of [p.red, p.orange, p.teal, p.purple, p.grey]) {
@@ -175,62 +220,10 @@ describe("Other accounts colour", () => {
   });
 });
 
-describe("year index helpers", () => {
-  it("maps a click and a selection onto the row's year", () => {
-    expect(clickedDistributionYear(FEW, 1)).toBe(2041);
-    expect(clickedDistributionYear(FEW, 9)).toBeNull();
-    expect(selectedDistributionIndex(FEW, 2041)).toBe(1);
-    expect(selectedDistributionIndex(FEW, null)).toBe(-1);
-    expect(selectedDistributionIndex(FEW, 1999)).toBe(-1);
-  });
-});
-
-describe("distributionTooltipExtras", () => {
-  it("lists taxes and every non-zero part, with the panel's wording", () => {
-    const r = row(2040, [A("a", 7_000)], {
-      fromAccounts: {
-        total: 7_000,
-        accounts: [{ accountId: "a", name: "Acct a", amount: 7_000, annualNominal: 84_000, borrowed: 0 }],
-        parts: {
-          spending: 5_100,
-          taxes: 1_200,
-          goalShortfall: 0,
-          surplusSpent: 0,
-          absorbedExtra: 0,
-          keptOrReinvested: 700,
-        },
-        unexplained: 0,
-      },
-    });
-    expect(distributionTooltipExtras(r)).toEqual([
-      "Taxes: $1,200/mo",
-      "From accounts, spending: $5,100/mo",
-      "From accounts, taxes: $1,200/mo",
-      "From accounts, more than needed — reinvested / kept in cash: $700/mo",
-    ]);
-  });
-
-  it("includes the leftover, so the parts add to the accounts' share of the bar", () => {
-    const r = row(2040, [A("a", 7_000)], {
-      fromAccounts: {
-        total: 7_000,
-        accounts: [{ accountId: "a", name: "Acct a", amount: 7_000, annualNominal: 84_000, borrowed: 0 }],
-        parts: {
-          spending: 5_100,
-          taxes: 1_200,
-          goalShortfall: 0,
-          surplusSpent: 0,
-          absorbedExtra: 0,
-          keptOrReinvested: 0,
-        },
-        unexplained: 700,
-      },
-    });
-    const extras = distributionTooltipExtras(r);
-    expect(extras.at(-1)).toBe("From accounts, not accounted for: +$700/mo");
-    const fromAccounts = extras
-      .filter((l) => l.startsWith("From accounts, "))
-      .map((l) => Number(l.replace(/^.*: ([+−]?)\$([\d,]+)\/mo$/, "$1$2").replace("−", "-").replace(/,/g, "")));
-    expect(fromAccounts.reduce((s, v) => s + v, 0)).toBe(r.fromAccounts.total);
+describe("distributionTooltipLabel", () => {
+  it("names a month's figure without /mo, and says which way the cushion went", () => {
+    expect(distributionTooltipLabel("Acct a", 3_000)).toBe("Acct a: $3,000");
+    expect(distributionTooltipLabel("Cash cushion", 250)).toBe("From cash cushion: $250");
+    expect(distributionTooltipLabel("Cash cushion", -1_100)).toBe("Into cash cushion: $1,100");
   });
 });

@@ -23,8 +23,9 @@ const PAGE_ONE_ROOM = 595;
 export const DISTRIBUTIONS_CHART_HEIGHT = 260;
 /** Below this the plot is too short to read (80pt of it is axis and legend). */
 const MIN_CHART_HEIGHT = 180;
-/** The legend note under the chart: one 7pt line plus its 6pt margin. */
-const CHART_NOTE_H = 16;
+/** A note under the chart: its 6pt margin plus 7pt lines at line height 1.35. */
+const CHART_NOTE_MARGIN = 6;
+const CHART_NOTE_LINE = 9.5;
 
 // Heights, in points, of the card's parts as distributions-pdf.tsx styles them.
 const CARD_CHROME = 2 + 16 + 17.2 + 8; // border, padding, year/age head, margin below
@@ -45,7 +46,7 @@ const BANNER_LINE = 9;
 const ROW_CHARS = 45; // a label beside its amount in a half-width box
 const ROW_CHARS_INDENTED = 43;
 const SUB_CHARS = 60; // a 7pt caption across a half-width box
-const BANNER_CHARS = 120; // across the whole card
+const BANNER_CHARS = 120; // across the whole card, and a note under the chart
 
 const lines = (text: string, perLine: number) => Math.max(1, Math.ceil(text.length / perLine));
 const row = (text: string, perLine = ROW_CHARS) => ROW + (lines(text, perLine) - 1) * ROW_EXTRA_LINE;
@@ -111,9 +112,14 @@ export interface DistributionsChartPlacement {
   ownSheet: boolean;
 }
 
-/** Where the chart prints, given the year card above it (null: no card). */
-export function distributionsChartPlacement(summary: DistributionRow | null): DistributionsChartPlacement {
-  const room = PAGE_ONE_ROOM - (summary ? distributionsCardHeight(summary) : 0) - CHART_NOTE_H;
+/** Where the chart prints, given the year card above it (null: no card) and
+ *  the notes printed under the chart. */
+export function distributionsChartPlacement(
+  summary: DistributionRow | null,
+  chartNotes: string[],
+): DistributionsChartPlacement {
+  const notes = sum(chartNotes.map((n) => CHART_NOTE_MARGIN + lines(n, BANNER_CHARS) * CHART_NOTE_LINE));
+  const room = PAGE_ONE_ROOM - (summary ? distributionsCardHeight(summary) : 0) - notes;
   if (room >= MIN_CHART_HEIGHT) {
     return { height: Math.min(DISTRIBUTIONS_CHART_HEIGHT, Math.floor(room)), ownSheet: false };
   }

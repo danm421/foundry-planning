@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { runProjection } from "@/engine/projection";
 import { buildClientData, sampleLiabilities } from "@/engine/__tests__/fixtures";
 import { LEGACY_FM_CLIENT } from "@/engine/ownership";
-import { buildMonthlyAllocation, spread } from "../monthly-allocation";
+import { buildMonthlyAllocation, spread, spreadRange } from "../monthly-allocation";
 import { deflator } from "../monthly-cash-flow";
 
 const sum = (ns: number[]) => ns.reduce((a, b) => a + b, 0);
@@ -575,5 +575,120 @@ describe("buildMonthlyAllocation — the `today` basis", () => {
       (y.expenses.insurance + y.expenses.realEstate + y.expenses.other) * k,
       6,
     );
+  });
+});
+
+// The engine prorates a claim year and a retirement year by MONTHS; the month
+// table has to put those dollars in those months, not spread a smaller amount
+// across all twelve.
+describe("buildMonthlyAllocation — the months a row actually runs", () => {
+  // Client born 1970-01-01 claims at 67 (his FRA). Born on the 1st, he attains
+  // 67 in December 2036, so SSA pays him one month that year.
+  it("starts Social Security in its claim month, with the whole claim-year amount", () => {
+    const clientData = buildClientData();
+    const years = runProjection(clientData);
+    const y = years.find((p) => p.year === 2036)!;
+    const ss = y.income.bySource["inc-ss-john"];
+    expect(ss).toBeGreaterThan(0);
+
+    const ssOnly = {
+      ...clientData,
+      incomes: clientData.incomes.filter((i) => i.id === "inc-ss-john"),
+    };
+    const rows = buildMonthlyAllocation(
+      { ...y, income: { ...y.income, bySource: { "inc-ss-john": ss } }, totalIncome: ss },
+      ssOnly,
+      "nominal",
+    );
+    expect(rows.slice(0, 11).every((r) => r.income === 0)).toBe(true);
+    expect(rows[11].income).toBe(ss);
+  });
+
+  it("splits a retirement year at the retirement month: paycheck before, retirement living after", () => {
+    // Retires July 2035 (age 65).
+    const base = buildClientData();
+    const clientData = {
+      ...base,
+      client: { ...base.client, retirementMonth: 7 },
+      incomes: base.incomes.map((i) =>
+        i.id === "inc-salary-john" ? { ...i, endYear: 2034, endYearRef: "client_retirement" } : i,
+      ),
+      expenses: [
+        ...base.expenses.map((e) =>
+          e.id === "exp-living" ? { ...e, endYear: 2034, endYearRef: "client_retirement" } : e,
+        ),
+        {
+          id: "exp-living-retired",
+          type: "living" as const,
+          name: "Retirement Living",
+          annualAmount: 60000,
+          startYear: 2035,
+          endYear: 2055,
+          startYearRef: "client_retirement",
+          growthRate: 0.03,
+        },
+      ],
+    };
+    const years = runProjection(clientData);
+    const y = years.find((p) => p.year === 2035)!;
+    const salary = y.income.bySource["inc-salary-john"];
+    const working = y.expenses.bySource["exp-living"];
+    const retired = y.expenses.bySource["exp-living-retired"];
+    expect(salary).toBeGreaterThan(0);
+
+    const rows = buildMonthlyAllocation(y, clientData, "nominal");
+    const others = sum(
+      Object.entries(y.income.bySource)
+        .filter(([id]) => id !== "inc-salary-john")
+        .map(([, v]) => v),
+    );
+    const otherIncomeMonthly = (y.totalIncome - salary) / 12;
+    // January-June: his salary on top of everything else; July on: none of it.
+    expect(rows[0].income).toBeCloseTo(otherIncomeMonthly + salary / 6, 6);
+    expect(rows[6].income).toBeCloseTo(otherIncomeMonthly, 6);
+    expect(others).toBeGreaterThan(0);
+    // Living switches rows at July.
+    expect(rows[0].living).toBeCloseTo(working / 6, 6);
+    expect(rows[6].living).toBeCloseTo(retired / 6, 6);
+    // And the year still reconciles.
+    expect(sum(rows.map((r) => r.income))).toBeCloseTo(y.totalIncome, 6);
+    expect(sum(rows.map((r) => r.living))).toBeCloseTo(y.expenses.living, 6);
+  });
+
+  it("the projection carries a month split only for a year that isn't paid evenly", () => {
+    const years = runProjection(buildClientData());
+    const claimYear = years.find((p) => p.year === 2036)!;
+    const split = claimYear.income.monthlyBySource?.["inc-ss-john"];
+    expect(split?.slice(0, 11)).toEqual(new Array(11).fill(0));
+    expect(split?.[11]).toBeCloseTo(claimYear.income.bySource["inc-ss-john"], 6);
+    expect(years.find((p) => p.year === 2037)!.income.monthlyBySource).toBeUndefined();
+  });
+
+  it("a dated row's paid-in month still wins over its claim or retirement timing", () => {
+    const clientData = buildClientData();
+    const dated = {
+      ...clientData,
+      incomes: clientData.incomes.map((i) =>
+        i.id === "inc-ss-john" ? { ...i, paymentMonth: 3 } : i,
+      ),
+    };
+    const y = runProjection(dated).find((p) => p.year === 2036)!;
+    const ss = y.income.bySource["inc-ss-john"];
+    const rows = buildMonthlyAllocation(
+      { ...y, income: { ...y.income, bySource: { "inc-ss-john": ss } }, totalIncome: ss },
+      dated,
+      "nominal",
+    );
+    expect(rows[2].income).toBe(ss);
+  });
+});
+
+describe("spreadRange", () => {
+  it("splits evenly inside the range, nothing outside, and sums back exactly", () => {
+    const total = 1_000_000 / 7;
+    const parts = spreadRange(total, 5, 12);
+    expect(parts.slice(0, 4)).toEqual([0, 0, 0, 0]);
+    expect(parts[4]).toBeCloseTo(total / 8, 9);
+    expect(sum(parts)).toBe(total);
   });
 });

@@ -163,8 +163,18 @@ vi.mock("@/lib/solver/monthly-distributions", async (importOriginal) => {
   return { ...actual, buildMonthlyDistributionRows: buildDistributionRows };
 });
 vi.mock("@/components/charts/solver-monthly-distributions-chart", () => ({
-  SolverMonthlyDistributionsChart: ({ rows }: { rows: { year: number }[] }) => (
-    <div data-testid="chart-distributions">rows:{rows.length}</div>
+  SolverMonthlyDistributionsChart: ({
+    rows,
+    months,
+    year,
+  }: {
+    rows: { year: number }[];
+    months: { month: number }[];
+    year: number;
+  }) => (
+    <div data-testid="chart-distributions">
+      rows:{rows.length} year:{year} months:{months.length}
+    </div>
   ),
 }));
 vi.mock("../solver-monthly-distributions-panel", () => ({
@@ -882,7 +892,9 @@ describe("SolverChartPanel", () => {
     it("opens on Distributions when the opening year is a retirement year", async () => {
       await openMonthly(retiredTree);
       expect(screen.getByTestId("panel-distributions")).toHaveTextContent("rows:2");
+      // The chart draws the twelve months of one year, not the plan's years.
       expect(screen.getByTestId("chart-distributions")).toHaveTextContent("rows:2");
+      expect(screen.getByTestId("chart-distributions")).toHaveTextContent("months:12");
       expect(screen.queryByTestId("panel-monthly")).not.toBeInTheDocument();
       expect(screen.queryByTestId("chart-monthly")).not.toBeInTheDocument();
     });
@@ -898,8 +910,9 @@ describe("SolverChartPanel", () => {
     it("swaps the chart and the panel together, and builds each mode's rows only in it", async () => {
       await openMonthly(retiredTree);
       expect(buildMonthlyRows).toHaveBeenCalled();
-      // Cash flow's month grid is not built while Distributions is showing.
-      expect(buildAllocation).not.toHaveBeenCalled();
+      // Distributions splits only its own chart's year into months; Cash
+      // flow's month grid is not built while Distributions is showing.
+      expect(buildAllocation).toHaveBeenCalledTimes(1);
 
       await userEvent.click(screen.getByRole("button", { name: "to cash flow" }));
       expect(screen.getByTestId("panel-monthly")).toHaveTextContent("mode:cashflow");

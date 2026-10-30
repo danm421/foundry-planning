@@ -181,3 +181,52 @@ describe("resolveAnnualBenefit — claimingAgeMode integration", () => {
     expect(out.total).toBeCloseTo(2000 * (1 - 24 * (5 / 900)) * CLAIM_YEAR_MONTHS, 2);
   });
 });
+
+// The month split is reporting only, but the month-by-month reports place the
+// year's benefit with it — so it has to put each piece in the months SSA pays
+// it and add back to the year exactly as the annual figure does.
+describe("resolveAnnualBenefit — byMonth", () => {
+  const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+  const months = (...runs: [number, number][]) => runs.flatMap(([v, n]) => new Array(n).fill(v));
+
+  it("a claim year pays from the entitlement month (May) on", () => {
+    const client = ssIncome({ id: "c", owner: "client", piaMonthly: 2000 });
+    const single = { ...baseClient, spouseDob: undefined };
+    const out = resolveAnnualBenefit({ row: client, spouseRow: null, client: single, year: 2027 });
+    expect(out.byMonth).toEqual(months([0, 4], [2000, 8]));
+  });
+
+  it("a spousal top-up starts at the later of the two claims", () => {
+    // Client on his own benefit since May 2027; the spouse claims May 2029,
+    // and only then does his spousal top-up (to 1000/mo) begin.
+    const client = ssIncome({ id: "c", owner: "client", piaMonthly: 300 });
+    const spouse = ssIncome({ id: "s", owner: "spouse", piaMonthly: 2000 });
+    const out = resolveAnnualBenefit({ row: client, spouseRow: spouse, client: baseClient, year: 2029 });
+    expect(out.byMonth.map((v) => Math.round(v))).toEqual(months([300, 4], [1000, 8]));
+    expect(sum(out.byMonth)).toBeCloseTo(out.total, 6);
+  });
+
+  it("a survivor year pays the survivor benefit until the survivor's own claim", () => {
+    // Spouse died 2025. In 2027 the client collects the 2000/mo survivor
+    // benefit January-April, then his own larger 3000/mo from May.
+    const client = ssIncome({ id: "c", owner: "client", piaMonthly: 3000 });
+    const spouse = ssIncome({ id: "s", owner: "spouse", piaMonthly: 2000 });
+    const earlyDeath: ClientInfo = { ...baseClient, spouseLifeExpectancy: 63 };
+    const out = resolveAnnualBenefit({ row: client, spouseRow: spouse, client: earlyDeath, year: 2027 });
+    expect(out.byMonth.slice(0, 4).every((v) => v > 0 && v === out.byMonth[0])).toBe(true);
+    expect(out.byMonth.slice(4)).toEqual(new Array(8).fill(3000));
+    expect(sum(out.byMonth)).toBeCloseTo(out.total, 6);
+  });
+
+  it("adds up to the year in every case, every year", () => {
+    const client = ssIncome({ id: "c", owner: "client", piaMonthly: 800, growthRate: 0.02 });
+    const spouse = ssIncome({ id: "s", owner: "spouse", piaMonthly: 2500, growthRate: 0.02 });
+    for (const who of [baseClient, { ...baseClient, spouseLifeExpectancy: 63 }]) {
+      for (let year = 2020; year <= 2040; year++) {
+        const out = resolveAnnualBenefit({ row: client, spouseRow: spouse, client: who, year });
+        expect(out.byMonth).toHaveLength(12);
+        expect(sum(out.byMonth), `${year}`).toBeCloseTo(out.total, 6);
+      }
+    }
+  });
+});

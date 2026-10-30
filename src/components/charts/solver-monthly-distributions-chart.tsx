@@ -18,17 +18,14 @@ import { Chart } from "react-chartjs-2";
 import { chartChrome, useThemeName } from "@/lib/chart-colors";
 import { colors, colorsLight, data as brandData, dataLight as brandDataLight } from "@/brand";
 import {
-  hasOtherAccounts,
+  distributionChartSeries,
   MIN_LINE_PER_MONTH,
   rankDistributionAccounts,
+  usesCashCushion,
+  type DistributionMonth,
   type DistributionRow,
 } from "@/lib/solver/monthly-distributions";
-import {
-  NOT_ACCOUNTED_FOR,
-  distributionCardLines,
-  money,
-  signedMoney,
-} from "@/lib/solver/distribution-card-lines";
+import { CASH_CUSHION_NOTE, money } from "@/lib/solver/distribution-card-lines";
 
 ChartJS.register(
   BarController,
@@ -49,18 +46,17 @@ const fmtCompact = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 1,
 });
 
-/** The selected year's outline, matching `SolverMonthlyCashFlowChart`. */
-const SELECTED_BORDER_WIDTH = 2;
-
 const LABEL = {
   income: "Income",
   other: "Other accounts",
+  cash: "Cash cushion",
   need: "Spending need",
 } as const;
 
-/** Printed under the chart. Verbatim. */
-export const DISTRIBUTIONS_LEGEND_NOTE =
-  "The part of each bar above the dashed line pays taxes and anything else listed under Total from accounts.";
+/** Printed under the chart. */
+function distributionsLegendNote(year: number): string {
+  return `Each bar is one month of ${year}. The part above the dashed line pays taxes and anything else listed under Total from accounts; the card below shows the average month.`;
+}
 
 /**
  * Account colours, in a FIXED order: the largest account is always `blue`, the
@@ -75,27 +71,40 @@ export const DISTRIBUTIONS_LEGEND_NOTE =
  * (34.9 at worst) and `ink2` on light (25.9). The nearest alternatives fail:
  * dark `ink2` 19.4, `ink3` 4.8; light `ink3` 18.1. Dark `ink` clears (30.3) but
  * is near-white and would swallow the dashed need line drawn in the same ink.
+ *
+ * The cash cushion is the brand indigo (`secondary`): no other part of this
+ * view uses it, and it clears the floor against every bar in both themes
+ * (31.7 dark, 41.7 light). The data hues all fail somewhere — pink against
+ * green 11.8, teal against grey 7.9 — except red, which means "critical" here.
+ * It is also the only bar that can sit below the zero line, which carries it
+ * on a greyscale print.
  */
 const ACCOUNT_KEYS = ["blue", "yellow", "sky", "green"] as const;
 
 const otherAccountsColor = (theme: "dark" | "light") =>
   theme === "light" ? colorsLight.ink2 : colors.hair2;
 
+const cashCushionColor = (theme: "dark" | "light") =>
+  theme === "light" ? colorsLight.secondary : colors.secondary;
+
 const palette = (theme: "dark" | "light") => (theme === "light" ? brandDataLight : brandData);
 
 /**
- * Pure dataset builder. The bars stack to income + total from accounts, and the
- * dashed Spending need line sits across them: bar above the line pays taxes and
- * the other parts. Set-aside goal money is never a dataset.
+ * Pure dataset builder: the twelve months of one year. The bars stack to the
+ * month's income plus what the accounts send, and the dashed Spending need
+ * line sits across them: bar above the line pays taxes and the other parts.
+ * Set-aside goal money is never a dataset.
+ *
+ * `rows` is the whole plan, read only for the account ranking, so an account
+ * keeps its colour (and its table column) whichever year is shown.
  */
 export function buildDistributionsChartData(
   rows: DistributionRow[],
+  months: DistributionMonth[],
   theme: "light" | "dark",
 ): ChartData<"bar" | "line"> {
   const p = palette(theme);
-  const ranked = rankDistributionAccounts(rows);
-  const rankedIds = new Set(ranked.map((a) => a.accountId));
-  const showOther = hasOtherAccounts(rows, ranked);
+  const series = distributionChartSeries(months, rankDistributionAccounts(rows));
 
   const bar = (label: string, color: string, values: number[]) => ({
     type: "bar" as const,
@@ -106,30 +115,17 @@ export function buildDistributionsChartData(
     order: 1,
   });
 
-  const otherOf = (r: DistributionRow) =>
-    r.fromAccounts.total -
-    r.fromAccounts.accounts.reduce((s, a) => (rankedIds.has(a.accountId) ? s + a.amount : s), 0);
-
   return {
-    labels: rows.map((r) => String(r.year)),
+    labels: months.map((m) => m.label.slice(0, 3)),
     datasets: [
-      bar(
-        LABEL.income,
-        p.grey,
-        rows.map((r) => r.income.total),
-      ),
-      ...ranked.map((a, i) =>
-        bar(
-          a.name,
-          p[ACCOUNT_KEYS[i]],
-          rows.map((r) => r.fromAccounts.accounts.find((l) => l.accountId === a.accountId)?.amount ?? 0),
-        ),
-      ),
-      ...(showOther ? [bar(LABEL.other, otherAccountsColor(theme), rows.map((r) => Math.max(0, otherOf(r))))] : []),
+      bar(LABEL.income, p.grey, series.income),
+      ...series.accounts.map((a) => bar(a.name, p[ACCOUNT_KEYS[a.rank]], a.values)),
+      ...(series.other ? [bar(LABEL.other, otherAccountsColor(theme), series.other)] : []),
+      ...(series.cash ? [bar(LABEL.cash, cashCushionColor(theme), series.cash)] : []),
       {
         type: "line" as const,
         label: LABEL.need,
-        data: rows.map((r) => r.need.total),
+        data: series.need,
         borderColor: chartChrome(theme).title,
         backgroundColor: "transparent",
         borderWidth: 2,
@@ -143,75 +139,31 @@ export function buildDistributionsChartData(
   };
 }
 
-/** Year-index helpers. Local on purpose: the Cash flow chart's are typed to its
- *  own row and a month-mode flag, and are not widened for this chart. */
-export function clickedDistributionYear(rows: DistributionRow[], index: number): number | null {
-  return rows[index]?.year ?? null;
-}
-
-export function selectedDistributionIndex(
-  rows: DistributionRow[],
-  selectedYear: number | null | undefined,
-): number {
-  if (selectedYear == null) return -1;
-  return rows.findIndex((r) => r.year === selectedYear);
-}
-
-/** Outline the selected year's column rather than dimming the rest. */
-function withSelectedOutline(
-  data: ChartData<"bar" | "line">,
-  selectedIndex: number,
-  outlineColor: string,
-): ChartData<"bar" | "line"> {
-  if (selectedIndex < 0) return data;
-  return {
-    ...data,
-    datasets: data.datasets.map((ds) =>
-      ds.type !== "bar"
-        ? ds
-        : {
-            ...ds,
-            borderColor: outlineColor,
-            borderWidth: (data.labels ?? []).map((_, i) =>
-              i === selectedIndex ? SELECTED_BORDER_WIDTH : 0,
-            ),
-            borderSkipped: false,
-          },
-    ),
-  };
-}
-
-/** The tooltip lines after the per-series rows: taxes, then every part of
- *  "Total from accounts" the card lists — its leftover included, so the parts
- *  add to the accounts' share of the bar. */
-export function distributionTooltipExtras(r: DistributionRow): string[] {
-  const card = distributionCardLines(r);
-  return [
-    ...(r.taxes >= MIN_LINE_PER_MONTH ? [`Taxes: ${money(r.taxes)}/mo`] : []),
-    ...card.madeOf.map((p) => `From accounts, ${p.label}: ${money(p.amount)}/mo`),
-    ...(card.unexplained != null
-      ? [`From accounts, ${NOT_ACCOUNTED_FOR}: ${signedMoney(card.unexplained)}/mo`]
-      : []),
-  ];
+/** One tooltip row. No "/mo": each figure is what lands in that month. The
+ *  cash cushion says which way the money went. */
+export function distributionTooltipLabel(label: string, value: number): string {
+  if (label === LABEL.cash) {
+    return value < 0
+      ? `Into cash cushion: ${money(-value)}`
+      : `From cash cushion: ${money(value)}`;
+  }
+  return `${label}: ${money(value)}`;
 }
 
 interface Props {
+  /** Every plan year, for the account ranking. */
   rows: DistributionRow[];
-  selectedYear: number | null;
-  onYearClick: (year: number) => void;
+  /** The twelve months of `year`. */
+  months: DistributionMonth[];
+  year: number;
 }
 
-export function SolverMonthlyDistributionsChart({ rows, selectedYear, onYearClick }: Props) {
+export function SolverMonthlyDistributionsChart({ rows, months, year }: Props) {
   const theme = useThemeName();
   const chrome = chartChrome(theme);
-  const data = useMemo(() => buildDistributionsChartData(rows, theme), [rows, theme]);
-  const selectedIndex = useMemo(
-    () => selectedDistributionIndex(rows, selectedYear),
-    [rows, selectedYear],
-  );
-  const styledData = useMemo(
-    () => withSelectedOutline(data, selectedIndex, chrome.title),
-    [data, selectedIndex, chrome.title],
+  const data = useMemo(
+    () => buildDistributionsChartData(rows, months, theme),
+    [rows, months, theme],
   );
 
   return (
@@ -219,16 +171,11 @@ export function SolverMonthlyDistributionsChart({ rows, selectedYear, onYearClic
       <div className="h-72">
         <Chart
           type="bar"
-          data={styledData}
+          data={data}
           options={{
             responsive: true,
             maintainAspectRatio: false,
             interaction: { mode: "index", intersect: false },
-            onClick: (_event, elements: Array<{ index: number }>) => {
-              if (elements.length === 0) return;
-              const year = clickedDistributionYear(rows, elements[0].index);
-              if (year != null) onYearClick(year);
-            },
             scales: {
               x: { stacked: true, ticks: { color: chrome.tick }, grid: { color: chrome.grid } },
               y: {
@@ -243,13 +190,13 @@ export function SolverMonthlyDistributionsChart({ rows, selectedYear, onYearClic
                 backgroundColor: chrome.tooltipBg,
                 titleColor: chrome.tooltipTitle,
                 bodyColor: chrome.tooltipBody,
-                filter: (item) => Number(item.parsed.y) !== 0,
+                filter: (item) => Math.abs(Number(item.parsed.y)) >= MIN_LINE_PER_MONTH,
                 callbacks: {
-                  label: (ctx) =>
-                    `${ctx.dataset.label ?? ""}: ${money(Number(ctx.parsed.y))}/mo`,
+                  title: (items) => `${months[items[0]?.dataIndex ?? 0]?.label ?? ""} ${year}`,
+                  label: (ctx) => distributionTooltipLabel(ctx.dataset.label ?? "", Number(ctx.parsed.y)),
                   afterBody: (items) => {
-                    const r = rows[items[0]?.dataIndex ?? -1];
-                    return r ? distributionTooltipExtras(r) : [];
+                    const m = months[items[0]?.dataIndex ?? -1];
+                    return m && m.taxes >= MIN_LINE_PER_MONTH ? [`Taxes: ${money(m.taxes)}`] : [];
                   },
                 },
               },
@@ -257,7 +204,10 @@ export function SolverMonthlyDistributionsChart({ rows, selectedYear, onYearClic
           }}
         />
       </div>
-      <p className="mt-2 text-[11.5px] text-ink-3">{DISTRIBUTIONS_LEGEND_NOTE}</p>
+      <p className="mt-2 text-[11.5px] text-ink-3">{distributionsLegendNote(year)}</p>
+      {usesCashCushion(months) ? (
+        <p className="mt-1 text-[11.5px] text-ink-3">{CASH_CUSHION_NOTE}</p>
+      ) : null}
     </div>
   );
 }

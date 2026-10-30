@@ -32,6 +32,10 @@ export const DISTRIBUTIONS_DEPLETED_NOTE =
 
 export const NOT_ACCOUNTED_FOR = "not accounted for";
 
+/** Under the month chart, screen and print, when a month uses the cash cushion. */
+export const CASH_CUSHION_NOTE =
+  "Cash cushion: a month with more income than it needs holds the rest as cash, which pays part of the months that are short. Over the year it comes to zero.";
+
 type PartKey = keyof DistributionRow["fromAccounts"]["parts"];
 
 /** The "made of" parts, in the order income is used up (spec): spending first,

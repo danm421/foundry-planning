@@ -58,7 +58,7 @@ function stretched(data: MonthlyCashFlowPageData, rows: number): MonthlyCashFlow
 /** The page as the view-model would build it around `summary`: the chart's
  *  height and sheet come from the same `distributionsChartPlacement`. */
 function withSummary(data: MonthlyCashFlowPageData, summary: DistributionRow): MonthlyCashFlowPageData {
-  const chart = distributionsChartPlacement(summary);
+  const chart = distributionsChartPlacement(summary, data.distribution!.chartNotes);
   return {
     ...data,
     distribution: { ...data.distribution!, summary, chartOnOwnSheet: chart.ownSheet },
@@ -254,7 +254,7 @@ describe("Distributions sheet layout", () => {
 
   it("a plain card keeps the full-height chart on page 1", () => {
     const { data } = build();
-    expect(distributionsChartPlacement(data.distribution!.summary!)).toEqual({
+    expect(distributionsChartPlacement(data.distribution!.summary!, data.distribution!.chartNotes)).toEqual({
       height: DISTRIBUTIONS_CHART_HEIGHT,
       ownSheet: false,
     });

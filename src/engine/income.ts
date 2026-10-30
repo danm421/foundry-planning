@@ -16,6 +16,11 @@ interface IncomeBreakdown {
   other: number;
   total: number;
   bySource: Record<string, number>;
+  /** What each calendar month paid (January first), keyed like `bySource`,
+   *  for a Social Security row in a year it isn't paid evenly — its claim
+   *  year, or a survivor year split at the survivor's own claim. Reporting
+   *  only: the month-by-month reports place the year's amount with it. */
+  monthlyBySource?: Record<string, number[]>;
   /** SS detail aggregated across every PIA-backed row this year. */
   socialSecurityDetail?: {
     client:  { retirement: number; spousal: number; survivor: number };
@@ -23,7 +28,7 @@ interface IncomeBreakdown {
   };
 }
 
-const incomeTypeToKey: Record<Income["type"], keyof Omit<IncomeBreakdown, "total" | "bySource" | "socialSecurityDetail">> = {
+const incomeTypeToKey: Record<Income["type"], keyof Omit<IncomeBreakdown, "total" | "bySource" | "monthlyBySource" | "socialSecurityDetail">> = {
   salary: "salaries",
   social_security: "socialSecurity",
   business: "business",
@@ -103,6 +108,13 @@ export function endSocialSecurityAtOwnersDeath(incomes: Income[], client: Client
     const endYear = deathYear(inc.owner);
     return endYear == null ? inc : { ...inc, endYear, endYearRef: null };
   });
+}
+
+/** Keep a row's month split only when its months differ — an even year
+ *  needs none, and leaving it off keeps every steady-state year unchanged. */
+function recordUnevenMonths(result: IncomeBreakdown, id: string, byMonth: number[]): void {
+  if (byMonth.every((v) => v === byMonth[0])) return;
+  (result.monthlyBySource ??= {})[id] = byMonth;
 }
 
 export function computeIncome(
@@ -194,6 +206,11 @@ export function computeIncome(
         const proratedTotal = resolved.total * gate.factor * ssFactor;
         result.socialSecurity += proratedTotal;
         result.bySource[inc.id] = proratedTotal;
+        recordUnevenMonths(
+          result,
+          inc.id,
+          resolved.byMonth.map((v) => v * gate.factor * ssFactor),
+        );
 
         // Accumulate per-spouse breakdown
         result.socialSecurityDetail ??= { client: { retirement: 0, spousal: 0, survivor: 0 } };
@@ -225,6 +242,14 @@ export function computeIncome(
       // Prorate their claim year here. `ssMonthsPaid` is 12 for every row that
       // is not a claim-year Social Security row.
       amount *= ssMonthsPaid / 12;
+      if (ssMonthsPaid < 12) {
+        const perMonth = amount / ssMonthsPaid;
+        recordUnevenMonths(
+          result,
+          inc.id,
+          Array.from({ length: 12 }, (_, i) => (i >= 12 - ssMonthsPaid ? perMonth : 0)),
+        );
+      }
     }
     const key = incomeTypeToKey[inc.type];
     result[key] += amount;

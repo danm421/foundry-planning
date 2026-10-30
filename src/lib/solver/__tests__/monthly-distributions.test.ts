@@ -19,9 +19,10 @@ import {
   iraToTrustAtFirstDeath,
 } from "@/engine/__tests__/_fixtures/survivor-iras";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "@/engine/ownership";
-import type { Account, ClientData, Expense, ProjectionYear } from "@/engine/types";
+import type { Account, ClientData, Expense, Income, ProjectionYear } from "@/engine/types";
 import { buildMonthlyCashFlowRows, deflator, type DollarBasis } from "../monthly-cash-flow";
 import {
+  buildDistributionMonths,
   buildMonthlyDistributionRows,
   hasOtherAccounts,
   isRetirementYear,
@@ -1013,5 +1014,152 @@ describe("monthly distributions", () => {
         expect(r.fromAccounts.accounts.some((a) => a.accountId === "acct-401k"), `${r.year}`).toBe(false);
       }
     });
+  });
+});
+
+describe("buildDistributionMonths", () => {
+  /** Retired from 2037. John's Social Security pays all year from then; Jane's
+   *  starts at her FRA, June 2039 (born 1972-06-15, claims at 67). */
+  const janeSs: Income = {
+    id: "inc-ss-jane",
+    type: "social_security",
+    name: "Jane SS",
+    annualAmount: 24_000,
+    startYear: 2026,
+    endYear: 2067,
+    growthRate: 0.02,
+    owner: "spouse",
+    claimingAge: 67,
+  };
+
+  function monthsFor(clientData: ClientData, year: number, basis: DollarBasis = "nominal") {
+    const { years, rows } = build(clientData, basis);
+    const i = years.findIndex((y) => y.year === year);
+    const row = rows[i];
+    return { y: years[i], row, months: buildDistributionMonths(years[i], row, clientData, basis) };
+  }
+
+  /** Every month-series adds back to the year's row. */
+  function expectAddsUp(row: DistributionRow, months: ReturnType<typeof buildDistributionMonths>) {
+    expect(months).toHaveLength(12);
+    expect(sum(months.map((m) => m.need))).toBeCloseTo(row.need.total * 12, 4);
+    expect(sum(months.map((m) => m.income))).toBeCloseTo(row.income.total * 12, 4);
+    for (const a of row.fromAccounts.accounts) {
+      const months12 = months.map((m) => m.accounts.find((x) => x.accountId === a.accountId)!.amount);
+      expect(sum(months12), a.name).toBeCloseTo(a.amount * 12, 4);
+      for (const v of months12) expect(v).toBeGreaterThanOrEqual(0);
+    }
+    expect(sum(months.map((m) => m.cash))).toBeCloseTo(0, 4);
+  }
+
+  const drawn = (m: { accounts: { amount: number }[]; cash: number }) =>
+    sum(m.accounts.map((a) => a.amount)) + m.cash;
+
+  it("draws more before Social Security starts and less after, and the year still adds up", () => {
+    const base = buildClientData({ accounts: withChecking() });
+    const clientData = { ...base, incomes: [...base.incomes, janeSs] };
+    const { y, row, months } = monthsFor(clientData, 2039);
+    const jane = y.income.bySource["inc-ss-jane"];
+    expect(jane).toBeGreaterThan(0);
+    expect(row.fromAccounts.total).toBeGreaterThan(0);
+
+    expectAddsUp(row, months);
+    // Seven June-December payments: each month from June gets one.
+    const janeMonthly = jane / 7;
+    expect(months[5].income - months[4].income).toBeCloseTo(janeMonthly, 4);
+    // The accounts make up for it, month for month.
+    expect(drawn(months[4]) - drawn(months[5])).toBeCloseTo(janeMonthly, 4);
+    for (const m of months) expect(m.cash).toBe(0);
+    // Need and taxes don't move.
+    expect(months[4].need).toBeCloseTo(months[5].need, 6);
+    expect(months[0].taxes).toBe(row.taxes);
+  });
+
+  it("puts a once-a-year bill in its month, on the need line and the draw", () => {
+    const roof: Expense = {
+      id: "exp-roof",
+      type: "other",
+      name: "Roof",
+      annualAmount: 30_000,
+      startYear: 2040,
+      endYear: 2040,
+      growthRate: 0,
+      paymentMonth: 8,
+    };
+    const base = buildClientData({ accounts: withChecking() });
+    const clientData = { ...base, expenses: [...base.expenses, roof] };
+    const { row, months } = monthsFor(clientData, 2040);
+
+    expectAddsUp(row, months);
+    expect(months[7].need - months[6].need).toBeCloseTo(30_000, 4);
+    expect(drawn(months[7]) - drawn(months[6])).toBeCloseTo(30_000, 4);
+  });
+
+  it("holds a month's spare income as cash for the months that are short", () => {
+    const gift: Income = {
+      id: "inc-gift",
+      type: "other",
+      name: "Inheritance",
+      annualAmount: 40_000,
+      startYear: 2040,
+      endYear: 2040,
+      growthRate: 0,
+      owner: "client",
+      paymentMonth: 3,
+    };
+    const base = buildClientData({ accounts: withChecking() });
+    const clientData = { ...base, incomes: [...base.incomes, gift] };
+    const { row, months } = monthsFor(clientData, 2040);
+
+    expectAddsUp(row, months);
+    // March has more than it needs: nothing from the accounts, the rest held.
+    expect(months[2].cash).toBeLessThan(0);
+    expect(sum(months[2].accounts.map((a) => a.amount))).toBe(0);
+    // The other months spend it.
+    expect(months[0].cash).toBeGreaterThan(0);
+    // Every month closes: income plus what was drawn (net of cash held) pays
+    // the month's need and taxes — the year has nothing else to pay for.
+    expect(row.fromAccounts.total).toBeCloseTo(row.fromAccounts.parts.spending + row.fromAccounts.parts.taxes, 6);
+    for (const m of months) {
+      expect(m.income + drawn(m), m.label).toBeCloseTo(m.need + m.taxes, 4);
+    }
+  });
+
+  it("a working year that saves draws nothing in any month, bonus month or not", () => {
+    const bonus: Income = {
+      id: "inc-bonus",
+      type: "other",
+      name: "Bonus",
+      annualAmount: 30_000,
+      startYear: 2026,
+      endYear: 2026,
+      growthRate: 0,
+      owner: "client",
+      paymentMonth: 3,
+    };
+    const base = buildClientData({ accounts: withChecking() });
+    const clientData = { ...base, incomes: [...base.incomes, bonus] };
+    const { row, months } = monthsFor(clientData, 2026);
+    expect(row.fromAccounts.total).toBe(0);
+    expect(row.fromAccounts.parts.keptOrReinvested).toBe(0);
+
+    expectAddsUp(row, months);
+    for (const m of months) {
+      expect(Math.abs(drawn(m)), m.label).toBeLessThan(1);
+      expect(Math.abs(m.cash), m.label).toBeLessThan(1);
+    }
+  });
+
+  it("follows the dollar basis", () => {
+    const base = buildClientData({ accounts: withChecking() });
+    const clientData = { ...base, incomes: [...base.incomes, janeSs] };
+    const today = monthsFor(clientData, 2039, "today");
+    const nominal = monthsFor(clientData, 2039, "nominal");
+    const k = deflator(2039, "today", clientData.planSettings);
+    expectAddsUp(today.row, today.months);
+    for (let i = 0; i < 12; i++) {
+      expect(today.months[i].income).toBeCloseTo(nominal.months[i].income * k, 4);
+      expect(drawn(today.months[i])).toBeCloseTo(drawn(nominal.months[i]) * k, 4);
+    }
   });
 });

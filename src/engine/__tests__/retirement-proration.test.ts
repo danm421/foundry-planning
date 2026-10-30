@@ -7,6 +7,7 @@ import {
   startProrationFactor,
   endInclusionAndFactor,
   firstRetirementYear,
+  retirementMonthWindow,
 } from "../retirement-proration";
 import type { ClientInfo, Income, Expense, SavingsRule } from "../types";
 
@@ -314,5 +315,39 @@ describe("firstRetirementYear", () => {
   it("returns null when neither person resolves", () => {
     const noDob: ClientInfo = { ...baseClient, dateOfBirth: "" };
     expect(firstRetirementYear(noDob)).toBeNull();
+  });
+});
+
+describe("retirementMonthWindow — the month form of the gate's factor", () => {
+  const startsAt = { startYear: RETIREMENT_YEAR, endYear: 2060, startYearRef: "client_retirement" };
+  const endsAt = { startYear: 2026, endYear: RETIREMENT_YEAR - 1, endYearRef: "client_retirement" };
+
+  it("a starts-at-retirement item runs from the retirement month to December", () => {
+    expect(retirementMonthWindow(startsAt, RETIREMENT_YEAR, julyClient)).toEqual({ first: 7, last: 12 });
+  });
+
+  it("an ends-at-retirement item runs January to the month before retirement", () => {
+    expect(retirementMonthWindow(endsAt, RETIREMENT_YEAR, julyClient)).toEqual({ first: 1, last: 6 });
+  });
+
+  it("every other year, and an item with no retirement ref, is the whole year", () => {
+    const whole = { first: 1, last: 12 };
+    expect(retirementMonthWindow(startsAt, RETIREMENT_YEAR + 1, julyClient)).toEqual(whole);
+    expect(retirementMonthWindow(endsAt, RETIREMENT_YEAR - 1, julyClient)).toEqual(whole);
+    expect(retirementMonthWindow({ endYear: 2060 }, RETIREMENT_YEAR, julyClient)).toEqual(whole);
+  });
+
+  // The window and the gate must never disagree, or a report would put an
+  // amount in months the engine says it did not run.
+  it("its length is the gate's factor in every retirement month", () => {
+    for (let m = 1; m <= 12; m++) {
+      const client = { ...baseClient, retirementMonth: m };
+      for (const item of [startsAt, endsAt]) {
+        const gate = itemProrationGate(item, RETIREMENT_YEAR, client);
+        if (!gate.include) continue;
+        const w = retirementMonthWindow(item, RETIREMENT_YEAR, client);
+        expect((w.last - w.first + 1) / 12).toBeCloseTo(gate.factor, 12);
+      }
+    }
   });
 });

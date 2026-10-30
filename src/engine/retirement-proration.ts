@@ -156,6 +156,38 @@ export function itemProrationGate(
 }
 
 /**
+ * The calendar months of `year` a retirement-linked item runs in: the month
+ * form of `itemProrationGate`'s factor, for reports that place an amount in
+ * the months it belongs to. Engine math never reads it.
+ *
+ * Only the retirement year is ever partial — a starts-at-retirement item runs
+ * retirementMonth..12, an ends-at-retirement item 1..(retirementMonth − 1) —
+ * so `(last − first + 1) / 12` is the gate's retirement factor. Every other
+ * year, and every item with no retirement ref, is the whole year.
+ */
+export function retirementMonthWindow(
+  item: { endYear: number; startYearRef?: string | null; endYearRef?: string | null },
+  year: number,
+  client: ClientInfo,
+): { first: number; last: number } {
+  let first = 1;
+  let last = 12;
+  if (isRetirementRef(item.startYearRef) && retirementYearFor(item.startYearRef, client) === year) {
+    first = retirementMonthFor(item.startYearRef, client);
+  }
+  // Same test as `endInclusionAndFactor`: the retirement year sits past the
+  // item's stored endYear (retirement year − 1).
+  if (
+    isRetirementRef(item.endYearRef) &&
+    year > item.endYear &&
+    retirementYearFor(item.endYearRef, client) === year
+  ) {
+    last = retirementMonthFor(item.endYearRef, client) - 1;
+  }
+  return { first, last };
+}
+
+/**
  * Result of evaluating an end-at-retirement item in a given year.
  *   - `included: false` → year is past the item's effective end; skip.
  *   - `included: true, factor: 1` → normal full year (year < retirementYear).
