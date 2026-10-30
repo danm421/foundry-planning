@@ -91,10 +91,8 @@ export const SolverMonthlyDistributionsPanel = memo(
         label: "more than needed — reinvested / kept in cash",
         amount: from.parts.keptOrReinvested,
       },
-      ...(Math.abs(from.unexplained) >= MIN_LINE
-        ? [{ label: "not accounted for", amount: from.unexplained }]
-        : []),
     ].filter((p) => Math.abs(p.amount) >= 0.5);
+    const showUnexplained = Math.abs(from.unexplained) >= MIN_LINE;
     const madeOfText = madeOf
       .map((p, i) => {
         const sign = p.amount < 0 ? "−" : i === 0 ? "" : "+";
@@ -169,10 +167,15 @@ export const SolverMonthlyDistributionsPanel = memo(
               <Row
                 label={
                   <>
-                    Covered by income{" "}
-                    <span className="text-ink-3">
-                      ({selected.income.sources.map((s) => s.label).join(", ")})
-                    </span>
+                    Covered by income
+                    {selected.income.sources.length > 0 ? (
+                      <span className="text-ink-3">
+                        {" "}
+                        (
+                        {selected.income.sources.map((s) => s.label).join(", ")}
+                        )
+                      </span>
+                    ) : null}
                   </>
                 }
                 amount={`−${fmt.format(selected.income.total)}`}
@@ -211,6 +214,15 @@ export const SolverMonthlyDistributionsPanel = memo(
                 ) : null}
               </div>
               <div className="text-[11.5px] text-ink-3">{madeOfText}</div>
+              {showUnexplained ? (
+                <div data-testid="distributions-unexplained">
+                  <Row
+                    label="not accounted for"
+                    amount={`${from.unexplained < 0 ? "−" : "+"}${fmt.format(Math.abs(from.unexplained))}`}
+                    tone="text-crit"
+                  />
+                </div>
+              ) : null}
               <div className="my-1.5 border-t border-hair" />
               {from.accounts.map((a) => (
                 <Row
@@ -324,6 +336,7 @@ export const SolverMonthlyDistributionsPanel = memo(
                     key={r.year}
                     data-testid={`distributions-row-${r.year}`}
                     onClick={() => onYearClick(r.year)}
+                    aria-current={r.year === selected.year ? "true" : undefined}
                     className={`cursor-pointer ${r.year === selected.year ? "bg-accent-wash" : ""}`}
                   >
                     <td className="border-b border-hair px-3 py-2 text-left">

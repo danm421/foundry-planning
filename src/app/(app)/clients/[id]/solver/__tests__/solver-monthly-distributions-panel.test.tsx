@@ -246,17 +246,83 @@ describe("SolverMonthlyDistributionsPanel", () => {
     expect(screen.getByText(/borrowed on margin/)).toBeTruthy();
   });
 
-  it("shows the not-accounted-for part only from a dollar a month", () => {
+  it("shows the not-accounted-for line only from a dollar a month", () => {
     const base = drow(2027);
     const { unmount } = setup([
       drow(2027, { fromAccounts: { ...base.fromAccounts, unexplained: 0.4 } }),
     ]);
-    expect(screen.queryByText(/not accounted for/)).toBeNull();
+    expect(screen.queryByTestId("distributions-unexplained")).toBeNull();
     unmount();
     setup([
       drow(2027, { fromAccounts: { ...base.fromAccounts, unexplained: 5 } }),
     ]);
-    expect(screen.getByText(/not accounted for/)).toBeTruthy();
+    const line = screen.getByTestId("distributions-unexplained");
+    expect(within(line).getByText("not accounted for")).toBeTruthy();
+    expect(within(line).getByText("+$5")).toBeTruthy();
+    expect(screen.getByText("$7,000 spending + $1,800 taxes")).toBeTruthy();
+  });
+
+  it("renders a depleted year honestly: signed leftover and a dagger on the total", () => {
+    const base = drow(2027);
+    setup([
+      drow(2027, {
+        depleted: true,
+        fromAccounts: {
+          ...base.fromAccounts,
+          total: 0,
+          accounts: [],
+          unexplained: -8_800,
+        },
+      }),
+    ]);
+    const line = screen.getByTestId("distributions-unexplained");
+    expect(within(line).getByText("−$8,800")).toBeTruthy();
+    expect(
+      within(screen.getByTestId("distributions-total")).getByText("†"),
+    ).toBeTruthy();
+  });
+
+  it("explains a goal's general-account part and its unfunded part", () => {
+    const g = drow(2027).goals[0];
+    setup([drow(2027, { goals: [{ ...g, fromGeneral: 300, unfunded: 120 }] })]);
+    const goals = screen.getByTestId("distributions-goals");
+    expect(
+      within(goals).getByText(
+        "from general accounts — included in the account draws above",
+      ),
+    ).toBeTruthy();
+    expect(within(goals).getByText("short by $120")).toBeTruthy();
+  });
+
+  it("notes a QCD as going straight to charity", () => {
+    setup([
+      drow(2027, {
+        qcds: [{ accountId: "a1", name: "Rollover IRA", amount: 400 }],
+      }),
+    ]);
+    expect(
+      screen.getByText(
+        /Also from Rollover IRA: \$400\/mo straight to charity \(QCD\), not in the totals above/,
+      ),
+    ).toBeTruthy();
+  });
+
+  it("marks only the selected table row", () => {
+    setup([drow(2027), drow(2028)], { selectedYear: 2028 });
+    expect(
+      screen.getByTestId("distributions-row-2028").getAttribute("aria-current"),
+    ).toBe("true");
+    expect(
+      screen.getByTestId("distributions-row-2027").getAttribute("aria-current"),
+    ).toBeNull();
+  });
+
+  it("omits the empty parentheses when income has no sources", () => {
+    setup([drow(2027, { income: { total: 0, sources: [] } })]);
+    const need = screen.getByTestId("distributions-need");
+    expect(
+      within(need).getByText(/Covered by income/).textContent,
+    ).not.toContain("(");
   });
 
   it("marks a depleted year with a dagger and the exhausted wording", () => {
