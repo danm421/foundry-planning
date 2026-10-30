@@ -74,6 +74,7 @@ export function WeekCalendar({
   days,
   events,
   today,
+  labels,
   onMove,
   onOpen,
 }: {
@@ -82,6 +83,8 @@ export function WeekCalendar({
   events: WeekEvent[];
   /** `YYYY-MM-DD` in the browser's zone — an accepted stand-in for the mailbox's. */
   today: string;
+  /** Each account's short name by connection id; given only with 2+ accounts, then tagged on every block. */
+  labels?: ReadonlyMap<string, string> | null;
   /** A meeting (by `key`) dragged or resized to new times (only `editable` ones can be). */
   onMove: (eventKey: string, start: WallClock, end: WallClock) => Promise<void>;
   /** A meeting (by `key`) the advisor can edit was clicked, or Enter was pressed on it. */
@@ -185,6 +188,7 @@ export function WeekCalendar({
                   <EditableEvent
                     key={p.event.key}
                     placed={p}
+                    label={labels?.get(p.event.connectionId)}
                     date={dates[i]}
                     dragging={preview?.id === p.event.key}
                     onPress={(e, mode) =>
@@ -198,7 +202,7 @@ export function WeekCalendar({
                     onOpen={() => onOpen(p.event.key)}
                   />
                 ) : (
-                  <LockedEvent key={p.event.key} placed={p} />
+                  <LockedEvent key={p.event.key} placed={p} label={labels?.get(p.event.connectionId)} />
                 ),
               )}
             </div>
@@ -235,16 +239,34 @@ function boxLayout({ topMin, endMin, column, columns }: PositionedEvent<WeekEven
 }
 
 /** The meeting's times: drawn when there's room, always read out. */
-function TimeLine({ event: e, compact }: { event: WeekEvent; compact: boolean }): ReactElement {
+function TimeLine({
+  event: e,
+  compact,
+  label,
+}: {
+  event: WeekEvent;
+  compact: boolean;
+  label?: string;
+}): ReactElement {
   return (
-    <span className={compact ? "sr-only" : "tabular block truncate text-ink-3"}>
-      {clock(e.start)} – {clock(e.end)}
-    </span>
+    <>
+      <span className={compact ? "sr-only" : "tabular block truncate text-ink-3"}>
+        {clock(e.start)} – {clock(e.end)}
+      </span>
+      {/* The account is named in text, never a color: green/blue already say client vs other. */}
+      {label ? <span className={compact ? "sr-only" : "block truncate text-ink-4"}>{label}</span> : null}
+    </>
   );
 }
 
 /** Someone else's meeting: read-only, with the lock and a link to Outlook. */
-function LockedEvent({ placed }: { placed: PositionedEvent<WeekEvent> }): ReactElement {
+function LockedEvent({
+  placed,
+  label,
+}: {
+  placed: PositionedEvent<WeekEvent>;
+  label?: string;
+}): ReactElement {
   const e = placed.event;
   const box = boxLayout(placed);
   return (
@@ -252,7 +274,7 @@ function LockedEvent({ placed }: { placed: PositionedEvent<WeekEvent> }): ReactE
       <div className="flex min-w-0 items-center gap-1">
         <EventTitle event={e} />
       </div>
-      <TimeLine event={e} compact={box.compact} />
+      <TimeLine event={e} compact={box.compact} label={label} />
       {e.household && !box.compact ? <HouseholdName household={e.household} /> : null}
     </div>
   );
@@ -267,6 +289,7 @@ function LockedEvent({ placed }: { placed: PositionedEvent<WeekEvent> }): ReactE
  */
 function EditableEvent({
   placed,
+  label,
   date,
   dragging,
   onPress,
@@ -274,6 +297,7 @@ function EditableEvent({
   onOpen,
 }: {
   placed: PositionedEvent<WeekEvent>;
+  label?: string;
   date: string;
   dragging: boolean;
   onPress: (e: PointerEvent, mode: DragMode) => void;
@@ -297,7 +321,7 @@ function EditableEvent({
     >
       <button type="button" className="block w-full min-w-0 cursor-pointer text-left focus-visible:outline-none">
         <span className="block truncate font-medium text-ink">{e.subject || "(No title)"}</span>{" "}
-        <TimeLine event={e} compact={box.compact} />
+        <TimeLine event={e} compact={box.compact} label={label} />
       </button>
       {e.household && !box.compact ? <HouseholdName household={e.household} /> : null}
       {endsHere ? (

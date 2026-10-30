@@ -528,4 +528,21 @@ describe("WeekCalendar — dragging", () => {
     release(1, 600);
     expect(onMove).not.toHaveBeenCalled();
   });
+
+  describe("account labels", () => {
+    const events = [row({ id: "standup", start: "2026-10-27T10:00", end: "2026-10-27T11:00" })];
+    const labels = new Map([[CONN, "foundryplanning"]]);
+
+    it("with labels, a block shows its account's tag", () => {
+      render(
+        <WeekCalendar {...noop} weekStart="2026-10-26" days={5} events={events} today="2026-10-28" labels={labels} />,
+      );
+      expect(screen.getByText("foundryplanning")).toBeInTheDocument();
+    });
+
+    it("without labels, no tag", () => {
+      render(<WeekCalendar {...noop} weekStart="2026-10-26" days={5} events={events} today="2026-10-28" />);
+      expect(screen.queryByText("foundryplanning")).toBeNull();
+    });
+  });
 });

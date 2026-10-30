@@ -107,6 +107,8 @@ function page(paneState: PageProps["paneState"] = "ready", accounts: AccountSumm
         paneState={paneState}
         accounts={paneState === "ready" ? accounts : []}
         googleEnabled
+        itApprovalUrl="https://login.example/adminconsent"
+        googleClientId="client-123.apps.googleusercontent.com"
         initialWeek="2026-10-26"
         userId="user_me"
         households={HOUSEHOLDS}
@@ -164,8 +166,8 @@ afterEach(() => {
 });
 
 describe("WorkspacePage — connect banner", () => {
-  it("names an account already in use, then clears the query", async () => {
-    mockSearch = "error=account_in_use";
+  it("names a Microsoft account already in use, then clears the query", async () => {
+    mockSearch = "error=account_in_use&provider=microsoft";
     renderPage();
     expect(
       screen.getByText("That Microsoft account is already connected to another Foundry user."),
@@ -173,30 +175,39 @@ describe("WorkspacePage — connect banner", () => {
     await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/workspace"));
   });
 
-  it("confirms a fresh connection", async () => {
-    mockSearch = "connected=1";
+  it("?error=account_in_use&provider=google shows the Google copy", () => {
+    mockSearch = "error=account_in_use&provider=google";
     renderPage();
-    expect(screen.getByText("Microsoft 365 connected.")).toBeInTheDocument();
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/workspace"));
+    expect(screen.getByText("That Google account is already connected to another Foundry user.")).toBeInTheDocument();
   });
 
   it.each([
-    ["wrong_tenant", "Sign in with your work account at your firm."],
-    ["connect_declined", "Microsoft sign-in was cancelled."],
-    ["connect_failed", "Couldn't connect to Microsoft. Try again."],
-  ])("error=%s reads %j", (code, copy) => {
-    mockSearch = `error=${code}`;
+    ["connected=google", "Google connected."],
+    ["connected=microsoft", "Microsoft 365 connected."],
+    ["error=too_many_accounts", "You've connected 5 addresses, the most Workspace allows. Disconnect one to add another."],
+    ["error=missing_permissions", "Foundry needs both your calendar and your tasks. Connect again and leave both boxes ticked."],
+    ["error=google_blocked", "Your Google administrator hasn't allowed Foundry Planning. The steps for them are under + Add account."],
+    ["error=needs_admin_approval", "Your Microsoft organization needs an admin to approve Foundry Planning. The link for them is under + Add account."],
+    ["error=connect_declined", "Sign-in was cancelled."],
+    ["error=connect_failed", "Couldn't connect. Try again."],
+    ["error=impersonating", "Connecting is turned off while you're signed in as someone else."],
+  ])("%s reads %j", async (query, copy) => {
+    mockSearch = query;
     renderPage();
     expect(screen.getByText(copy)).toBeInTheDocument();
-  });
-
-  it("shows no banner for a code it doesn't name (the retired member_off), and still clears the query", async () => {
-    mockSearch = "error=member_off";
-    renderPage("connect");
-    expect(screen.getByText("Bring in your calendar and to-dos")).toBeInTheDocument();
-    expect(screen.queryByRole("status")).toBeNull();
     await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/workspace"));
   });
+
+  it.each(["error=wrong_tenant", "error=member_off", "error=firm_not_approved", "connected=1"])(
+    "%s (retired) shows no banner, and still clears the query",
+    async (query) => {
+      mockSearch = query;
+      renderPage("connect");
+      expect(screen.getByText("Bring in your calendar and to-dos")).toBeInTheDocument();
+      expect(screen.queryByRole("status")).toBeNull();
+      await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/workspace"));
+    },
+  );
 
   it("leaves a clean URL alone", () => {
     renderPage();
@@ -261,7 +272,7 @@ describe("WorkspacePage — the week", () => {
     fetchMock.mockResolvedValue(respond(403, { error: "impersonating" }));
     renderPage();
     expect(await screen.findByText("Hidden while you're signed in as someone else")).toBeInTheDocument();
-    expect(screen.queryByText("Couldn't load your calendar from Microsoft.")).toBeNull();
+    expect(screen.queryByText("Couldn't load your calendar.")).toBeNull();
     expect(grid()).toBeNull();
   });
 
@@ -305,7 +316,7 @@ describe("WorkspacePage — the week", () => {
   ])("%s says it couldn't load the calendar, not 'busy', never an empty week", async (_label, impl) => {
     fetchMock.mockImplementationOnce(impl);
     renderPage();
-    expect(await screen.findByText("Couldn't load your calendar from Microsoft.")).toBeInTheDocument();
+    expect(await screen.findByText("Couldn't load your calendar.")).toBeInTheDocument();
     expect(screen.getByText("If this keeps happening, ask your firm's admin.")).toBeInTheDocument();
     expect(screen.queryByText(/Microsoft is busy/)).toBeNull();
     expect(grid()).toBeNull();
@@ -388,10 +399,19 @@ describe("WorkspacePage — disconnecting your Microsoft account (I5)", () => {
     expect(screen.queryByText(/Connected as/)).toBeNull();
   });
 
-  it("isn't offered with two accounts (the accounts bar's job): it would drop every Microsoft address", async () => {
-    renderPage("ready", [ACCOUNT, { ...ACCOUNT, id: "second", email: "dana@other.com" }]);
+  it("with two accounts it's each chip's menu, and disconnects that account only", async () => {
+    const OTHER = "second-id";
+    writeMock.mockResolvedValueOnce(respond(200, { ok: true }));
+    const user = userEvent.setup();
+    renderPage("ready", [ACCOUNT, { ...ACCOUNT, id: OTHER, email: "dana@other.com" }]);
     await screen.findByText("Annual review");
     expect(screen.queryByText(/Connected as/)).toBeNull();
+    await user.click(screen.getByRole("button", { name: "other" }));
+    await user.click(screen.getByRole("menuitem", { name: "Disconnect" }));
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Disconnect dana@other.com?" })).getByRole("button", { name: "Disconnect" }),
+    );
+    expect(writeMock.mock.calls[0][0]).toBe(`/api/workspace/accounts/${OTHER}/disconnect`);
   });
 
   it("asks first, then drops the connection and refreshes the page", async () => {
@@ -401,9 +421,9 @@ describe("WorkspacePage — disconnecting your Microsoft account (I5)", () => {
     await screen.findByText("Annual review");
 
     await user.click(screen.getByRole("button", { name: "Disconnect" }));
-    const dialog = screen.getByRole("dialog", { name: "Disconnect Microsoft 365?" });
+    const dialog = screen.getByRole("dialog", { name: "Disconnect dana@hartwell.com?" });
     expect(writeMock).not.toHaveBeenCalled();
-    expect(within(dialog).getByText(/Your Outlook calendar and to-dos leave Workspace/)).toBeInTheDocument();
+    expect(within(dialog).getByText("Its calendar and to-dos leave Workspace. You can connect it again any time.")).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole("button", { name: "Disconnect" }));
     const [url, init] = writeMock.mock.calls[0];
@@ -444,9 +464,132 @@ describe("WorkspacePage — disconnecting your Microsoft account (I5)", () => {
     await screen.findByText("Annual review");
     await user.click(screen.getByRole("button", { name: "Disconnect" }));
     await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Disconnect" }));
-    expect(await screen.findByText("Couldn't disconnect Microsoft 365. Try again.")).toBeInTheDocument();
+    expect(await screen.findByText("Couldn't disconnect dana@hartwell.com. Try again.")).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(refreshMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("WorkspacePage — accounts", () => {
+  const G = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+  const GOOGLE: AccountSummary = { ...ACCOUNT, id: G, provider: "google", email: "dana@gmail.com" };
+  const gym = {
+    ...WEEK.events[0],
+    id: "gym",
+    key: `${G}:gym`,
+    connectionId: G,
+    provider: "google",
+    subject: "Gym",
+    start: "2026-10-28T07:00",
+    end: "2026-10-28T08:00",
+    household: null,
+  };
+  const mixed = (googleError: string | null, msError: string | null = null) =>
+    respond(200, {
+      ...WEEK,
+      events: googleError ? [WEEK.events[0]] : [WEEK.events[0], gym],
+      accounts: [
+        { connectionId: MS_ID, error: msError },
+        { connectionId: G, error: googleError },
+      ],
+    });
+
+  it("(Review Focus 1) a mixed week shows both accounts' meetings and the broken one's banner", async () => {
+    readQueue.push(
+      Promise.resolve(
+        respond(200, {
+          ...WEEK,
+          events: [WEEK.events[0], gym],
+          accounts: [
+            { connectionId: MS_ID, error: null },
+            { connectionId: G, error: "needs_reconnect" },
+          ],
+        }),
+      ),
+    );
+    renderPage("ready", [ACCOUNT, GOOGLE]);
+    expect(await screen.findByText("Annual review")).toBeInTheDocument();
+    expect(screen.getByText("Gym")).toBeInTheDocument();
+    expect(screen.getByText("dana@gmail.com needs to reconnect.")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["needs_reconnect", "dana@hartwell.com needs to reconnect."],
+    ["unavailable", "Couldn't load dana@hartwell.com's meetings."],
+  ])("a sole account answering %s shows its banner, not just an empty grid", async (error, copy) => {
+    readQueue.push(
+      Promise.resolve(
+        respond(200, { ...WEEK, events: [], accounts: [{ connectionId: MS_ID, error }] }),
+      ),
+    );
+    renderPage();
+    expect(await screen.findByText(copy)).toBeInTheDocument();
+  });
+
+  it("hiding an account removes its events and persists the choice", async () => {
+    const user = userEvent.setup();
+    readQueue.push(Promise.resolve(mixed(null)));
+    renderPage("ready", [ACCOUNT, GOOGLE]);
+    expect(await screen.findByText("Gym")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "gmail" }));
+    await user.click(screen.getByRole("menuitem", { name: "Hide" }));
+    expect(screen.queryByText("Gym")).toBeNull();
+    expect(screen.getByText("Annual review")).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem("workspace.hiddenAccounts")!)).toEqual([G]);
+  });
+
+  it("reads hidden accounts after mount, and a hidden account's banner is not shown", async () => {
+    localStorage.setItem("workspace.hiddenAccounts", JSON.stringify([G]));
+    readQueue.push(Promise.resolve(mixed("unavailable")));
+    renderPage("ready", [ACCOUNT, GOOGLE]);
+    expect(await screen.findByText("Annual review")).toBeInTheDocument();
+    expect(screen.queryByText("Couldn't load dana@gmail.com's meetings.")).toBeNull();
+  });
+
+  it("labels each block with its account from two accounts on, and not for one", async () => {
+    readQueue.push(Promise.resolve(mixed(null)));
+    const view = renderPage("ready", [ACCOUNT, GOOGLE]);
+    await screen.findByText("Gym");
+    expect(grid()!).toHaveTextContent("gmail");
+    view.unmount();
+    renderPage();
+    await screen.findByText("Annual review");
+    expect(grid()!).not.toHaveTextContent("hartwell");
+  });
+
+  it("still renders when storage throws on the hidden list", async () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    const user = userEvent.setup();
+    readQueue.push(Promise.resolve(mixed(null)));
+    renderPage("ready", [ACCOUNT, GOOGLE]);
+    await screen.findByText("Gym");
+    await user.click(screen.getByRole("button", { name: "gmail" }));
+    await user.click(screen.getByRole("menuitem", { name: "Hide" }));
+    expect(screen.queryByText("Gym")).toBeNull();
+  });
+});
+
+describe("WorkspacePage — time zone line", () => {
+  it("reads Times in Central Time for America/Chicago", async () => {
+    readQueue.push(Promise.resolve(respond(200, { ...WEEK, timeZone: "America/Chicago" })));
+    renderPage();
+    expect(await screen.findByText("Times in Central Time")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["no account reports one", { timeZone: "UTC", timeZoneFallback: true }],
+    ["the zone is invalid", { timeZone: "Not/AZone", timeZoneFallback: false }],
+  ])("falls back to the UTC line when %s", async (_l, over) => {
+    readQueue.push(Promise.resolve(respond(200, { ...WEEK, ...over })));
+    renderPage();
+    expect(
+      await screen.findByText("Times in UTC — none of your accounts reports a time zone."),
+    ).toBeInTheDocument();
   });
 });
 
@@ -492,7 +635,7 @@ describe("WorkspacePage — the to-do panel", () => {
   it("stays beside the can't-load pane when the week fails", async () => {
     fetchMock.mockResolvedValue(respond(500, { error: "Internal server error" }));
     renderPage();
-    expect(await screen.findByText("Couldn't load your calendar from Microsoft.")).toBeInTheDocument();
+    expect(await screen.findByText("Couldn't load your calendar.")).toBeInTheDocument();
     expect(screen.getByRole("complementary", { name: "To-dos" })).toBeInTheDocument();
   });
 });
@@ -707,11 +850,44 @@ describe("WorkspacePage — moving a meeting", () => {
     expect(screen.queryByText("1:00 – 2:30")).toBeNull();
   });
 
-  it("an expired sign-in (409 needs_reconnect) flips to Reconnect", async () => {
+  it("a write answering 409 needs_reconnect re-reads the week: the other account stays, the broken one gets its banner", async () => {
+    const G = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+    const gym = {
+      ...WEEK.events[0],
+      id: "gym",
+      key: `${G}:gym`,
+      connectionId: G,
+      provider: "google",
+      subject: "Gym",
+      start: "2026-10-28T07:00",
+      end: "2026-10-28T08:00",
+      household: null,
+    };
+    const google: AccountSummary = { ...ACCOUNT, id: G, provider: "google", email: "dana@gmail.com" };
     writeMock.mockResolvedValueOnce(respond(409, { error: "needs_reconnect" }));
-    await moveReviewTo1pm();
-    expect(await screen.findByText("Your Microsoft sign-in expired.")).toBeInTheDocument();
-    expect(grid()).toBeNull();
+    // The re-read after the write: Outlook now needs reconnecting, Google still works.
+    readQueue.push(Promise.resolve(respond(200, {
+      ...WEEK,
+      events: [gym],
+      accounts: [
+        { connectionId: MS_ID, error: "needs_reconnect" },
+        { connectionId: G, error: null },
+      ],
+    })));
+    readQueue.unshift(Promise.resolve(respond(200, {
+      ...WEEK,
+      events: [WEEK.events[0], gym],
+      accounts: [
+        { connectionId: MS_ID, error: null },
+        { connectionId: G, error: null },
+      ],
+    })));
+    renderPage("ready", [ACCOUNT, google]);
+    await moveReviewTo("13:00");
+    expect(await screen.findByText("dana@hartwell.com needs to reconnect.")).toBeInTheDocument();
+    expect(screen.getByText("Gym")).toBeInTheDocument();
+    expect(grid()).not.toBeNull();
+    expect(screen.queryByText("Your Microsoft sign-in expired.")).toBeNull();
   });
 
   it("an unchanged save sends nothing", async () => {

@@ -52,8 +52,8 @@ export function CalendarPaneState({
     case "needs_reconnect":
       return (
         <Pane
-          title="Your Microsoft sign-in expired."
-          body="Sign in again with your work account to see your week."
+          title="Your sign-in expired."
+          body="Sign in again to see your week."
           action={
             <a href={MICROSOFT_CONNECT_URL} className="btn-primary text-sm">
               Reconnect
@@ -64,7 +64,7 @@ export function CalendarPaneState({
     case "unavailable":
       return (
         <Pane
-          title="Couldn't load your calendar from Microsoft."
+          title="Couldn't load your calendar."
           body="If this keeps happening, ask your firm's admin."
           action={
             <button type="button" className="btn-ghost text-sm" onClick={onRetry}>

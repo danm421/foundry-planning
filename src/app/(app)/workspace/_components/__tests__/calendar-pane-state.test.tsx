@@ -44,14 +44,14 @@ describe("CalendarPaneState", () => {
 
   it("needs reconnect: says the sign-in expired and links to reconnect", () => {
     render(<CalendarPaneState state="needs_reconnect" googleEnabled={false} />);
-    expect(screen.getByText("Your Microsoft sign-in expired.")).toBeInTheDocument();
+    expect(screen.getByText("Your sign-in expired.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Reconnect" })).toHaveAttribute("href", MICROSOFT_CONNECT_URL);
   });
 
   it("unavailable: says it couldn't load, not 'busy', and Retry calls back", () => {
     const onRetry = vi.fn();
     render(<CalendarPaneState state="unavailable" googleEnabled={false} onRetry={onRetry} />);
-    expect(screen.getByText("Couldn't load your calendar from Microsoft.")).toBeInTheDocument();
+    expect(screen.getByText("Couldn't load your calendar.")).toBeInTheDocument();
     expect(screen.getByText("If this keeps happening, ask your firm's admin.")).toBeInTheDocument();
     expect(screen.queryByText(/busy/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));

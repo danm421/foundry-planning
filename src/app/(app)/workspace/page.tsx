@@ -4,8 +4,9 @@ import { auth } from "@clerk/nextjs/server";
 import { listHouseholdPickerOptions } from "@/lib/crm/households";
 import { listUserConnectionSummaries } from "@/lib/workspace/connections";
 import { isWorkspaceEnabled } from "@/lib/workspace/flag";
-import { isGoogleConfigured } from "@/lib/workspace/google/config";
+import { googleAppConfig, isGoogleConfigured } from "@/lib/workspace/google/config";
 import { isImpersonating } from "@/lib/workspace/impersonation";
+import { buildItApprovalUrl } from "@/lib/workspace/microsoft/oauth";
 import { calendarPaneState } from "@/lib/workspace/pane-state";
 import { mondayOf } from "@/lib/workspace/week";
 import Forbidden from "../settings/forbidden";
@@ -30,15 +31,29 @@ export default async function WorkspaceRoute(): Promise<ReactElement> {
     listHouseholdPickerOptions(firmId, userId, orgRole),
   ]);
 
+  const googleEnabled = isGoogleConfigured();
+  const itApprovalUrl = microsoftApprovalUrl();
+
   return (
     <WorkspacePage
       paneState={calendarPaneState({ impersonating, accountCount: accounts.length })}
       accounts={accounts}
-      googleEnabled={isGoogleConfigured()}
+      googleEnabled={googleEnabled}
+      itApprovalUrl={itApprovalUrl}
+      googleClientId={googleEnabled ? googleAppConfig().clientId : null}
       // The server's UTC date; the client's Today button uses the browser's.
       initialWeek={mondayOf(new Date().toISOString().slice(0, 10))}
       userId={userId}
       households={households}
     />
   );
+}
+
+/** The link for a Microsoft organization's admin; null where Microsoft isn't set up (the builder throws on a missing env var). */
+function microsoftApprovalUrl(): string | null {
+  try {
+    return buildItApprovalUrl();
+  } catch {
+    return null;
+  }
 }
