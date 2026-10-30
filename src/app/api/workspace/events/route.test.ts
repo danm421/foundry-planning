@@ -1,38 +1,26 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { ForbiddenError } from "@/lib/authz";
 import { WorkspaceImpersonationError } from "@/lib/workspace/errors";
 import type { WorkspaceEvent } from "@/lib/workspace/types";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
-  requireActiveSubscription: vi.fn(),
   listActingConnections: vi.fn(),
   readWeek: vi.fn(),
-  getMailboxTimeZone: vi.fn(),
-  createEvent: vi.fn(),
   findHouseholdsByEmail: vi.fn(),
   linkEventHousehold: vi.fn(),
   recordAudit: vi.fn(),
 }));
 
 vi.mock("@clerk/nextjs/server", () => ({ auth: mocks.auth }));
-vi.mock("@/lib/authz", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/authz")>()),
-  requireActiveSubscription: mocks.requireActiveSubscription,
-}));
 vi.mock("@/lib/audit", () => ({ recordAudit: mocks.recordAudit }));
 vi.mock("@/lib/workspace/acting-connection", () => ({ listActingConnections: mocks.listActingConnections }));
 vi.mock("@/lib/workspace/readers", () => ({ readWeek: mocks.readWeek }));
-vi.mock("@/lib/workspace/microsoft/calendar", () => ({
-  getMailboxTimeZone: mocks.getMailboxTimeZone,
-  createEvent: mocks.createEvent,
-}));
 vi.mock("@/lib/workspace/client-links", () => ({
   findHouseholdsByEmail: mocks.findHouseholdsByEmail,
   linkEventHousehold: mocks.linkEventHousehold,
 }));
 
-import { GET, POST } from "./route";
+import { GET } from "./route";
 
 const MS = { id: "conn_ms", provider: "microsoft", status: "connected" };
 const GOOGLE = { id: "conn_g", provider: "google", status: "connected" };
@@ -62,24 +50,13 @@ function week(over: Record<string, unknown> = {}) {
 function get(start?: string) {
   return GET(new Request(`https://app.test/api/workspace/events${start ? `?start=${start}` : ""}`));
 }
-function post(body: unknown) {
-  return POST(
-    new Request("https://app.test/api/workspace/events", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: typeof body === "string" ? body : JSON.stringify(body),
-    }),
-  );
-}
 
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("WORKSPACE_ENABLED", "true");
   mocks.auth.mockResolvedValue({ userId: "user_ada", orgId: "org_1", orgRole: "org:member" });
-  mocks.requireActiveSubscription.mockResolvedValue(undefined);
   mocks.listActingConnections.mockResolvedValue([MS]);
   mocks.readWeek.mockResolvedValue(week());
-  mocks.getMailboxTimeZone.mockResolvedValue("Eastern Standard Time");
   mocks.findHouseholdsByEmail.mockResolvedValue(new Map());
   mocks.linkEventHousehold.mockReturnValue(null);
   mocks.recordAudit.mockResolvedValue(undefined);
@@ -182,53 +159,5 @@ describe("GET /api/workspace/events", () => {
     const res = await get("2026-11-02");
     expect(res.status).toBe(404);
     expect(mocks.auth).not.toHaveBeenCalled();
-  });
-});
-
-describe("POST /api/workspace/events (interim, replaced in Task 9)", () => {
-  const valid = { subject: "Review", start: "2026-11-02T09:00", end: "2026-11-02T10:00", attendees: ["a@c.com"], video: true };
-
-  it("creates on the first connected account with the mailbox zone, returns teamsFailed, audits ids only", async () => {
-    mocks.createEvent.mockResolvedValue({ event: { id: "evt_1" }, videoFailed: true });
-    const res = await post(valid);
-    expect(res.status).toBe(201);
-    expect(await res.json()).toEqual({ event: { id: "evt_1" }, teamsFailed: true });
-    expect(mocks.createEvent).toHaveBeenCalledWith({ conn: MS }, { ...valid, timeZone: "Eastern Standard Time" });
-    expect(mocks.recordAudit).toHaveBeenCalledWith({
-      action: "workspace.event_create",
-      resourceType: "workspace_event",
-      resourceId: "evt_1",
-      firmId: "org_1",
-      metadata: { eventId: "evt_1" },
-    });
-  });
-
-  it("no connected accounts → 409 connect", async () => {
-    mocks.listActingConnections.mockResolvedValue([]);
-    const res = await post(valid);
-    expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ error: "connect" });
-    expect(mocks.createEvent).not.toHaveBeenCalled();
-  });
-
-  it("(Review Focus 5) an impersonation session → 403, and nothing is written", async () => {
-    mocks.listActingConnections.mockRejectedValue(new WorkspaceImpersonationError());
-    const res = await post(valid);
-    expect(res.status).toBe(403);
-    expect(mocks.createEvent).not.toHaveBeenCalled();
-  });
-
-  it("is 403 and never calls Graph when the subscription lapsed", async () => {
-    mocks.requireActiveSubscription.mockRejectedValue(new ForbiddenError("Active subscription required"));
-    const res = await post(valid);
-    expect(res.status).toBe(403);
-    expect(mocks.listActingConnections).not.toHaveBeenCalled();
-    expect(mocks.createEvent).not.toHaveBeenCalled();
-  });
-
-  it("is 400 for end <= start and for malformed JSON", async () => {
-    expect((await post({ ...valid, end: valid.start })).status).toBe(400);
-    expect((await post("{nope")).status).toBe(400);
-    expect(mocks.createEvent).not.toHaveBeenCalled();
   });
 });

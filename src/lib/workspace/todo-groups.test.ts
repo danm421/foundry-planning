@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TaskListRow } from "@/lib/crm-tasks/queries";
-import type { WorkspaceTodo } from "./types";
-import { groupTodos, toTodoItems, type TodoItem } from "./todo-groups";
+import { groupTodos, toTodoItems, type AccountTodo, type TodoItem } from "./todo-groups";
 
 const TODAY = "2026-10-28"; // a Wednesday
 
@@ -22,8 +21,9 @@ function task(over: Partial<TaskListRow> = {}): TaskListRow {
   };
 }
 
-function todo(over: Partial<WorkspaceTodo> = {}): WorkspaceTodo {
+function todo(over: Partial<AccountTodo> = {}): AccountTodo {
   return {
+    connectionId: "conn-1",
     provider: "microsoft",
     id: "AAMk/task=",
     listId: "AAMk/list=",
@@ -73,7 +73,7 @@ describe("toTodoItems", () => {
       dueDate: "2026-10-30",
       meta: null,
       href: null,
-      outlook: { listId: "AAMk/list=", taskId: "AAMk/task=" },
+      outlook: { connectionId: "conn-1", listId: "AAMk/list=", taskId: "AAMk/task=" },
     });
   });
 

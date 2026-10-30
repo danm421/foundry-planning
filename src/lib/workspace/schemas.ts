@@ -1,7 +1,11 @@
 import { z } from "zod";
+import { isValidIanaZone } from "./time-zones";
 
 /** `"YYYY-MM-DDTHH:mm"` in the mailbox time zone, no offset. */
 export const wallClockSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+
+/** The zone the wall-clock times are in (an IANA name; a Windows zone name is refused). */
+const timeZoneSchema = z.string().refine(isValidIanaZone, { message: "timeZone must be an IANA zone" });
 
 // Fixed-width wall-clock strings compare correctly as text.
 const endAfterStart = (v: { start: string; end: string }) => v.end > v.start;
@@ -14,12 +18,13 @@ export const createEventSchema = z
     end: wallClockSchema,
     attendees: z.array(z.string().email()).max(50).default([]),
     video: z.boolean().default(false),
+    timeZone: timeZoneSchema,
   })
   .strict()
   .refine(endAfterStart, END_AFTER_START);
 
 export const moveEventSchema = z
-  .object({ start: wallClockSchema, end: wallClockSchema })
+  .object({ start: wallClockSchema, end: wallClockSchema, timeZone: timeZoneSchema })
   .strict()
   .refine(endAfterStart, END_AFTER_START);
 

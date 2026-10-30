@@ -27,8 +27,6 @@ const ERROR_BANNERS = new Map([
 /** The panes a Workspace route's 409 (no account, an expired sign-in) or 403 (impersonating) can name. */
 const BLOCKING_PANES = new Set<PaneView>(["connect", "needs_reconnect", "impersonating"]);
 
-const DISCONNECT_URL = "/api/workspace/microsoft/connection/disconnect";
-
 const MOVE_FAILED = "Couldn't move the meeting — it's back where it was.";
 const DISCONNECT_FAILED = "Couldn't disconnect Microsoft 365. Try again.";
 const TEAMS_FAILED =
@@ -90,7 +88,9 @@ async function write(url: string, method: "POST" | "PATCH", body?: unknown): Pro
   }
 }
 
-const eventUrl = (id: string) => `/api/workspace/events/${encodeURIComponent(id)}`;
+/** An event is written through the account that holds it. */
+const eventUrl = (e: { connectionId: string; id: string }) =>
+  `/api/workspace/accounts/${e.connectionId}/events/${encodeURIComponent(e.id)}`;
 
 type Times = { start: WallClock; end: WallClock };
 type Editor = ({ mode: "create" } & Times) | { mode: "edit"; event: WeekEvent };
@@ -200,6 +200,8 @@ export function WorkspacePage({
   const onScreen = current ?? result;
   const shownWeek = onScreen && "events" in onScreen ? onScreen : null;
   const days = showWeekends ? 7 : 5;
+  // Writes send the zone the week is shown in, so a wall clock means what the advisor saw.
+  const weekZone = current && "events" in current ? current.timeZone : null;
 
   const [editor, setEditor] = useState<Editor | null>(null);
 
@@ -217,10 +219,11 @@ export function WorkspacePage({
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
 
-  /** Drops the advisor's own Microsoft connection; the refreshed page shows Connect. */
+  /** Drops the sole connected account; the refreshed page shows Connect. */
   async function disconnectMicrosoft(): Promise<void> {
+    if (!soleAccount) return;
     setDisconnecting(true);
-    const r = await write(DISCONNECT_URL, "POST");
+    const r = await write(`/api/workspace/accounts/${soleAccount.id}/disconnect`, "POST");
     setDisconnecting(false);
     setConfirmDisconnect(false);
     if (r.ok) router.refresh();
@@ -235,14 +238,14 @@ export function WorkspacePage({
    */
   async function moveMeeting(key: string, start: WallClock, end: WallClock): Promise<void> {
     const before = week?.find((e) => e.key === key);
-    if (!before) return;
+    if (!before || !weekZone) return;
     const setTimes = (to: Times) =>
       updateEvents((events) => events.map((e) => (e.key === key ? { ...e, ...to } : e)));
     const seq = ++moveSeq.current;
     movesInFlight.current.set(key, { seq, start, end });
     setTimes({ start, end });
 
-    const r = await write(eventUrl(before.id), "PATCH", { start, end });
+    const r = await write(eventUrl(before), "PATCH", { start, end, timeZone: weekZone });
     if (movesInFlight.current.get(key)?.seq !== seq) return;
     movesInFlight.current.delete(key);
     if (!r.ok && r.pane) {
@@ -268,12 +271,16 @@ export function WorkspacePage({
   }
 
   async function createMeeting(d: EventDraft): Promise<void> {
-    const r = await write("/api/workspace/events", "POST", {
+    // Until the account picker, a new meeting goes to the first connected account.
+    const target = accounts.find((a) => a.status === "connected");
+    if (!target || !weekZone) throw new Error("create failed"); // the dialog says so and stays open
+    const r = await write(`/api/workspace/accounts/${target.id}/events`, "POST", {
       subject: d.subject,
       start: d.start,
       end: d.end,
       attendees: d.attendees,
       video: d.teams,
+      timeZone: weekZone,
     });
     if (!r.ok) {
       if (!r.pane) throw new Error("create failed"); // the dialog says so and stays open
@@ -281,13 +288,13 @@ export function WorkspacePage({
       return;
     }
     setEditor(null);
-    const teamsFailed = (r.body as { teamsFailed?: unknown } | null)?.teamsFailed === true;
+    const teamsFailed = (r.body as { videoFailed?: unknown } | null)?.videoFailed === true;
     if (teamsFailed) showToast({ message: TEAMS_FAILED });
     setRefresh((n) => n + 1); // the server knows `editable` and the household
   }
 
   async function cancelMeeting(event: WeekEvent): Promise<void> {
-    const r = await write(`${eventUrl(event.id)}/cancel`, "POST");
+    const r = await write(`${eventUrl(event)}/cancel`, "POST");
     if (!r.ok) {
       if (!r.pane) throw new Error("cancel failed");
       showPane(r.pane);

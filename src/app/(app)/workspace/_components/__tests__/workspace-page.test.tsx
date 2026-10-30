@@ -374,7 +374,7 @@ describe("WorkspacePage — changing weeks (F9)", () => {
 });
 
 describe("WorkspacePage — disconnecting your Microsoft account (I5)", () => {
-  const DISCONNECT_URL = "/api/workspace/microsoft/connection/disconnect";
+  const DISCONNECT_URL = `/api/workspace/accounts/${MS_ID}/disconnect`;
 
   it("names the one connected account under the calendar", async () => {
     renderPage();
@@ -598,11 +598,12 @@ describe("WorkspacePage — moving a meeting", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByText("1:00 – 2:30")).toBeInTheDocument();
     const [url, init] = writeMock.mock.calls[0];
-    expect(url).toBe("/api/workspace/events/AAMkAD%2Freview%3D");
+    expect(url).toBe(`/api/workspace/accounts/${MS_ID}/events/AAMkAD%2Freview%3D`);
     expect(init.method).toBe("PATCH");
     expect(JSON.parse(String(init.body))).toEqual({
       start: "2026-10-27T13:00",
       end: "2026-10-27T14:30",
+      timeZone: "America/New_York",
     });
 
     await act(async () => patch.resolve(accepted("2026-10-27T13:00", "2026-10-27T14:30")));
@@ -742,10 +743,10 @@ describe("WorkspacePage — creating a meeting", () => {
   }
 
   it("posts exactly the schema's keys, then re-reads the week", async () => {
-    writeMock.mockResolvedValueOnce(respond(201, { event: { id: "new" }, teamsFailed: false }));
+    writeMock.mockResolvedValueOnce(respond(201, { event: { id: "new" }, videoFailed: false }));
     await createCall();
     const [url, init] = writeMock.mock.calls[0];
-    expect(url).toBe("/api/workspace/events");
+    expect(url).toBe(`/api/workspace/accounts/${MS_ID}/events`);
     expect(init.method).toBe("POST");
     expect(JSON.parse(String(init.body))).toEqual({
       subject: "Intro call",
@@ -753,6 +754,7 @@ describe("WorkspacePage — creating a meeting", () => {
       end: "2026-10-29T15:30",
       attendees: [],
       video: true,
+      timeZone: "America/New_York",
     });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await waitFor(() => expect(weekReads()).toHaveLength(2));
@@ -760,7 +762,7 @@ describe("WorkspacePage — creating a meeting", () => {
   });
 
   it("says so when the meeting saved without its Teams link", async () => {
-    writeMock.mockResolvedValueOnce(respond(201, { event: { id: "new" }, teamsFailed: true }));
+    writeMock.mockResolvedValueOnce(respond(201, { event: { id: "new" }, videoFailed: true }));
     await createCall();
     expect(
       await screen.findByText(
@@ -800,7 +802,7 @@ describe("WorkspacePage — cancelling a meeting", () => {
     await user.click(screen.getByRole("button", { name: "Cancel meeting" }));
 
     const [url, init] = writeMock.mock.calls[0];
-    expect(url).toBe("/api/workspace/events/AAMkAD%2Freview%3D/cancel");
+    expect(url).toBe(`/api/workspace/accounts/${MS_ID}/events/AAMkAD%2Freview%3D/cancel`);
     expect(init.method).toBe("POST");
     expect(init.body).toBeUndefined();
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());

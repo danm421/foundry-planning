@@ -9,6 +9,9 @@ import { addDays, mondayOf } from "./week";
  * in calendar order as text.
  */
 
+/** An account's to-do, tagged with the connection it came from (the one its writes go through). */
+export type AccountTodo = WorkspaceTodo & { connectionId: string };
+
 /** One row of the combined list. `outlook` / `foundry` carry the ids the source's routes take. */
 export type TodoItem = {
   key: string;
@@ -17,7 +20,7 @@ export type TodoItem = {
   dueDate: string | null;
   meta: string | null;
   href: string | null;
-  outlook?: { listId: string; taskId: string };
+  outlook?: { connectionId: string; listId: string; taskId: string };
   foundry?: { taskId: string };
 };
 
@@ -35,7 +38,7 @@ function foundryMeta(t: TaskListRow): string | null {
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
-export function toTodoItems(foundry: TaskListRow[], outlook: WorkspaceTodo[]): TodoItem[] {
+export function toTodoItems(foundry: TaskListRow[], outlook: AccountTodo[]): TodoItem[] {
   return [
     ...foundry.map(
       (t): TodoItem => ({
@@ -56,7 +59,7 @@ export function toTodoItems(foundry: TaskListRow[], outlook: WorkspaceTodo[]): T
         dueDate: t.dueDate,
         meta: null,
         href: null,
-        outlook: { listId: t.listId, taskId: t.id },
+        outlook: { connectionId: t.connectionId, listId: t.listId, taskId: t.id },
       }),
     ),
   ];

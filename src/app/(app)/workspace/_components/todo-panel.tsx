@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState, type ReactElement } from "react";
 import Link from "next/link";
 import { checkboxClassName } from "@/components/forms/input-styles";
 import type { TaskListRow } from "@/lib/crm-tasks/queries";
-import { groupTodos, toTodoItems, type TodoGroups, type TodoItem } from "@/lib/workspace/todo-groups";
+import { groupTodos, toTodoItems, type AccountTodo, type TodoGroups, type TodoItem } from "@/lib/workspace/todo-groups";
 import type { AccountError, WorkspaceProvider, WorkspaceTodo } from "@/lib/workspace/types";
 import { localToday, monthDay } from "@/lib/workspace/week";
 import { AddTodoRow, type HouseholdOption, type TodoDraft } from "./add-todo-row";
@@ -18,8 +18,6 @@ type AccountTodos = {
   todos: WorkspaceTodo[] | null;
   error: AccountError | null;
 };
-/** An account's to-do, tagged with the account it came from. */
-type AccountTodo = WorkspaceTodo & { connectionId: string };
 type Loaded = {
   foundry: TaskListRow[];
   accounts: AccountTodos[];
@@ -45,8 +43,8 @@ const CHIP =
 
 const SOURCE_LABEL: Record<TodoItem["source"], string> = { microsoft: "Outlook", google: "Google", foundry: "Foundry" };
 
-const todoUrl = (o: { listId: string; taskId: string }) =>
-  `/api/workspace/todos/${encodeURIComponent(o.listId)}/${encodeURIComponent(o.taskId)}`;
+const todoUrl = (o: { connectionId: string; listId: string; taskId: string }) =>
+  `/api/workspace/accounts/${o.connectionId}/todos/${encodeURIComponent(o.listId)}/${encodeURIComponent(o.taskId)}`;
 
 /**
  * Reads the list. A 500, a network failure or an answer without Foundry's or
@@ -146,7 +144,7 @@ export function TodoPanel({
   const [failed, setFailed] = useState<ReadonlySet<string>>(new Set());
 
   const [adding, setAdding] = useState(false);
-  const [editing, setEditing] = useState<WorkspaceTodo | null>(null);
+  const [editing, setEditing] = useState<AccountTodo | null>(null);
 
   async function checkOff(item: TodoItem): Promise<void> {
     if (inFlight.current.has(item.key)) return;
@@ -167,6 +165,17 @@ export function TodoPanel({
     if (item.outlook || (r.body as { followOnId?: unknown } | null)?.followOnId) reread();
   }
 
+  /** Until the account picker, a new to-do goes to the first account whose sign-in works. */
+  function sendToAccount(d: TodoDraft): Promise<{ body: unknown } | null> {
+    const target = ready?.accounts.find((a) => a.error !== "needs_reconnect");
+    if (!target) return Promise.resolve(null);
+    return send(`/api/workspace/accounts/${target.connectionId}/todos`, "POST", {
+      title: d.title,
+      dueDate: d.dueDate,
+      notes: "",
+    });
+  }
+
   async function addTodo(d: TodoDraft): Promise<void> {
     const r = d.foundry
       ? await send("/api/crm/tasks", "POST", {
@@ -176,14 +185,14 @@ export function TodoPanel({
           householdId: d.foundry.householdId,
           assigneeUserId: userId,
         })
-      : await send("/api/workspace/todos", "POST", { title: d.title, dueDate: d.dueDate, notes: "" });
+      : await sendToAccount(d);
     if (!r) throw new Error("add failed"); // the row says so and stays open
     setAdding(false);
     reread();
   }
 
-  async function saveTodo(todo: WorkspaceTodo, patch: TodoPatch): Promise<void> {
-    const r = await send(todoUrl({ listId: todo.listId, taskId: todo.id }), "PATCH", patch);
+  async function saveTodo(todo: AccountTodo, patch: TodoPatch): Promise<void> {
+    const r = await send(todoUrl({ connectionId: todo.connectionId, listId: todo.listId, taskId: todo.id }), "PATCH", patch);
     if (!r) throw new Error("save failed"); // the dialog says so and stays open
     setEditing(null);
     reread();

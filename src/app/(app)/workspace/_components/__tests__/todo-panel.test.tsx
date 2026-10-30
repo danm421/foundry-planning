@@ -55,7 +55,7 @@ function answer(foundry: unknown[], accounts: unknown[], blocked: string | null 
 
 const TODOS = answer([FOUNDRY_TASK], [account([OUTLOOK_TODO])]);
 
-const OUTLOOK_URL = "/api/workspace/todos/AAMk%2Flist%3D/AAMk%2Ftask%3D";
+const OUTLOOK_URL = `/api/workspace/accounts/${MS_ID}/todos/AAMk%2Flist%3D/AAMk%2Ftask%3D`;
 const HOUSEHOLDS = [
   { id: "11111111-1111-4111-8111-111111111111", name: "Hartley" },
   { id: "22222222-2222-4222-8222-222222222222", name: "Nguyen" },
@@ -327,7 +327,7 @@ describe("TodoPanel — adding one", () => {
     await user.click(screen.getByRole("button", { name: "Add" }));
 
     expect(sent()).toEqual({
-      url: "/api/workspace/todos",
+      url: `/api/workspace/accounts/${MS_ID}/todos`,
       method: "POST",
       body: { title: "Renew E&O policy", dueDate: "2026-11-14", notes: "" },
     });

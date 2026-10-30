@@ -1,29 +1,21 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { ForbiddenError } from "@/lib/authz";
 import { WorkspaceImpersonationError } from "@/lib/workspace/errors";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
-  requireActiveSubscription: vi.fn(),
   listActingConnections: vi.fn(),
   readTodos: vi.fn(),
-  createTodo: vi.fn(),
   listTasks: vi.fn(),
   recordAudit: vi.fn(),
 }));
 
 vi.mock("@clerk/nextjs/server", () => ({ auth: mocks.auth }));
-vi.mock("@/lib/authz", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/authz")>()),
-  requireActiveSubscription: mocks.requireActiveSubscription,
-}));
 vi.mock("@/lib/audit", () => ({ recordAudit: mocks.recordAudit }));
 vi.mock("@/lib/crm-tasks/queries", () => ({ listTasks: mocks.listTasks }));
 vi.mock("@/lib/workspace/acting-connection", () => ({ listActingConnections: mocks.listActingConnections }));
 vi.mock("@/lib/workspace/readers", () => ({ readTodos: mocks.readTodos }));
-vi.mock("@/lib/workspace/microsoft/todo", () => ({ createTodo: mocks.createTodo }));
 
-import { GET, POST } from "./route";
+import { GET } from "./route";
 
 const MS = { id: "conn_ms", provider: "microsoft", status: "connected" };
 const GOOGLE = { id: "conn_g", provider: "google", status: "needs_reconnect" };
@@ -34,20 +26,10 @@ const ACCOUNTS = [
   { connectionId: "conn_g", provider: "google", todos: null, error: "needs_reconnect" },
 ];
 
-const post = (b: unknown) =>
-  POST(
-    new Request("https://app.test/api/workspace/todos", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(b),
-    }),
-  );
-
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("WORKSPACE_ENABLED", "true");
   mocks.auth.mockResolvedValue({ userId: "user_ada", orgId: "org_1", orgRole: "org:member" });
-  mocks.requireActiveSubscription.mockResolvedValue(undefined);
   mocks.listActingConnections.mockResolvedValue([MS, GOOGLE]);
   mocks.listTasks.mockResolvedValue(FOUNDRY);
   mocks.readTodos.mockResolvedValue(ACCOUNTS);
@@ -109,41 +91,5 @@ describe("GET /api/workspace/todos", () => {
   it("is 404 when Workspace is off", async () => {
     vi.stubEnv("WORKSPACE_ENABLED", "false");
     expect((await GET()).status).toBe(404);
-  });
-});
-
-describe("POST /api/workspace/todos (interim, replaced in Task 9)", () => {
-  it("creates a todo on the first connected account and audits ids only", async () => {
-    mocks.createTodo.mockResolvedValue({ provider: "microsoft", id: "o9", listId: "l1" });
-    const res = await post({ title: "Call", dueDate: "2026-11-05" });
-    expect(res.status).toBe(201);
-    expect(mocks.createTodo).toHaveBeenCalledWith({ conn: MS }, { title: "Call", dueDate: "2026-11-05", notes: "" });
-    expect(mocks.recordAudit).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "workspace.todo_create", resourceId: "o9", metadata: { listId: "l1", taskId: "o9" } }),
-    );
-  });
-
-  it("no connected accounts → 409 connect", async () => {
-    mocks.listActingConnections.mockResolvedValue([]);
-    const res = await post({ title: "Call" });
-    expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ error: "connect" });
-    expect(mocks.createTodo).not.toHaveBeenCalled();
-  });
-
-  it("(Review Focus 5) an impersonation session → 403, and nothing is written", async () => {
-    mocks.listActingConnections.mockRejectedValue(new WorkspaceImpersonationError());
-    expect((await post({ title: "Call" })).status).toBe(403);
-    expect(mocks.createTodo).not.toHaveBeenCalled();
-  });
-
-  it("is 403 and never calls Graph when the subscription lapsed", async () => {
-    mocks.requireActiveSubscription.mockRejectedValue(new ForbiddenError("Active subscription required"));
-    expect((await post({ title: "Call" })).status).toBe(403);
-    expect(mocks.createTodo).not.toHaveBeenCalled();
-  });
-
-  it("is 400 for an empty title", async () => {
-    expect((await post({ title: "" })).status).toBe(400);
   });
 });
