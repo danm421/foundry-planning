@@ -40,7 +40,20 @@ const OUTLOOK_TODO = {
   notesAreHtml: false,
 };
 
-const TODOS = { foundry: [FOUNDRY_TASK], outlook: [OUTLOOK_TODO], outlookError: null };
+const MS_ID = "6f1c2b9e-3d4a-4e5f-8a6b-7c8d9e0f1a2b";
+const GOOGLE_ID = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+
+/** One account's half of `GET /api/workspace/todos`. */
+function account(todos: unknown[] | null, error: string | null = null, connectionId = MS_ID, provider = "microsoft") {
+  return { connectionId, provider, todos, error };
+}
+
+/** The route's answer: Foundry tasks, each account's to-dos or error, and why accounts are hidden. */
+function answer(foundry: unknown[], accounts: unknown[], blocked: string | null = null) {
+  return { foundry, accounts, blocked };
+}
+
+const TODOS = answer([FOUNDRY_TASK], [account([OUTLOOK_TODO])]);
 
 const OUTLOOK_URL = "/api/workspace/todos/AAMk%2Flist%3D/AAMk%2Ftask%3D";
 const HOUSEHOLDS = [
@@ -114,7 +127,7 @@ describe("TodoPanel — the list", () => {
   });
 
   it("says when nothing is open", async () => {
-    serverTodos = { foundry: [], outlook: [], outlookError: null };
+    serverTodos = answer([], [account([])]);
     renderPanel();
     expect(await screen.findByText("Nothing open.")).toBeInTheDocument();
     expect(screen.getByText("0 open")).toBeInTheDocument();
@@ -124,6 +137,7 @@ describe("TodoPanel — the list", () => {
     ["a 500", () => Promise.resolve(respond(500, { error: "Internal server error" }))],
     ["a network failure", () => Promise.reject(new TypeError("Failed to fetch"))],
     ["a malformed answer", () => Promise.resolve(respond(200, { events: [] }))],
+    ["the retired phase-1 shape", () => Promise.resolve(respond(200, { foundry: [], outlook: [], outlookError: null }))],
   ])("%s shows an error with Retry, never an empty list", async (_label, impl) => {
     fetchMock.mockImplementationOnce(impl);
     renderPanel();
@@ -137,8 +151,32 @@ describe("TodoPanel — the list", () => {
 });
 
 describe("TodoPanel — Outlook's side", () => {
+  it("flattens every account's to-dos into the one list", async () => {
+    const googleTodo = { ...OUTLOOK_TODO, provider: "google", id: "g-1", listId: "@default", title: "Book the Schwab call" };
+    serverTodos = answer(
+      [FOUNDRY_TASK],
+      [account([OUTLOOK_TODO]), account([googleTodo], null, GOOGLE_ID, "google")],
+    );
+    renderPanel();
+    expect(await screen.findByText("Send Hartley the updated plan")).toBeInTheDocument();
+    expect(screen.getByText("Book the Schwab call")).toBeInTheDocument();
+    expect(screen.getByText("Prep Nguyen proposal")).toBeInTheDocument();
+    expect(screen.getByText("3 open")).toBeInTheDocument();
+  });
+
+  it("(Review Focus 1) one account failing never hides another account's to-dos", async () => {
+    const googleTodo = { ...OUTLOOK_TODO, provider: "google", id: "g-1", listId: "@default", title: "Book the Schwab call" };
+    serverTodos = answer(
+      [FOUNDRY_TASK],
+      [account(null, "unavailable"), account([googleTodo], null, GOOGLE_ID, "google")],
+    );
+    renderPanel();
+    expect(await screen.findByText("Book the Schwab call")).toBeInTheDocument();
+    expect(screen.getByText("Prep Nguyen proposal")).toBeInTheDocument();
+  });
+
   it("needs_reconnect: a one-line notice links to reconnect, and Foundry tasks still show", async () => {
-    serverTodos = { foundry: [FOUNDRY_TASK], outlook: null, outlookError: "needs_reconnect" };
+    serverTodos = answer([FOUNDRY_TASK], [account(null, "needs_reconnect")]);
     renderPanel();
     const link = await screen.findByRole("link", {
       name: "Reconnect Microsoft 365 to see your Outlook to-dos.",
@@ -148,14 +186,14 @@ describe("TodoPanel — Outlook's side", () => {
   });
 
   it("throttled: says Outlook's to-dos are unavailable", async () => {
-    serverTodos = { foundry: [FOUNDRY_TASK], outlook: null, outlookError: "throttled" };
+    serverTodos = answer([FOUNDRY_TASK], [account(null, "throttled")]);
     renderPanel();
     expect(await screen.findByText("Outlook to-dos are unavailable right now.")).toBeInTheDocument();
     expect(screen.getByText("Prep Nguyen proposal")).toBeInTheDocument();
   });
 
   it("unavailable: a failure that isn't throttling points to the admin", async () => {
-    serverTodos = { foundry: [FOUNDRY_TASK], outlook: null, outlookError: "unavailable" };
+    serverTodos = answer([FOUNDRY_TASK], [account(null, "unavailable")]);
     renderPanel();
     expect(
       await screen.findByText(
@@ -166,8 +204,8 @@ describe("TodoPanel — Outlook's side", () => {
     expect(screen.getByText("Prep Nguyen proposal")).toBeInTheDocument();
   });
 
-  it("not_connected: no notice, and new to-dos can only be Foundry tasks", async () => {
-    serverTodos = { foundry: [FOUNDRY_TASK], outlook: null, outlookError: "not_connected" };
+  it("no connected accounts: no notice, and new to-dos can only be Foundry tasks", async () => {
+    serverTodos = answer([FOUNDRY_TASK], []);
     const user = userEvent.setup();
     renderPanel();
     await screen.findByText("Prep Nguyen proposal");
@@ -178,6 +216,17 @@ describe("TodoPanel — Outlook's side", () => {
     expect(toggle).toBeChecked();
     expect(toggle).toBeDisabled();
     expect(screen.getByLabelText("Household")).toBeInTheDocument();
+  });
+
+  it("(Review Focus 5) impersonating: Foundry tasks still listed, and new to-dos can only be Foundry tasks", async () => {
+    serverTodos = answer([FOUNDRY_TASK], [], "impersonating");
+    const user = userEvent.setup();
+    renderPanel();
+    expect(await screen.findByText("Prep Nguyen proposal")).toBeInTheDocument();
+    expect(screen.getByText("1 open")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "+ Add a to-do" }));
+    expect(screen.getByRole("switch", { name: "Make it a Foundry task" })).toBeDisabled();
   });
 });
 
@@ -198,7 +247,7 @@ describe("TodoPanel — checking one off", () => {
     const next = { ...OUTLOOK_TODO, id: "AAMk/task-next=", dueDate: "2026-10-30" };
     renderPanel();
     fireEvent.click(await screen.findByRole("checkbox", { name: "Mark Send Hartley the updated plan done" }));
-    serverTodos = { ...TODOS, outlook: [OUTLOOK_TODO, next] };
+    serverTodos = answer([FOUNDRY_TASK], [account([OUTLOOK_TODO, next])]);
 
     await waitFor(() => expect(reads()).toHaveLength(2));
     const thisWeek = await screen.findByRole("region", { name: "This week" });
@@ -413,7 +462,7 @@ describe("TodoPanel — editing an Outlook to-do", () => {
   });
 
   it("(I1) formatted Outlook notes are never offered as a blank box, and Save never sends notes", async () => {
-    serverTodos = { ...TODOS, outlook: [{ ...OUTLOOK_TODO, notes: "", notesAreHtml: true }] };
+    serverTodos = answer([FOUNDRY_TASK], [account([{ ...OUTLOOK_TODO, notes: "", notesAreHtml: true }])]);
     writeMock.mockResolvedValueOnce(respond(200, { ok: true }));
     const { user, dialog } = await openEditor();
 

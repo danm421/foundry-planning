@@ -68,24 +68,6 @@ function toSummary(r: { id: string; provider: WorkspaceProvider; email: string; 
   return { ...r, connectedAt: r.connectedAt.toISOString() };
 }
 
-export async function getUserConnection(
-  firmId: string,
-  userId: string,
-  provider: WorkspaceProvider,
-): Promise<WorkspaceConnection | null> {
-  const [row] = await db
-    .select()
-    .from(workspaceConnections)
-    .where(
-      and(
-        eq(workspaceConnections.firmId, firmId),
-        eq(workspaceConnections.userId, userId),
-        eq(workspaceConnections.provider, provider),
-      ),
-    );
-  return row ? toConnection(row) : null;
-}
-
 /** Selects no token columns. */
 export async function listFirmConnectionSummaries(
   firmId: string,

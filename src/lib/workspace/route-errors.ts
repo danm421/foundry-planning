@@ -4,6 +4,8 @@ import { authErrorResponse } from "@/lib/authz";
 import {
   ProviderRequestError,
   ProviderThrottledError,
+  WorkspaceConnectionNotFoundError,
+  WorkspaceImpersonationError,
   WorkspaceNotConnectedError,
   WorkspaceReconnectRequiredError,
 } from "./errors";
@@ -14,12 +16,13 @@ import type { WorkspaceProvider } from "./types";
 /**
  * Shared error mapper for `/api/workspace/*` route handlers:
  *
- * - `WorkspaceNotConnectedError` → 409 `{ error: <pane state> }`
+ * - `WorkspaceImpersonationError` → 403 `{ error: "impersonating" }`
+ * - `WorkspaceConnectionNotFoundError` → 404 `{ error: "not_found" }`
+ * - `WorkspaceNotConnectedError` → 409 `{ error: "connect" }`
  * - `WorkspaceReconnectRequiredError` → 409 `{ error: "needs_reconnect" }`
- *   (the pane shows "Needs to reconnect", never an empty week)
  * - `ProviderThrottledError` → 503 `{ error: "throttled" }` ("the provider is busy",
  *   never "no meetings")
- * - `ProviderRequestError` 403 / 404 → the same status, `not_allowed` / `not_found`
+ * - `ProviderRequestError` 403 → 403 `not_allowed`; 404 or Google's 410 (gone) → 404 `not_found`
  * - access denials → `authErrorResponse`
  * - anything else → 500, logging only `safeErrorFields` (`invalid_client` is
  *   an expired secret, not an outage). Never `err.message`: a rethrown DB
@@ -30,6 +33,12 @@ export function workspaceErrorResponse(err: unknown): Response {
   const denial = authErrorResponse(err);
   if (denial) return NextResponse.json(denial.body, { status: denial.status });
 
+  if (err instanceof WorkspaceImpersonationError) {
+    return NextResponse.json({ error: "impersonating" }, { status: 403 });
+  }
+  if (err instanceof WorkspaceConnectionNotFoundError) {
+    return NextResponse.json({ error: "not_found" }, { status: 404 });
+  }
   if (err instanceof WorkspaceNotConnectedError) {
     return NextResponse.json({ error: err.state }, { status: 409 });
   }
@@ -42,7 +51,7 @@ export function workspaceErrorResponse(err: unknown): Response {
   if (err instanceof ProviderRequestError && err.status === 403) {
     return NextResponse.json({ error: "not_allowed" }, { status: 403 });
   }
-  if (err instanceof ProviderRequestError && err.status === 404) {
+  if (err instanceof ProviderRequestError && (err.status === 404 || err.status === 410)) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 

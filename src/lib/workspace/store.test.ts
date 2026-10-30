@@ -13,8 +13,8 @@ import { createWorkspaceOauthState, consumeWorkspaceOauthState } from "./oauth-s
 import { getFirmApproval, upsertFirmApproval, deleteFirmProvider } from "./approvals";
 import { hasMemberAccess, setMemberAccess, enableMembers, removeWorkspaceMember } from "./access";
 import {
-  getUserConnection,
   listFirmConnectionSummaries,
+  listUserConnections,
   upsertUserConnection,
   getConnectionById,
   listUserConnectionSummaries,
@@ -51,6 +51,11 @@ function connectAs(firmId: string, userId: string, provider: WorkspaceProvider, 
     firmId, userId, provider, tenantId: provider === "google" ? "" : "tenant-1",
     externalUserId, externalEmail: `${externalUserId}@x.com`, tokens: t,
   });
+}
+
+/** The user's Microsoft connection, or null; these tests give each user at most one. */
+async function microsoftConnection(firmId: string, userId: string) {
+  return (await listUserConnections(firmId, userId)).find((c) => c.provider === "microsoft") ?? null;
 }
 
 beforeAll(() => {
@@ -113,13 +118,13 @@ describe("firm approval", () => {
     it("the SAME tenant keeps the advisor's connection", async () => {
       const firmId = await approvedFirmWithConnectedAdvisor();
       await approve(firmId, "t1");
-      expect(await getUserConnection(firmId, "u1", "microsoft")).not.toBeNull();
+      expect(await microsoftConnection(firmId, "u1")).not.toBeNull();
     });
 
     it("a DIFFERENT tenant keeps the connection and the access switch", async () => {
       const firmId = await approvedFirmWithConnectedAdvisor();
       await approve(firmId, "t2");
-      expect(await getUserConnection(firmId, "u1", "microsoft")).not.toBeNull();
+      expect(await microsoftConnection(firmId, "u1")).not.toBeNull();
       expect(await hasMemberAccess(firmId, "u1", "microsoft")).toBe(true);
       expect((await getFirmApproval(firmId, "microsoft"))?.tenantId).toBe("t2");
     });
@@ -128,7 +133,7 @@ describe("firm approval", () => {
       const firmId = await approvedFirmWithConnectedAdvisor();
       const otherFirmId = await approvedFirmWithConnectedAdvisor();
       await approve(firmId, "t2");
-      expect(await getUserConnection(otherFirmId, "u1", "microsoft")).not.toBeNull();
+      expect(await microsoftConnection(otherFirmId, "u1")).not.toBeNull();
     });
   });
 });
@@ -140,7 +145,7 @@ describe("member access + connections", () => {
     expect(await hasMemberAccess(firmId, "u1", "microsoft")).toBe(true);
     expect((await connect(firmId, "u1", "oid-1")).ok).toBe(true);
     await setMemberAccess({ firmId, provider: "microsoft", userId: "u1", enabled: false, updatedByUserId: "admin" });
-    expect(await getUserConnection(firmId, "u1", "microsoft")).toBeNull();
+    expect(await microsoftConnection(firmId, "u1")).toBeNull();
     expect(await hasMemberAccess(firmId, "u1", "microsoft")).toBe(false);
   });
 
@@ -171,7 +176,7 @@ describe("member access + connections", () => {
     const [raw] = await db.select({ a: workspaceConnections.accessTokenEnc }).from(workspaceConnections)
       .where(eq(workspaceConnections.firmId, firmId));
     expect(raw.a).not.toBe("plain-access-token");
-    expect((await getUserConnection(firmId, "u1", "microsoft"))?.accessToken).toBe("plain-access-token");
+    expect((await microsoftConnection(firmId, "u1"))?.accessToken).toBe("plain-access-token");
   });
 
   it("summaries carry no tokens", async () => {
@@ -196,9 +201,9 @@ describe("member access + connections", () => {
     }
     await removeWorkspaceMember(firmId, "u1");
     expect(await hasMemberAccess(firmId, "u1", "microsoft")).toBe(false);
-    expect(await getUserConnection(firmId, "u1", "microsoft")).toBeNull();
+    expect(await microsoftConnection(firmId, "u1")).toBeNull();
     expect(await hasMemberAccess(firmId, "u2", "microsoft")).toBe(true);
-    expect(await getUserConnection(firmId, "u2", "microsoft")).not.toBeNull();
+    expect(await microsoftConnection(firmId, "u2")).not.toBeNull();
   });
 
   it("deleteFirmProvider leaves no workspace rows", async () => {

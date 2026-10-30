@@ -6,6 +6,8 @@ import { workspaceErrorResponse } from "./route-errors";
 import {
   ProviderRequestError,
   ProviderThrottledError,
+  WorkspaceConnectionNotFoundError,
+  WorkspaceImpersonationError,
   WorkspaceNotConnectedError,
   WorkspaceReconnectRequiredError,
 } from "./errors";
@@ -32,15 +34,28 @@ describe("workspaceErrorResponse", () => {
     return JSON.stringify(consoleError.mock.calls);
   }
 
-  it.each(["firm_not_approved", "member_off", "connect"] as const)(
-    "WorkspaceNotConnectedError %s → 409 with the pane state",
-    async (state) => {
-      expect(await read(workspaceErrorResponse(new WorkspaceNotConnectedError(state)))).toEqual({
-        status: 409,
-        body: { error: state },
-      });
-    },
-  );
+  it("WorkspaceNotConnectedError → 409 connect", async () => {
+    expect(await read(workspaceErrorResponse(new WorkspaceNotConnectedError("connect")))).toEqual({
+      status: 409,
+      body: { error: "connect" },
+    });
+  });
+
+  it("(Review Focus 5) WorkspaceImpersonationError → 403 impersonating", async () => {
+    expect(await read(workspaceErrorResponse(new WorkspaceImpersonationError()))).toEqual({
+      status: 403,
+      body: { error: "impersonating" },
+    });
+    expect(consoleError).not.toHaveBeenCalled();
+  });
+
+  it("WorkspaceConnectionNotFoundError → 404 not_found", async () => {
+    expect(await read(workspaceErrorResponse(new WorkspaceConnectionNotFoundError()))).toEqual({
+      status: 404,
+      body: { error: "not_found" },
+    });
+    expect(consoleError).not.toHaveBeenCalled();
+  });
 
   it("(Review Focus 1) WorkspaceReconnectRequiredError → 409 needs_reconnect", async () => {
     expect(await read(workspaceErrorResponse(new WorkspaceReconnectRequiredError()))).toEqual({
@@ -65,6 +80,13 @@ describe("workspaceErrorResponse", () => {
 
   it("ProviderRequestError 404 → 404 not_found", async () => {
     expect(await read(workspaceErrorResponse(new ProviderRequestError("microsoft", 404, "ErrorItemNotFound", "req-1")))).toEqual({
+      status: 404,
+      body: { error: "not_found" },
+    });
+  });
+
+  it("ProviderRequestError 410 (Google's deleted event) → 404 not_found", async () => {
+    expect(await read(workspaceErrorResponse(new ProviderRequestError("google", 410, "deleted", null)))).toEqual({
       status: 404,
       body: { error: "not_found" },
     });

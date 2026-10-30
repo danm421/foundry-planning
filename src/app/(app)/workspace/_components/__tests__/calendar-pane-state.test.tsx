@@ -3,67 +3,54 @@ import { describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { CalendarPaneState } from "../calendar-pane-state";
 
-const CONNECT_URL = "/api/workspace/microsoft/connect";
-const SETTINGS_URL = "/settings/integrations/microsoft_365";
+const MICROSOFT_CONNECT_URL = "/api/workspace/microsoft/connect";
+const GOOGLE_CONNECT_URL = "/api/workspace/google/connect";
 
 describe("CalendarPaneState", () => {
-  it("firm not approved: a non-admin is told who can turn it on, with no settings link", () => {
-    render(<CalendarPaneState state="firm_not_approved" isAdmin={false} />);
+  it("connect: the fixed copy, with a button for Google and one for Microsoft 365", () => {
+    render(<CalendarPaneState state="connect" googleEnabled />);
+    expect(screen.getByText("Bring in your calendar and to-dos")).toBeInTheDocument();
     expect(
-      screen.getByText("Your firm's admin can turn on Microsoft 365 in Settings → Integrations."),
+      screen.getByText("Connect any of your addresses — Google or Microsoft 365. You can add more later."),
     ).toBeInTheDocument();
-    expect(document.querySelector(`a[href="${SETTINGS_URL}"]`)).toBeNull();
-  });
-
-  it("firm not approved: an admin gets the link to the Microsoft 365 settings page", () => {
-    render(<CalendarPaneState state="firm_not_approved" isAdmin />);
+    expect(screen.getByRole("link", { name: "Connect Google" })).toHaveAttribute("href", GOOGLE_CONNECT_URL);
     expect(screen.getByRole("link", { name: "Connect Microsoft 365" })).toHaveAttribute(
       "href",
-      SETTINGS_URL,
+      MICROSOFT_CONNECT_URL,
     );
   });
 
-  it("member off: asks for the admin", () => {
-    render(<CalendarPaneState state="member_off" isAdmin={false} />);
-    expect(
-      screen.getByText("Ask your firm's admin to turn on Microsoft 365 for you."),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("link")).toBeNull();
+  it("connect: with Google not set up, only Microsoft 365 is offered", () => {
+    render(<CalendarPaneState state="connect" googleEnabled={false} />);
+    expect(screen.queryByRole("link", { name: "Connect Google" })).toBeNull();
+    expect(screen.getAllByRole("link")).toHaveLength(1);
+    expect(screen.getByRole("link", { name: "Connect Microsoft 365" })).toHaveAttribute(
+      "href",
+      MICROSOFT_CONNECT_URL,
+    );
   });
 
-  it("connect: the prompt links to the advisor connect route", () => {
-    render(<CalendarPaneState state="connect" isAdmin={false} />);
-    expect(screen.getByText("Bring in your Outlook calendar")).toBeInTheDocument();
+  it("(Review Focus 5) impersonating: the fixed copy, and nothing to connect", () => {
+    render(<CalendarPaneState state="impersonating" googleEnabled />);
+    expect(screen.getByText("Hidden while you're signed in as someone else")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Your firm has approved Microsoft 365. Sign in once with your work account to see your week and your Outlook to-dos here.",
+        "Workspace never shows an advisor's Google or Microsoft calendar or to-dos to Foundry staff.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Connect Microsoft 365" })).toHaveAttribute(
-      "href",
-      CONNECT_URL,
-    );
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(screen.queryByRole("button")).toBeNull();
   });
 
   it("needs reconnect: says the sign-in expired and links to reconnect", () => {
-    render(<CalendarPaneState state="needs_reconnect" isAdmin={false} />);
+    render(<CalendarPaneState state="needs_reconnect" googleEnabled={false} />);
     expect(screen.getByText("Your Microsoft sign-in expired.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Reconnect" })).toHaveAttribute("href", CONNECT_URL);
+    expect(screen.getByRole("link", { name: "Reconnect" })).toHaveAttribute("href", MICROSOFT_CONNECT_URL);
   });
 
-  it("throttled: says Microsoft is busy and Retry calls back", () => {
+  it("unavailable: says it couldn't load, not 'busy', and Retry calls back", () => {
     const onRetry = vi.fn();
-    render(<CalendarPaneState state="throttled" isAdmin={false} onRetry={onRetry} />);
-    expect(
-      screen.getByText("Microsoft is busy right now — try again in a minute."),
-    ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(onRetry).toHaveBeenCalledTimes(1);
-  });
-
-  it("unavailable: a failure that isn't throttling points to the admin, not 'busy'", () => {
-    const onRetry = vi.fn();
-    render(<CalendarPaneState state="unavailable" isAdmin={false} onRetry={onRetry} />);
+    render(<CalendarPaneState state="unavailable" googleEnabled={false} onRetry={onRetry} />);
     expect(screen.getByText("Couldn't load your calendar from Microsoft.")).toBeInTheDocument();
     expect(screen.getByText("If this keeps happening, ask your firm's admin.")).toBeInTheDocument();
     expect(screen.queryByText(/busy/)).toBeNull();

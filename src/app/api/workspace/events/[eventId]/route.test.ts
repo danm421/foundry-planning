@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { WorkspaceImpersonationError } from "@/lib/workspace/errors";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
   requireActiveSubscription: vi.fn(),
-  resolveActingConnection: vi.fn(),
+  listActingConnections: vi.fn(),
   getEventForEdit: vi.fn(),
   getMailboxTimeZone: vi.fn(),
   moveEvent: vi.fn(),
@@ -16,7 +17,7 @@ vi.mock("@/lib/authz", async (importOriginal) => ({
   requireActiveSubscription: mocks.requireActiveSubscription,
 }));
 vi.mock("@/lib/audit", () => ({ recordAudit: mocks.recordAudit }));
-vi.mock("@/lib/workspace/acting-connection", () => ({ resolveActingConnection: mocks.resolveActingConnection }));
+vi.mock("@/lib/workspace/acting-connection", () => ({ listActingConnections: mocks.listActingConnections }));
 vi.mock("@/lib/workspace/microsoft/calendar", () => ({
   getEventForEdit: mocks.getEventForEdit,
   getMailboxTimeZone: mocks.getMailboxTimeZone,
@@ -44,7 +45,7 @@ beforeEach(() => {
   vi.stubEnv("WORKSPACE_ENABLED", "true");
   mocks.auth.mockResolvedValue({ userId: "user_ada", orgId: "org_1", orgRole: "org:member" });
   mocks.requireActiveSubscription.mockResolvedValue(undefined);
-  mocks.resolveActingConnection.mockResolvedValue(CONN);
+  mocks.listActingConnections.mockResolvedValue([CONN]);
   mocks.getEventForEdit.mockResolvedValue({ isOrganizer: true, hasAttendees: true });
   mocks.getMailboxTimeZone.mockResolvedValue("Eastern Standard Time");
   mocks.moveEvent.mockResolvedValue({ id: "evt/1=" });
@@ -80,5 +81,21 @@ describe("PATCH /api/workspace/events/[eventId]", () => {
   it("is 404 when Workspace is off", async () => {
     vi.stubEnv("WORKSPACE_ENABLED", "false");
     expect((await patch(body)).status).toBe(404);
+  });
+
+  it("(interim, replaced in Task 9) no connected accounts → 409 connect, and nothing is written", async () => {
+    mocks.listActingConnections.mockResolvedValue([]);
+    const res = await patch(body);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "connect" });
+    expect(mocks.moveEvent).not.toHaveBeenCalled();
+  });
+
+  it("(Review Focus 5) an impersonation session → 403 impersonating, and nothing is written", async () => {
+    mocks.listActingConnections.mockRejectedValue(new WorkspaceImpersonationError());
+    const res = await patch(body);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "impersonating" });
+    expect(mocks.moveEvent).not.toHaveBeenCalled();
   });
 });

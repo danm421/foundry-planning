@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { WorkspaceImpersonationError } from "@/lib/workspace/errors";
 import { ForbiddenError } from "@/lib/authz";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
   requireActiveSubscription: vi.fn(),
-  resolveActingConnection: vi.fn(),
+  listActingConnections: vi.fn(),
   updateTodo: vi.fn(),
   recordAudit: vi.fn(),
 }));
@@ -15,7 +16,7 @@ vi.mock("@/lib/authz", async (importOriginal) => ({
   requireActiveSubscription: mocks.requireActiveSubscription,
 }));
 vi.mock("@/lib/audit", () => ({ recordAudit: mocks.recordAudit }));
-vi.mock("@/lib/workspace/acting-connection", () => ({ resolveActingConnection: mocks.resolveActingConnection }));
+vi.mock("@/lib/workspace/acting-connection", () => ({ listActingConnections: mocks.listActingConnections }));
 vi.mock("@/lib/workspace/microsoft/todo", () => ({ updateTodo: mocks.updateTodo }));
 
 import { PATCH } from "./route";
@@ -36,7 +37,7 @@ beforeEach(() => {
   vi.stubEnv("WORKSPACE_ENABLED", "true");
   mocks.auth.mockResolvedValue({ userId: "user_ada", orgId: "org_1", orgRole: "org:member" });
   mocks.requireActiveSubscription.mockResolvedValue(undefined);
-  mocks.resolveActingConnection.mockResolvedValue(CONN);
+  mocks.listActingConnections.mockResolvedValue([CONN]);
   mocks.updateTodo.mockResolvedValue(undefined);
   mocks.recordAudit.mockResolvedValue(undefined);
 });
@@ -61,6 +62,22 @@ describe("PATCH /api/workspace/todos/[listId]/[taskId]", () => {
   it("is 403 when the subscription lapsed", async () => {
     mocks.requireActiveSubscription.mockRejectedValue(new ForbiddenError("Active subscription required"));
     expect((await patch({ completed: true })).status).toBe(403);
+    expect(mocks.updateTodo).not.toHaveBeenCalled();
+  });
+
+  it("(interim, replaced in Task 9) no connected accounts → 409 connect, and nothing is written", async () => {
+    mocks.listActingConnections.mockResolvedValue([]);
+    const res = await patch({ completed: true });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "connect" });
+    expect(mocks.updateTodo).not.toHaveBeenCalled();
+  });
+
+  it("(Review Focus 5) an impersonation session → 403 impersonating, and nothing is written", async () => {
+    mocks.listActingConnections.mockRejectedValue(new WorkspaceImpersonationError());
+    const res = await patch({ completed: true });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "impersonating" });
     expect(mocks.updateTodo).not.toHaveBeenCalled();
   });
 });

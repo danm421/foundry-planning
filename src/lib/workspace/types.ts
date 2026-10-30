@@ -31,12 +31,7 @@ export type AccountSummary = {
 export type MemberStatus = "off" | "not_connected" | "connected" | "needs_reconnect";
 
 /** What the Calendar pane renders for the signed-in advisor. */
-export type CalendarPaneState =
-  | "firm_not_approved"
-  | "member_off"
-  | "connect"
-  | "needs_reconnect"
-  | "ready";
+export type CalendarPaneState = "connect" | "impersonating" | "ready";
 
 /** `"YYYY-MM-DDTHH:mm"` in the mailbox time zone, no offset. */
 export type WallClock = string;
@@ -71,13 +66,6 @@ export type WorkspaceTodo = {
   notes: string;
   notesAreHtml: boolean;
 };
-
-/**
- * Why `GET /api/workspace/todos` came back without its Outlook half:
- * `throttled` is Microsoft being busy; `unavailable` is any other Microsoft
- * failure, which a retry may not fix.
- */
-export type OutlookError = "needs_reconnect" | "throttled" | "unavailable" | "not_connected";
 
 /** Why one connected account's half of the week or to-do list is missing. */
 export type AccountError = "needs_reconnect" | "throttled" | "unavailable";

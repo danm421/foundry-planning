@@ -3,7 +3,8 @@ import { recordAudit } from "@/lib/audit";
 import { requireActiveSubscription } from "@/lib/authz";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { parseBody } from "@/lib/schemas/common";
-import { resolveActingConnection } from "@/lib/workspace/acting-connection";
+import { listActingConnections } from "@/lib/workspace/acting-connection";
+import { WorkspaceNotConnectedError } from "@/lib/workspace/errors";
 import { isWorkspaceEnabled } from "@/lib/workspace/flag";
 import type { GraphContext } from "@/lib/workspace/microsoft/graph";
 import { updateTodo } from "@/lib/workspace/microsoft/todo";
@@ -25,7 +26,9 @@ export async function PATCH(
     if (!parsed.ok) return parsed.response;
     const { listId, taskId } = await params;
 
-    const conn = await resolveActingConnection({ firmId, actorUserId: userId, provider: "microsoft" });
+    // replaced in Task 9
+    const [conn] = await listActingConnections({ firmId, actorUserId: userId });
+    if (!conn) throw new WorkspaceNotConnectedError("connect");
     const ctx: GraphContext = { conn };
     await updateTodo(ctx, { listId, taskId, patch: parsed.data });
 

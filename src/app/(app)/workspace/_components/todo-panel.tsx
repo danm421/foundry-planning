@@ -5,16 +5,26 @@ import Link from "next/link";
 import { checkboxClassName } from "@/components/forms/input-styles";
 import type { TaskListRow } from "@/lib/crm-tasks/queries";
 import { groupTodos, toTodoItems, type TodoGroups, type TodoItem } from "@/lib/workspace/todo-groups";
-import type { OutlookError, WorkspaceTodo } from "@/lib/workspace/types";
+import type { AccountError, WorkspaceProvider, WorkspaceTodo } from "@/lib/workspace/types";
 import { localToday, monthDay } from "@/lib/workspace/week";
 import { AddTodoRow, type HouseholdOption, type TodoDraft } from "./add-todo-row";
-import { CONNECT_URL } from "./calendar-pane-state";
+import { MICROSOFT_CONNECT_URL } from "./calendar-pane-state";
 import { TodoEditorDialog, type TodoPatch } from "./todo-editor-dialog";
 
+/** One connected account's half of `GET /api/workspace/todos`: its open to-dos, or why they're missing. */
+type AccountTodos = {
+  connectionId: string;
+  provider: WorkspaceProvider;
+  todos: WorkspaceTodo[] | null;
+  error: AccountError | null;
+};
+/** An account's to-do, tagged with the account it came from. */
+type AccountTodo = WorkspaceTodo & { connectionId: string };
 type Loaded = {
   foundry: TaskListRow[];
-  outlook: WorkspaceTodo[] | null;
-  outlookError: OutlookError | null;
+  accounts: AccountTodos[];
+  /** Every account's to-dos in one list. */
+  todos: AccountTodo[];
   today: string;
 };
 type ListState = { kind: "loading" } | { kind: "error" } | ({ kind: "ready" } & Loaded);
@@ -39,21 +49,22 @@ const todoUrl = (o: { listId: string; taskId: string }) =>
   `/api/workspace/todos/${encodeURIComponent(o.listId)}/${encodeURIComponent(o.taskId)}`;
 
 /**
- * Reads both halves of the list. A 500, a network failure or an answer
- * without Foundry's half is an error the panel says out loud, never an empty
- * list; Microsoft's own failures arrive inside a 200 as `outlookError`.
+ * Reads the list. A 500, a network failure or an answer without Foundry's or
+ * the accounts' half is an error the panel says out loud, never an empty
+ * list; one account's own failure arrives inside a 200 as its `error`.
  */
 async function loadTodos(signal: AbortSignal): Promise<ListState> {
   try {
     const res = await fetch("/api/workspace/todos", { signal });
     if (res.ok) {
-      const body = (await res.json()) as Partial<Loaded> | null;
-      if (Array.isArray(body?.foundry) && (body.outlook === null || Array.isArray(body.outlook))) {
+      const body = (await res.json()) as { foundry?: unknown; accounts?: unknown } | null;
+      if (Array.isArray(body?.foundry) && Array.isArray(body.accounts)) {
+        const accounts = body.accounts as AccountTodos[];
         return {
           kind: "ready",
-          foundry: body.foundry,
-          outlook: body.outlook,
-          outlookError: body.outlookError ?? null,
+          foundry: body.foundry as TaskListRow[],
+          accounts,
+          todos: accounts.flatMap((a) => (a.todos ?? []).map((t) => ({ ...t, connectionId: a.connectionId }))),
           today: localToday(),
         };
       }
@@ -100,10 +111,11 @@ function withoutKey(set: ReadonlySet<string>, key: string): ReadonlySet<string> 
 }
 
 /**
- * The advisor's open Outlook to-dos and Foundry tasks in one list, filed by
- * due date. It reads its own route, so it works beside every calendar state:
- * Foundry tasks show before Microsoft is connected, and `outlookError` says
- * why Outlook's half is missing.
+ * The advisor's open to-dos from every connected account and their Foundry
+ * tasks in one list, filed by due date. It reads its own route, so it works
+ * beside every calendar state: Foundry tasks show before any account is
+ * connected (and while impersonating), and an account's `error` says why its
+ * half is missing.
  */
 export function TodoPanel({
   userId,
@@ -178,15 +190,17 @@ export function TodoPanel({
   }
 
   const ready = list.kind === "ready" ? list : null;
-  const items = ready ? toTodoItems(ready.foundry, ready.outlook ?? []).filter((i) => !done.has(i.key)) : [];
+  const items = ready ? toTodoItems(ready.foundry, ready.todos).filter((i) => !done.has(i.key)) : [];
   const groups = ready ? groupTodos(items, ready.today) : null;
   const openCount = items.filter((i) => !checking.has(i.key)).length;
-  // No working Outlook connection: a new to-do can only be a Foundry task.
-  const foundryOnly = ready?.outlookError === "not_connected" || ready?.outlookError === "needs_reconnect";
+  // The first account that failed names the notice (one per account comes with the account labels).
+  const accountError = ready?.accounts.find((a) => a.error !== null)?.error ?? null;
+  // No account with a working sign-in: a new to-do can only be a Foundry task.
+  const foundryOnly = !ready?.accounts.some((a) => a.error !== "needs_reconnect");
 
   function openTodo(item: TodoItem) {
     const o = item.outlook;
-    const todo = o && ready?.outlook?.find((t) => t.listId === o.listId && t.id === o.taskId);
+    const todo = o && ready?.todos.find((t) => t.listId === o.listId && t.id === o.taskId);
     if (todo) setEditing(todo);
   }
 
@@ -219,15 +233,15 @@ export function TodoPanel({
         </div>
       ) : groups && ready ? (
         <>
-          {ready.outlookError === "needs_reconnect" ? (
+          {accountError === "needs_reconnect" ? (
             <p className={NOTICE}>
-              <a href={CONNECT_URL} className="underline underline-offset-2 hover:text-ink">
+              <a href={MICROSOFT_CONNECT_URL} className="underline underline-offset-2 hover:text-ink">
                 Reconnect Microsoft 365 to see your Outlook to-dos.
               </a>
             </p>
-          ) : ready.outlookError === "throttled" ? (
+          ) : accountError === "throttled" ? (
             <p className={NOTICE}>Outlook to-dos are unavailable right now.</p>
-          ) : ready.outlookError === "unavailable" ? (
+          ) : accountError === "unavailable" ? (
             <p className={NOTICE}>
               Couldn&apos;t load your Outlook to-dos from Microsoft. If this keeps happening, ask your
               firm&apos;s admin.

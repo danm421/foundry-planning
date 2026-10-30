@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { hydrateRoot } from "react-dom/client";
 import { renderToString } from "react-dom/server";
 import { ToastProvider } from "@/components/toast";
+import type { AccountSummary } from "@/lib/workspace/types";
 import { WorkspacePage } from "../workspace-page";
 
 let mockSearch = "";
@@ -37,11 +38,26 @@ function respond(status: number, body: unknown): FakeResponse {
   return { ok: status >= 200 && status < 300, status, json: async () => body };
 }
 
+const MS_ID = "6f1c2b9e-3d4a-4e5f-8a6b-7c8d9e0f1a2b";
+
+const ACCOUNT: AccountSummary = {
+  id: MS_ID,
+  provider: "microsoft",
+  email: "dana@hartwell.com",
+  status: "connected",
+  connectedAt: "2026-10-01T00:00:00.000Z",
+};
+
 const WEEK = {
-  timeZone: "Eastern Standard Time",
+  timeZone: "America/New_York",
+  timeZoneFallback: false,
+  accounts: [{ connectionId: MS_ID, error: null }],
   events: [
     {
       id: "AAMkAD/review=",
+      key: `${MS_ID}:AAMkAD/review=`,
+      connectionId: MS_ID,
+      provider: "microsoft",
       subject: "Annual review",
       start: "2026-10-27T10:00",
       end: "2026-10-27T11:30",
@@ -57,6 +73,9 @@ const WEEK = {
     },
     {
       id: "golf",
+      key: `${MS_ID}:golf`,
+      connectionId: MS_ID,
+      provider: "microsoft",
       subject: "Saturday golf",
       start: "2026-10-31T09:00",
       end: "2026-10-31T12:00",
@@ -81,23 +100,23 @@ const HOUSEHOLDS = [{ id: "hh-1", name: "Hartley" }];
 
 type PageProps = Parameters<typeof WorkspacePage>[0];
 
-function page(paneState: PageProps["paneState"] = "ready", connectedEmail: string | null = null) {
+function page(paneState: PageProps["paneState"] = "ready", accounts: AccountSummary[] = [ACCOUNT]) {
   return (
     <ToastProvider>
       <WorkspacePage
         paneState={paneState}
-        isAdmin={false}
+        accounts={paneState === "ready" ? accounts : []}
+        googleEnabled
         initialWeek="2026-10-26"
         userId="user_me"
         households={HOUSEHOLDS}
-        connectedEmail={connectedEmail}
       />
     </ToastProvider>
   );
 }
 
-function renderPage(paneState: PageProps["paneState"] = "ready", connectedEmail: string | null = null) {
-  return render(page(paneState, connectedEmail));
+function renderPage(paneState: PageProps["paneState"] = "ready", accounts: AccountSummary[] = [ACCOUNT]) {
+  return render(page(paneState, accounts));
 }
 
 function deferred<T>() {
@@ -171,10 +190,10 @@ describe("WorkspacePage — connect banner", () => {
     expect(screen.getByText(copy)).toBeInTheDocument();
   });
 
-  it("shows no banner for member_off — the pane already says it", async () => {
+  it("shows no banner for a code it doesn't name (the retired member_off), and still clears the query", async () => {
     mockSearch = "error=member_off";
-    renderPage("member_off");
-    expect(screen.getByText("Ask your firm's admin to turn on Microsoft 365 for you.")).toBeInTheDocument();
+    renderPage("connect");
+    expect(screen.getByText("Bring in your calendar and to-dos")).toBeInTheDocument();
     expect(screen.queryByRole("status")).toBeNull();
     await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/workspace"));
   });
@@ -212,54 +231,77 @@ describe("WorkspacePage — the week", () => {
 
   it("does not fetch, and disables New event, before the advisor connects", () => {
     renderPage("connect");
+    expect(screen.getByRole("link", { name: "Connect Google" })).toHaveAttribute(
+      "href",
+      "/api/workspace/google/connect",
+    );
     expect(screen.getByRole("link", { name: "Connect Microsoft 365" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "+ New event" })).toBeDisabled();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(grid()).toBeNull();
   });
 
-  it("an expired sign-in (409 needs_reconnect) shows Reconnect, never an empty week", async () => {
-    fetchMock.mockResolvedValue(respond(409, { error: "needs_reconnect" }));
+  it("(Review Focus 5) an impersonation session never fetches the week and shows the hidden pane", () => {
+    renderPage("impersonating");
+    expect(screen.getByText("Hidden while you're signed in as someone else")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "+ New event" })).toBeDisabled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(grid()).toBeNull();
+  });
+
+  it("a 409 connect (the last address went elsewhere) shows the connect pane, never an empty week", async () => {
+    fetchMock.mockResolvedValue(respond(409, { error: "connect" }));
     renderPage();
-    expect(await screen.findByText("Your Microsoft sign-in expired.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Reconnect" })).toHaveAttribute(
-      "href",
-      "/api/workspace/microsoft/connect",
-    );
+    expect(await screen.findByText("Bring in your calendar and to-dos")).toBeInTheDocument();
     expect(grid()).toBeNull();
     expect(screen.getByRole("button", { name: "+ New event" })).toBeDisabled();
   });
 
-  it("a 409 naming another pane state shows that pane", async () => {
-    fetchMock.mockResolvedValue(respond(409, { error: "member_off" }));
+  it("a 403 impersonating shows the hidden pane, not 'couldn't load'", async () => {
+    fetchMock.mockResolvedValue(respond(403, { error: "impersonating" }));
     renderPage();
-    expect(
-      await screen.findByText("Ask your firm's admin to turn on Microsoft 365 for you."),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Hidden while you're signed in as someone else")).toBeInTheDocument();
+    expect(screen.queryByText("Couldn't load your calendar from Microsoft.")).toBeNull();
     expect(grid()).toBeNull();
   });
 
-  it("Microsoft throttling (503) shows the busy pane, never an empty week, and Retry re-fetches", async () => {
-    fetchMock.mockResolvedValueOnce(respond(503, { error: "throttled" }));
-    renderPage();
-    expect(
-      await screen.findByText("Microsoft is busy right now — try again in a minute."),
-    ).toBeInTheDocument();
-    expect(grid()).toBeNull();
+  it("two accounts' meetings with the same provider id are two meetings, each moved on its own", async () => {
+    const GOOGLE_ID = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+    const twin = {
+      ...WEEK.events[0],
+      key: `${GOOGLE_ID}:AAMkAD/review=`,
+      connectionId: GOOGLE_ID,
+      provider: "google",
+      subject: "Gym",
+      start: "2026-10-28T07:00",
+      end: "2026-10-28T08:00",
+      household: null,
+    };
+    serverEvents = [WEEK.events[0], twin];
+    writeMock.mockReturnValueOnce(new Promise(() => {}));
+    const user = userEvent.setup();
+    renderPage("ready", [ACCOUNT, { ...ACCOUNT, id: GOOGLE_ID, provider: "google", email: "dana@gmail.com" }]);
 
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(await screen.findByText("Annual review")).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await user.click(await screen.findByRole("button", { name: /Gym/ }));
+    fireEvent.change(screen.getByLabelText("Start"), { target: { value: "13:00" } });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.getByText("1:00 – 2:00")).toBeInTheDocument();
+    // The review, same id on the other account, stays where it was.
+    expect(screen.getByText("10:00 – 11:30")).toBeInTheDocument();
   });
 
   // (R24) Only throttling reads "busy": a failure a retry may not fix points to the admin.
   it.each([
     ["a 500", () => Promise.resolve(respond(500, { error: "Internal server error" }))],
+    ["a 503 (the whole-pane 'busy' is retired)", () => Promise.resolve(respond(503, { error: "throttled" }))],
     ["a mailbox Microsoft can't serve (403)", () => Promise.resolve(respond(403, { error: "not_allowed" }))],
     ["a 404", () => Promise.resolve(respond(404, { error: "not_found" }))],
     ["a 400", () => Promise.resolve(respond(400, { error: "start must be a Monday (YYYY-MM-DD)" }))],
     ["a network failure", () => Promise.reject(new TypeError("Failed to fetch"))],
     ["an unknown 409", () => Promise.resolve(respond(409, { error: "something_new" }))],
+    ["a 409 naming a retired pane", () => Promise.resolve(respond(409, { error: "member_off" }))],
+    ["a 200 without its time zone", () => Promise.resolve(respond(200, { events: [] }))],
   ])("%s says it couldn't load the calendar, not 'busy', never an empty week", async (_label, impl) => {
     fetchMock.mockImplementationOnce(impl);
     renderPage();
@@ -276,7 +318,16 @@ describe("WorkspacePage — the week", () => {
 describe("WorkspacePage — changing weeks (F9)", () => {
   const nov = {
     ...WEEK,
-    events: [{ ...WEEK.events[0], id: "nov", subject: "November check-in", start: "2026-11-03T09:00", end: "2026-11-03T09:30" }],
+    events: [
+      {
+        ...WEEK.events[0],
+        id: "nov",
+        key: `${MS_ID}:nov`,
+        subject: "November check-in",
+        start: "2026-11-03T09:00",
+        end: "2026-11-03T09:30",
+      },
+    ],
   };
 
   it("keeps the calendar in place under a loading cover while the next week loads", async () => {
@@ -325,22 +376,28 @@ describe("WorkspacePage — changing weeks (F9)", () => {
 describe("WorkspacePage — disconnecting your Microsoft account (I5)", () => {
   const DISCONNECT_URL = "/api/workspace/microsoft/connection/disconnect";
 
-  it("names the connected account under the calendar", async () => {
-    renderPage("ready", "dana@hartwell.com");
+  it("names the one connected account under the calendar", async () => {
+    renderPage();
     await screen.findByText("Annual review");
     expect(screen.getByText(/Connected as/)).toHaveTextContent("Connected as dana@hartwell.com");
     expect(screen.getByRole("button", { name: "Disconnect" })).toBeInTheDocument();
   });
 
-  it.each(["connect", "needs_reconnect", "member_off"] as const)("isn't offered in the %s state", (state) => {
-    renderPage(state, null);
+  it.each(["connect", "impersonating"] as const)("isn't offered in the %s state", (state) => {
+    renderPage(state);
+    expect(screen.queryByText(/Connected as/)).toBeNull();
+  });
+
+  it("isn't offered with two accounts (the accounts bar's job): it would drop every Microsoft address", async () => {
+    renderPage("ready", [ACCOUNT, { ...ACCOUNT, id: "second", email: "dana@other.com" }]);
+    await screen.findByText("Annual review");
     expect(screen.queryByText(/Connected as/)).toBeNull();
   });
 
   it("asks first, then drops the connection and refreshes the page", async () => {
     writeMock.mockResolvedValueOnce(respond(200, { ok: true }));
     const user = userEvent.setup();
-    renderPage("ready", "dana@hartwell.com");
+    renderPage();
     await screen.findByText("Annual review");
 
     await user.click(screen.getByRole("button", { name: "Disconnect" }));
@@ -359,7 +416,7 @@ describe("WorkspacePage — disconnecting your Microsoft account (I5)", () => {
   it("can't send twice while the disconnect is out", async () => {
     const answer = deferred<FakeResponse>();
     writeMock.mockReturnValueOnce(answer.promise);
-    renderPage("ready", "dana@hartwell.com");
+    renderPage();
     await screen.findByText("Annual review");
     fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
     const confirm = within(screen.getByRole("dialog")).getByRole("button", { name: "Disconnect" });
@@ -371,10 +428,10 @@ describe("WorkspacePage — disconnecting your Microsoft account (I5)", () => {
   });
 
   it("the refreshed page (now Connect) reads the to-dos afresh, without the Outlook half", async () => {
-    const view = renderPage("ready", "dana@hartwell.com");
+    const view = renderPage();
     await screen.findByText("Annual review");
     expect(todoPanelMounts).toHaveBeenCalledTimes(1);
-    view.rerender(page("connect", null));
+    view.rerender(page("connect"));
     expect(screen.queryByText(/Connected as/)).toBeNull();
     expect(screen.getByRole("link", { name: "Connect Microsoft 365" })).toBeInTheDocument();
     expect(todoPanelMounts).toHaveBeenCalledTimes(2);
@@ -383,7 +440,7 @@ describe("WorkspacePage — disconnecting your Microsoft account (I5)", () => {
   it("a failed disconnect says so and leaves the connection", async () => {
     writeMock.mockResolvedValueOnce(respond(500, { error: "Internal server error" }));
     const user = userEvent.setup();
-    renderPage("ready", "dana@hartwell.com");
+    renderPage();
     await screen.findByText("Annual review");
     await user.click(screen.getByRole("button", { name: "Disconnect" }));
     await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Disconnect" }));
@@ -423,7 +480,7 @@ describe("WorkspacePage — hydration (F4)", () => {
 });
 
 describe("WorkspacePage — the to-do panel", () => {
-  it.each(["connect", "member_off", "firm_not_approved", "needs_reconnect", "ready"] as const)(
+  it.each(["connect", "impersonating", "ready"] as const)(
     "mounts beside the %s calendar pane, with the advisor and their households",
     (paneState) => {
       renderPage(paneState);
@@ -432,12 +489,10 @@ describe("WorkspacePage — the to-do panel", () => {
     },
   );
 
-  it("stays beside the busy pane when Microsoft is throttled", async () => {
-    fetchMock.mockResolvedValue(respond(503, { error: "throttled" }));
+  it("stays beside the can't-load pane when the week fails", async () => {
+    fetchMock.mockResolvedValue(respond(500, { error: "Internal server error" }));
     renderPage();
-    expect(
-      await screen.findByText("Microsoft is busy right now — try again in a minute."),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Couldn't load your calendar from Microsoft.")).toBeInTheDocument();
     expect(screen.getByRole("complementary", { name: "To-dos" })).toBeInTheDocument();
   });
 });
@@ -503,6 +558,7 @@ describe("WorkspacePage — loading guard", () => {
         {
           ...WEEK.events[0],
           id: "nov",
+          key: `${MS_ID}:nov`,
           subject: "November check-in",
           start: "2026-11-03T09:00",
           end: "2026-11-03T09:30",
@@ -721,11 +777,9 @@ describe("WorkspacePage — creating a meeting", () => {
   });
 
   it("a 409 naming a pane closes the dialog and shows that pane", async () => {
-    writeMock.mockResolvedValueOnce(respond(409, { error: "member_off" }));
+    writeMock.mockResolvedValueOnce(respond(409, { error: "connect" }));
     await createCall();
-    expect(
-      await screen.findByText("Ask your firm's admin to turn on Microsoft 365 for you."),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Bring in your calendar and to-dos")).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

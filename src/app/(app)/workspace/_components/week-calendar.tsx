@@ -4,7 +4,7 @@ import { useLayoutEffect, useRef, type MouseEvent, type PointerEvent, type React
 import Link from "next/link";
 import { LockIcon } from "@/components/icons";
 import type { HouseholdLink } from "@/lib/workspace/client-links";
-import type { WallClock, WorkspaceEvent } from "@/lib/workspace/types";
+import type { WallClock, WorkspaceEvent, WorkspaceProvider } from "@/lib/workspace/types";
 import {
   addDays,
   layoutDay,
@@ -15,8 +15,17 @@ import {
 } from "@/lib/workspace/week";
 import { useEventDrag, type DragMode } from "./use-event-drag";
 
-/** One row of `GET /api/workspace/events`. */
-export type WeekEvent = WorkspaceEvent & { editable: boolean; household: HouseholdLink | null };
+/**
+ * One row of `GET /api/workspace/events`. `key` (`${connectionId}:${id}`) names
+ * it across accounts; `id` is the provider's, unique within its account only.
+ */
+export type WeekEvent = WorkspaceEvent & {
+  key: string;
+  connectionId: string;
+  provider: WorkspaceProvider;
+  editable: boolean;
+  household: HouseholdLink | null;
+};
 
 const HOUR_PX = 48;
 const PX_PER_MIN = HOUR_PX / 60;
@@ -73,10 +82,10 @@ export function WeekCalendar({
   events: WeekEvent[];
   /** `YYYY-MM-DD` in the browser's zone — an accepted stand-in for the mailbox's. */
   today: string;
-  /** A meeting dragged or resized to new times (only `editable` ones can be). */
-  onMove: (eventId: string, start: WallClock, end: WallClock) => Promise<void>;
-  /** A meeting the advisor can edit was clicked, or Enter was pressed on it. */
-  onOpen: (eventId: string) => void;
+  /** A meeting (by `key`) dragged or resized to new times (only `editable` ones can be). */
+  onMove: (eventKey: string, start: WallClock, end: WallClock) => Promise<void>;
+  /** A meeting (by `key`) the advisor can edit was clicked, or Enter was pressed on it. */
+  onOpen: (eventKey: string) => void;
 }): ReactElement {
   const scrollRef = useRef<HTMLDivElement>(null);
   // Before first paint, so the week opens on the working day, not midnight.
@@ -92,7 +101,7 @@ export function WeekCalendar({
   });
   // Mid-drag, the meeting is laid out at the times it would drop at.
   const shown = preview
-    ? events.map((e) => (e.id === preview.id ? { ...e, start: preview.start, end: preview.end } : e))
+    ? events.map((e) => (e.key === preview.id ? { ...e, start: preview.start, end: preview.end } : e))
     : events;
 
   const dates = Array.from({ length: days }, (_, i) => addDays(weekStart, i));
@@ -138,7 +147,7 @@ export function WeekCalendar({
               <div key={dates[i]} className="flex min-w-0 flex-col gap-0.5 border-l border-hair p-0.5">
                 {allDay.map((e) => (
                   <div
-                    key={e.id}
+                    key={e.key}
                     title={e.editable ? undefined : LOCKED_TITLE}
                     className={`flex min-w-0 items-center gap-1 rounded-[var(--radius-sm)] border-l-[3px] px-1.5 py-0.5 text-[11px] leading-[1.3] ${tone(e)}`}
                   >
@@ -174,22 +183,22 @@ export function WeekCalendar({
               {timed.map((p) =>
                 p.event.editable ? (
                   <EditableEvent
-                    key={p.event.id}
+                    key={p.event.key}
                     placed={p}
                     date={dates[i]}
-                    dragging={preview?.id === p.event.id}
+                    dragging={preview?.id === p.event.key}
                     onPress={(e, mode) =>
                       begin(e, mode, {
-                        id: p.event.id,
+                        id: p.event.key,
                         event: p.event,
                         piece: { topMin: p.topMin, endMin: p.endMin },
                       })
                     }
                     onClickCapture={swallowDropClick}
-                    onOpen={() => onOpen(p.event.id)}
+                    onOpen={() => onOpen(p.event.key)}
                   />
                 ) : (
-                  <LockedEvent key={p.event.id} placed={p} />
+                  <LockedEvent key={p.event.key} placed={p} />
                 ),
               )}
             </div>

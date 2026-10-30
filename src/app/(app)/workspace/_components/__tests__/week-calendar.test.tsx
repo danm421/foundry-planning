@@ -2,14 +2,18 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { HouseholdLink } from "@/lib/workspace/client-links";
-import type { WorkspaceEvent } from "@/lib/workspace/types";
-import { WeekCalendar } from "../week-calendar";
+import { WeekCalendar, type WeekEvent } from "../week-calendar";
 
-type Row = WorkspaceEvent & { editable: boolean; household: HouseholdLink | null };
+type Row = WeekEvent;
+
+/** The connection every row comes from; a row's key is `${connectionId}:${id}`, as the route builds it. */
+const CONN = "conn-1";
 
 function row(over: Partial<Row> & Pick<Row, "id" | "start" | "end">): Row {
   return {
+    key: `${CONN}:${over.id}`,
+    connectionId: CONN,
+    provider: "microsoft",
     subject: over.id,
     isAllDay: false,
     isOrganizer: true,
@@ -159,7 +163,7 @@ describe("WeekCalendar", () => {
     );
     screen.getByRole("button", { name: /Team huddle/ }).focus();
     await user.keyboard("{Enter}");
-    expect(onOpen).toHaveBeenCalledWith("huddle");
+    expect(onOpen).toHaveBeenCalledWith(`${CONN}:huddle`);
   });
 
   it("clicking a meeting the advisor organized opens it", async () => {
@@ -184,7 +188,7 @@ describe("WeekCalendar", () => {
     );
     await user.click(screen.getByRole("button", { name: /Team huddle/ }));
     expect(onOpen).toHaveBeenCalledTimes(1);
-    expect(onOpen).toHaveBeenCalledWith("huddle");
+    expect(onOpen).toHaveBeenCalledWith(`${CONN}:huddle`);
   });
 
   it("a meeting someone else organized is not a button, and Enter on it opens nothing", () => {
@@ -424,7 +428,7 @@ describe("WeekCalendar — dragging", () => {
     press(block, 0, 540);
     moveTo(block, 1, 600);
     release(1, 600);
-    expect(onMove).toHaveBeenCalledWith("huddle", "2026-10-27T10:00", "2026-10-27T10:30");
+    expect(onMove).toHaveBeenCalledWith(`${CONN}:huddle`, "2026-10-27T10:00", "2026-10-27T10:30");
   });
 
   it("dragging the bottom edge resizes, and a drop back where it was moves nothing", () => {
@@ -434,7 +438,7 @@ describe("WeekCalendar — dragging", () => {
     press(handle, 0, 570);
     moveTo(handle, 0, 600);
     release(0, 600);
-    expect(onMove).toHaveBeenCalledWith("huddle", "2026-10-26T09:00", "2026-10-26T10:00");
+    expect(onMove).toHaveBeenCalledWith(`${CONN}:huddle`, "2026-10-26T09:00", "2026-10-26T10:00");
 
     onMove.mockClear();
     press(block, 0, 540, 2);
@@ -462,7 +466,7 @@ describe("WeekCalendar — dragging", () => {
     moveTo(handle, 0, 600);
     release(0, 600);
     fireEvent.click(handle);
-    expect(onMove).toHaveBeenCalledWith("huddle", "2026-10-26T09:00", "2026-10-26T10:00");
+    expect(onMove).toHaveBeenCalledWith(`${CONN}:huddle`, "2026-10-26T09:00", "2026-10-26T10:00");
     expect(onOpen).not.toHaveBeenCalled();
   });
 
@@ -513,7 +517,7 @@ describe("WeekCalendar — dragging", () => {
     fireEvent.pointerDown(block, { pointerId: 3, pointerType: "pen", button: 0, buttons: 1, clientX: x(0), clientY: y(540) });
     fireEvent.pointerMove(block, { pointerId: 3, pointerType: "pen", buttons: 1, clientX: x(1), clientY: y(600) });
     fireEvent.pointerUp(calendar(), { pointerId: 3, pointerType: "pen", clientX: x(1), clientY: y(600) });
-    expect(onMove).toHaveBeenCalledWith("huddle", "2026-10-27T10:00", "2026-10-27T10:30");
+    expect(onMove).toHaveBeenCalledWith(`${CONN}:huddle`, "2026-10-27T10:00", "2026-10-27T10:30");
   });
 
   it("a move after a release it never heard about starts no drag", () => {

@@ -6,7 +6,7 @@ import DialogShell from "@/components/dialog-shell";
 import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
 import { SwitchControl } from "@/components/forms/switch-control";
 import { useToast } from "@/components/toast";
-import type { CalendarPaneState as PaneState, WallClock } from "@/lib/workspace/types";
+import type { AccountSummary, CalendarPaneState as PaneState, WallClock } from "@/lib/workspace/types";
 import { addDays, formatWeekRange, localToday, mondayOf, newEventSlot } from "@/lib/workspace/week";
 import type { HouseholdOption } from "./add-todo-row";
 import { CalendarPaneState, type PaneView } from "./calendar-pane-state";
@@ -16,8 +16,7 @@ import { WeekCalendar, type WeekEvent } from "./week-calendar";
 
 const WEEKENDS_KEY = "workspace.showWeekends";
 
-/** The connect callback's `?error=` codes that get a banner. `member_off` and
- *  `firm_not_approved` get none: the calendar pane already says it. */
+/** The connect callback's `?error=` codes that get a banner; any other code gets none. */
 const ERROR_BANNERS = new Map([
   ["account_in_use", "That Microsoft account is already connected to another Foundry user."],
   ["wrong_tenant", "Sign in with your work account at your firm."],
@@ -25,8 +24,8 @@ const ERROR_BANNERS = new Map([
   ["connect_failed", "Couldn't connect to Microsoft. Try again."],
 ]);
 
-/** The pane states a 409 from the events routes can name. */
-const CONFLICT_PANES = new Set<PaneView>(["firm_not_approved", "member_off", "connect", "needs_reconnect"]);
+/** The panes a Workspace route's 409 (no account, an expired sign-in) or 403 (impersonating) can name. */
+const BLOCKING_PANES = new Set<PaneView>(["connect", "needs_reconnect", "impersonating"]);
 
 const DISCONNECT_URL = "/api/workspace/microsoft/connection/disconnect";
 
@@ -35,32 +34,33 @@ const DISCONNECT_FAILED = "Couldn't disconnect Microsoft 365. Try again.";
 const TEAMS_FAILED =
   "Meeting saved without a Teams link — your Microsoft account can't create Teams meetings.";
 
-type WeekResult = { events: WeekEvent[] } | { blocked: PaneView };
+/** A read week: its meetings, and the display zone they're in (which writes will send). */
+type WeekResult = { events: WeekEvent[]; timeZone: string } | { blocked: PaneView };
 
-/** The pane a 409 names (an expired sign-in, a switched-off advisor), or null. */
-async function conflictPane(res: Response): Promise<PaneView | null> {
-  if (res.status !== 409) return null;
+/** The pane a 409 or 403 names (no account left, an expired sign-in, an impersonation session), or null. */
+async function blockingPane(res: Response): Promise<PaneView | null> {
+  if (res.status !== 409 && res.status !== 403) return null;
   const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
   const pane = body?.error as PaneView;
-  return CONFLICT_PANES.has(pane) ? pane : null;
+  return BLOCKING_PANES.has(pane) ? pane : null;
 }
 
 /**
- * Reads one week. Anything but the week itself becomes a pane, never an empty
- * grid: a 409 names its pane (an expired sign-in, a switched-off advisor), a
- * 503 is Microsoft being busy, and every other failure — a 500, a mailbox
- * Microsoft can't serve, the network — can't load. Both have a Retry.
+ * Reads one week across every account. Anything but the week itself becomes a
+ * pane, never an empty grid: a 409 or 403 names its pane, and every other
+ * failure — a 500, a mailbox the provider can't serve, the network — can't
+ * load, with a Retry. One account's own failure arrives inside a 200.
  */
 async function loadWeek(start: string, signal: AbortSignal): Promise<WeekResult> {
   try {
     const res = await fetch(`/api/workspace/events?start=${start}`, { signal });
     if (res.ok) {
-      const body = (await res.json()) as { events?: unknown };
-      if (Array.isArray(body.events)) return { events: body.events as WeekEvent[] };
-    } else if (res.status === 503) {
-      return { blocked: "throttled" };
+      const body = (await res.json()) as { events?: unknown; timeZone?: unknown };
+      if (Array.isArray(body.events) && typeof body.timeZone === "string") {
+        return { events: body.events as WeekEvent[], timeZone: body.timeZone };
+      }
     } else {
-      const pane = await conflictPane(res);
+      const pane = await blockingPane(res);
       if (pane) return { blocked: pane };
     }
   } catch {
@@ -71,7 +71,7 @@ async function loadWeek(start: string, signal: AbortSignal): Promise<WeekResult>
 
 type WriteResult = { ok: true; body: unknown } | { ok: false; pane: PaneView | null };
 
-/** One Workspace write. A failure carries the pane a 409 names, if any. */
+/** One Workspace write. A failure carries the pane a 409 or 403 names, if any. */
 async function write(url: string, method: "POST" | "PATCH", body?: unknown): Promise<WriteResult> {
   try {
     const res = await fetch(url, {
@@ -84,7 +84,7 @@ async function write(url: string, method: "POST" | "PATCH", body?: unknown): Pro
           }),
     });
     if (res.ok) return { ok: true, body: await res.json().catch(() => null) };
-    return { ok: false, pane: await conflictPane(res) };
+    return { ok: false, pane: await blockingPane(res) };
   } catch {
     return { ok: false, pane: null };
   }
@@ -100,20 +100,21 @@ const headerButton =
 
 export function WorkspacePage({
   paneState,
-  isAdmin,
+  accounts,
+  googleEnabled,
   initialWeek,
   userId,
   households,
-  connectedEmail,
 }: {
   paneState: PaneState;
-  isAdmin: boolean;
+  /** The advisor's connected addresses, oldest first (none while impersonating). */
+  accounts: AccountSummary[];
+  /** Google's sign-in is set up on this deployment. */
+  googleEnabled: boolean;
   initialWeek: string;
   /** The signed-in advisor: new Foundry tasks from the to-do panel are theirs. */
   userId: string;
   households: HouseholdOption[];
-  /** The Microsoft account the advisor connected, shown with its Disconnect. */
-  connectedEmail: string | null;
 }): ReactElement {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -154,8 +155,8 @@ export function WorkspacePage({
     }
   }
 
-  // The latest move of each meeting still waiting on Outlook. Moves are
-  // numbered across the page, so a superseded move can tell it's been overtaken.
+  // The latest move of each meeting (by `key`) still waiting on its provider.
+  // Moves are numbered across the page, so a superseded move can tell it's been overtaken.
   const moveSeq = useRef(0);
   const movesInFlight = useRef(new Map<string, { seq: number } & Times>());
 
@@ -178,8 +179,9 @@ export function WorkspacePage({
       const read =
         "events" in r && moving.size > 0
           ? {
+              ...r,
               events: r.events.map((e) => {
-                const m = moving.get(e.id);
+                const m = moving.get(e.key);
                 return m ? { ...e, start: m.start, end: m.end } : e;
               }),
             }
@@ -210,6 +212,8 @@ export function WorkspacePage({
     setResult((r) => (r ? { blocked: pane, key: r.key, weekStart: r.weekStart, today: r.today } : r));
   }
 
+  // The phase-1 Disconnect drops every Microsoft address at once, so it's offered for a sole account only.
+  const soleAccount = accounts.length === 1 ? accounts[0] : null;
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
 
@@ -229,18 +233,18 @@ export function WorkspacePage({
    * a toast, and either way the week is re-read so the screen ends on what
    * Outlook holds.
    */
-  async function moveMeeting(id: string, start: WallClock, end: WallClock): Promise<void> {
-    const before = week?.find((e) => e.id === id);
+  async function moveMeeting(key: string, start: WallClock, end: WallClock): Promise<void> {
+    const before = week?.find((e) => e.key === key);
     if (!before) return;
     const setTimes = (to: Times) =>
-      updateEvents((events) => events.map((e) => (e.id === id ? { ...e, ...to } : e)));
+      updateEvents((events) => events.map((e) => (e.key === key ? { ...e, ...to } : e)));
     const seq = ++moveSeq.current;
-    movesInFlight.current.set(id, { seq, start, end });
+    movesInFlight.current.set(key, { seq, start, end });
     setTimes({ start, end });
 
-    const r = await write(eventUrl(id), "PATCH", { start, end });
-    if (movesInFlight.current.get(id)?.seq !== seq) return;
-    movesInFlight.current.delete(id);
+    const r = await write(eventUrl(before.id), "PATCH", { start, end });
+    if (movesInFlight.current.get(key)?.seq !== seq) return;
+    movesInFlight.current.delete(key);
     if (!r.ok && r.pane) {
       showPane(r.pane);
       return;
@@ -260,7 +264,7 @@ export function WorkspacePage({
   /** The editor's Save on an existing meeting is a move like a drag: optimistic, closed at once. */
   async function saveTimes(event: WeekEvent, { start, end }: EventDraft): Promise<void> {
     setEditor(null);
-    if (start !== event.start || end !== event.end) void moveMeeting(event.id, start, end);
+    if (start !== event.start || end !== event.end) void moveMeeting(event.key, start, end);
   }
 
   async function createMeeting(d: EventDraft): Promise<void> {
@@ -282,15 +286,15 @@ export function WorkspacePage({
     setRefresh((n) => n + 1); // the server knows `editable` and the household
   }
 
-  async function cancelMeeting(id: string): Promise<void> {
-    const r = await write(`${eventUrl(id)}/cancel`, "POST");
+  async function cancelMeeting(event: WeekEvent): Promise<void> {
+    const r = await write(`${eventUrl(event.id)}/cancel`, "POST");
     if (!r.ok) {
       if (!r.pane) throw new Error("cancel failed");
       showPane(r.pane);
       return;
     }
     setEditor(null);
-    updateEvents((events) => events.filter((e) => e.id !== id));
+    updateEvents((events) => events.filter((e) => e.key !== event.key));
     setRefresh((n) => n + 1);
   }
 
@@ -300,8 +304,8 @@ export function WorkspacePage({
     setEditor({ mode: "create", ...slot });
   }
 
-  function openMeeting(id: string) {
-    const event = week?.find((e) => e.id === id);
+  function openMeeting(key: string) {
+    const event = week?.find((e) => e.key === key);
     if (event) setEditor({ mode: "edit", event });
   }
 
@@ -366,7 +370,11 @@ export function WorkspacePage({
         <div className="min-w-0">
           <div className="overflow-hidden rounded-xl border border-hair bg-card">
             {blocked ? (
-              <CalendarPaneState state={blocked} isAdmin={isAdmin} onRetry={() => setAttempt((a) => a + 1)} />
+              <CalendarPaneState
+                state={blocked}
+                googleEnabled={googleEnabled}
+                onRetry={() => setAttempt((a) => a + 1)}
+              />
             ) : shownWeek ? (
               <div className="relative" aria-busy={current === null}>
                 <WeekCalendar
@@ -393,9 +401,9 @@ export function WorkspacePage({
               </div>
             )}
           </div>
-          {paneState === "ready" && connectedEmail ? (
+          {paneState === "ready" && soleAccount ? (
             <p className="mt-2 text-[12px] text-ink-3">
-              Connected as <span className="text-ink-2">{connectedEmail}</span> ·{" "}
+              Connected as <span className="text-ink-2">{soleAccount.email}</span> ·{" "}
               <button
                 type="button"
                 onClick={() => setConfirmDisconnect(true)}
@@ -447,7 +455,7 @@ export function WorkspacePage({
             meetingUrl: editor.event.meetingUrl,
           }}
           onSave={(draft) => saveTimes(editor.event, draft)}
-          onCancelMeeting={() => cancelMeeting(editor.event.id)}
+          onCancelMeeting={() => cancelMeeting(editor.event)}
           onClose={() => setEditor(null)}
         />
       ) : null}

@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { recordAudit } from "@/lib/audit";
 import { requireActiveSubscription } from "@/lib/authz";
 import { requireOrgAndUser } from "@/lib/db-helpers";
-import { resolveActingConnection } from "@/lib/workspace/acting-connection";
+import { listActingConnections } from "@/lib/workspace/acting-connection";
+import { WorkspaceNotConnectedError } from "@/lib/workspace/errors";
 import { isWorkspaceEnabled } from "@/lib/workspace/flag";
 import { cancelEvent, getEventForEdit } from "@/lib/workspace/microsoft/calendar";
 import type { GraphContext } from "@/lib/workspace/microsoft/graph";
@@ -21,7 +22,9 @@ export async function POST(
     const { orgId: firmId, userId } = await requireOrgAndUser();
     const { eventId } = await params;
 
-    const conn = await resolveActingConnection({ firmId, actorUserId: userId, provider: "microsoft" });
+    // replaced in Task 9
+    const [conn] = await listActingConnections({ firmId, actorUserId: userId });
+    if (!conn) throw new WorkspaceNotConnectedError("connect");
     const ctx: GraphContext = { conn };
     const { isOrganizer, hasAttendees } = await getEventForEdit(ctx, eventId);
     if (!isOrganizer) return NextResponse.json({ error: "not_organizer" }, { status: 403 });
