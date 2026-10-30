@@ -1,6 +1,6 @@
 // src/lib/workspace/microsoft/calendar.ts
 import type { WallClock, WorkspaceEvent } from "../types";
-import { addDays } from "../week";
+import { addDays, overlappingDays } from "../week";
 import { graphJson, graphPages, jsonInit, type GraphContext } from "./graph";
 
 const EVENT_FIELDS =
@@ -79,12 +79,7 @@ export async function listEvents(
   const events = await graphPages<GraphEvent>(ctx, `/me/calendarView?${query}`, { timeZone: opts.timeZone });
   // calendarView reads offset-less bounds as UTC, so the request is widened a day each side
   // and the events are trimmed to the mailbox's local window here.
-  const lo = `${opts.startDate}T00:00`;
-  const hi = `${addDays(opts.startDate, opts.days)}T00:00`;
-  return events
-    .filter((e) => !e.isCancelled)
-    .map(toWorkspaceEvent)
-    .filter((e) => e.start < hi && e.end > lo);
+  return overlappingDays(events.filter((e) => !e.isCancelled).map(toWorkspaceEvent), opts.startDate, opts.days);
 }
 
 /** Fresh organizer/attendee facts, read just before an edit. */

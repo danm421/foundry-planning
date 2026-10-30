@@ -9,6 +9,7 @@ import {
   minutesOf,
   mondayOf,
   newEventSlot,
+  overlappingDays,
   snapMinutes,
   toWallClock,
 } from "./week";
@@ -71,6 +72,19 @@ describe("week date math", () => {
     expect(formatWeekRange("2026-10-26", 5)).toBe("Oct 26 – Oct 30, 2026");
     expect(formatWeekRange("2026-10-26", 7)).toBe("Oct 26 – Nov 1, 2026");
     expect(formatWeekRange("2026-12-28", 7)).toBe("Dec 28, 2026 – Jan 3, 2027");
+  });
+});
+
+describe("overlappingDays", () => {
+  it("keeps what overlaps the local days, including a meeting across either midnight", () => {
+    const events = [
+      ev("before", "2026-11-01T22:00", "2026-11-02T00:00"),
+      ev("across-start", "2026-11-01T23:00", "2026-11-02T01:00"),
+      ev("inside", "2026-11-02T09:00", "2026-11-02T10:00"),
+      ev("across-end", "2026-11-06T23:00", "2026-11-07T01:00"),
+      ev("after", "2026-11-07T00:00", "2026-11-07T01:00"),
+    ];
+    expect(overlappingDays(events, "2026-11-02", 5).map((e) => e.id)).toEqual(["across-start", "inside", "across-end"]);
   });
 });
 

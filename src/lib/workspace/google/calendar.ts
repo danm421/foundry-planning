@@ -2,7 +2,7 @@
 import { randomUUID } from "node:crypto";
 import { ProviderRequestError } from "../errors";
 import type { WallClock, WorkspaceEvent } from "../types";
-import { addDays } from "../week";
+import { addDays, overlappingDays } from "../week";
 import { googleJson, googlePages, type GoogleContext } from "./api";
 
 const EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
@@ -89,13 +89,12 @@ export async function listEvents(
   for (const type of EVENT_TYPES) query.append("eventTypes", type);
   const events = await googlePages<GoogleEvent>(ctx, `${EVENTS_URL}?${query}`, "items");
   // The bounds are widened a day each side (they are instants, not local days),
-  // so the events are trimmed to the local window here, as the Microsoft adapter does.
-  const lo = `${opts.startDate}T00:00`;
-  const hi = `${addDays(opts.startDate, opts.days)}T00:00`;
-  return events
-    .filter((e) => e.status !== "cancelled")
-    .map(toWorkspaceEvent)
-    .filter((e) => e.start < hi && e.end > lo);
+  // so the events are trimmed to the local window here.
+  return overlappingDays(
+    events.filter((e) => e.status !== "cancelled").map(toWorkspaceEvent),
+    opts.startDate,
+    opts.days,
+  );
 }
 
 /** Fresh organizer/attendee facts, read just before an edit. */

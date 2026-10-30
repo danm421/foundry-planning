@@ -35,6 +35,22 @@ export function addDays(date: string, n: number): string {
   return fromUtcMs(toUtcMs(date) + n * DAY_MS);
 }
 
+/**
+ * The events overlapping `[startDate, startDate + days)` local days. Both
+ * calendars ask their provider for a window widened a day each side (its
+ * bounds are instants, not local days) and trim back here, so a meeting near
+ * midnight lands in the same week from either provider.
+ */
+export function overlappingDays<E extends { start: WallClock; end: WallClock }>(
+  events: E[],
+  startDate: string,
+  days: number,
+): E[] {
+  const lo = `${startDate}T00:00`;
+  const hi = `${addDays(startDate, days)}T00:00`;
+  return events.filter((e) => e.start < hi && e.end > lo);
+}
+
 /** Whole calendar days from `from` to `to` (negative when `to` is earlier). */
 export function daysBetween(from: string, to: string): number {
   return Math.round((toUtcMs(to) - toUtcMs(from)) / DAY_MS);
