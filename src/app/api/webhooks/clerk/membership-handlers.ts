@@ -18,7 +18,7 @@ import { getOrgMemberCount, expectedSeatQuantity } from "@/lib/billing/seat-coun
 import { recordAudit } from "@/lib/audit";
 import { findOpenImpersonation } from "@/lib/ops/impersonation";
 import { sendWelcomeEmail } from "@/lib/onboarding/welcome-email";
-import { removeWorkspaceMember } from "@/lib/workspace/access";
+import { removeWorkspaceMember } from "@/lib/workspace/connections";
 import type { ClerkEvent } from "./handler";
 
 type MembershipEventData = {

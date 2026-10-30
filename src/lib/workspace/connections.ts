@@ -68,21 +68,6 @@ function toSummary(r: { id: string; provider: WorkspaceProvider; email: string; 
   return { ...r, connectedAt: r.connectedAt.toISOString() };
 }
 
-/** Selects no token columns. */
-export async function listFirmConnectionSummaries(
-  firmId: string,
-  provider: WorkspaceProvider,
-): Promise<Array<{ userId: string; externalEmail: string; status: "connected" | "needs_reconnect" }>> {
-  return db
-    .select({
-      userId: workspaceConnections.userId,
-      externalEmail: workspaceConnections.externalEmail,
-      status: workspaceConnections.status,
-    })
-    .from(workspaceConnections)
-    .where(and(eq(workspaceConnections.firmId, firmId), eq(workspaceConnections.provider, provider)));
-}
-
 /**
  * A user may hold up to MAX_ACCOUNTS_PER_ADVISOR accounts; each external
  * account belongs to one user per firm. Reconnecting the user's own account
@@ -187,6 +172,13 @@ export async function deleteConnection(firmId: string, connectionId: string, opt
     )
     .returning({ id: workspaceConnections.id });
   return deleted.length > 0;
+}
+
+/** For a person leaving the firm: every connected address, every provider. */
+export async function removeWorkspaceMember(firmId: string, userId: string): Promise<void> {
+  await db
+    .delete(workspaceConnections)
+    .where(and(eq(workspaceConnections.firmId, firmId), eq(workspaceConnections.userId, userId)));
 }
 
 export async function storeRefreshedTokens(connectionId: string, tokens: ProviderTokenSet): Promise<void> {

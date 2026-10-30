@@ -383,10 +383,12 @@ const ALLOWLIST: Record<string, string> = {
     "an advisor wipes their OWN connection's stored credentials — same reasoning as the provider-level disconnect above",
   "src/app/api/integrations/[provider]/connections/[connectionId]/route.ts":
     "DELETE only: an advisor removes their OWN connection (credentials + household links) — pulling their keys back out of us must never be billing's to block",
-  "src/app/api/workspace/microsoft/disconnect/route.ts":
-    "revokes the firm's Microsoft 365 approval and every advisor's stored tokens — a lapsed or departing firm must always be able to pull its credentials back out of us",
+  "src/app/api/workspace/admin/disconnect-all/route.ts":
+    "Disconnect everyone: removes the firm's Microsoft approval and every advisor's stored Google/Microsoft tokens — a lapsed or departing firm must always be able to pull its credentials back out of us",
+  "src/app/api/workspace/admin/connections/[connectionId]/disconnect/route.ts":
+    "an admin drops one advisor's connected address and its stored tokens — same reasoning as Disconnect everyone above",
   "src/app/api/workspace/accounts/[connectionId]/disconnect/route.ts":
-    "an advisor drops their OWN connected account's stored tokens — same reasoning as the firm-level Microsoft disconnect above",
+    "an advisor drops their OWN connected account's stored tokens — same reasoning as Disconnect everyone above",
   "src/app/api/integrations/[provider]/recheck/route.ts":
     "re-verifies stored credentials and writes only that connection's own status row — the one button whose job is explaining why a feed is broken",
   "src/app/api/shares/[shareId]/route.ts":

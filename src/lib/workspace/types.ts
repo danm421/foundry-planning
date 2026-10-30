@@ -27,9 +27,6 @@ export type AccountSummary = {
   connectedAt: string; // ISO
 };
 
-/** One person's state for a provider, as the firm roster shows it. */
-export type MemberStatus = "off" | "not_connected" | "connected" | "needs_reconnect";
-
 /** What the Calendar pane renders for the signed-in advisor. */
 export type CalendarPaneState = "connect" | "impersonating" | "ready";
 

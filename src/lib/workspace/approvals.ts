@@ -36,28 +36,30 @@ export async function upsertFirmApproval(input: {
   approvedScopes: string;
   approvedByUserId: string;
 }): Promise<void> {
-  await db.transaction(async (tx) => {
-    await tx
-      .insert(workspaceFirmApprovals)
-      .values(input)
-      .onConflictDoUpdate({
-        target: [workspaceFirmApprovals.firmId, workspaceFirmApprovals.provider],
-        set: {
-          tenantId: input.tenantId,
-          approvedScopes: input.approvedScopes,
-          approvedByUserId: input.approvedByUserId,
-          approvedAt: new Date(),
-        },
-      });
-  });
+  await db
+    .insert(workspaceFirmApprovals)
+    .values(input)
+    .onConflictDoUpdate({
+      target: [workspaceFirmApprovals.firmId, workspaceFirmApprovals.provider],
+      set: {
+        tenantId: input.tenantId,
+        approvedScopes: input.approvedScopes,
+        approvedByUserId: input.approvedByUserId,
+        approvedAt: new Date(),
+      },
+    });
 }
 
-/** Disconnecting a firm removes the approval and everything hanging off it, atomically. */
-export async function deleteFirmProvider(firmId: string, provider: WorkspaceProvider): Promise<void> {
+/**
+ * "Disconnect everyone": every advisor's connected addresses, pending
+ * sign-ins, the approval and the old phase-1 switches, every provider,
+ * atomically.
+ */
+export async function deleteFirmWorkspace(firmId: string): Promise<void> {
   await db.transaction(async (tx) => {
-    await tx.delete(workspaceConnections).where(and(eq(workspaceConnections.firmId, firmId), eq(workspaceConnections.provider, provider)));
-    await tx.delete(workspaceMemberAccess).where(and(eq(workspaceMemberAccess.firmId, firmId), eq(workspaceMemberAccess.provider, provider)));
-    await tx.delete(workspaceOauthStates).where(and(eq(workspaceOauthStates.firmId, firmId), eq(workspaceOauthStates.provider, provider)));
-    await tx.delete(workspaceFirmApprovals).where(and(eq(workspaceFirmApprovals.firmId, firmId), eq(workspaceFirmApprovals.provider, provider)));
+    await tx.delete(workspaceConnections).where(eq(workspaceConnections.firmId, firmId));
+    await tx.delete(workspaceMemberAccess).where(eq(workspaceMemberAccess.firmId, firmId));
+    await tx.delete(workspaceOauthStates).where(eq(workspaceOauthStates.firmId, firmId));
+    await tx.delete(workspaceFirmApprovals).where(eq(workspaceFirmApprovals.firmId, firmId));
   });
 }

@@ -93,7 +93,7 @@ vi.mock("@/lib/onboarding/welcome-email", () => ({
 }));
 
 const mockRemoveWorkspaceMember = vi.fn();
-vi.mock("@/lib/workspace/access", () => ({
+vi.mock("@/lib/workspace/connections", () => ({
   removeWorkspaceMember: (...a: unknown[]) => mockRemoveWorkspaceMember(...a),
 }));
 
