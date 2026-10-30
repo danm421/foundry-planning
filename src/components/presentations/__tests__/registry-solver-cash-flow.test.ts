@@ -18,6 +18,10 @@ describe("the Solver's Cash Flow reports as deck pages", () => {
     expect(page.category).toBe("Cash Flow");
     expect(page.supportsScenarioOverride).toBe(true);
     expect(typeof page.OptionsControl).toBe("function");
+    // The page picker's description names all three ways the sheet prints.
+    expect(page.description).toMatch(/across the plan/);
+    expect(page.description).toMatch(/month by month/);
+    expect(page.description).toMatch(/Distributions/);
   });
 
   it("opens Monthly on the across-the-plan table in today's dollars", () => {

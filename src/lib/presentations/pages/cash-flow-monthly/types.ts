@@ -101,6 +101,10 @@ export interface MonthlyCashFlowPageData {
     columns: { accountId: string; name: string }[];
     /** True when more accounts exist than `columns` — "Other accounts" shows. */
     showOther: boolean;
+    /** The year card leaves too little room under it: the chart prints on a
+     *  sheet of its own (`distributionsChartPlacement`). The page count reads
+     *  it, so the deck numbers that sheet. */
+    chartOnOwnSheet: boolean;
   };
   /** Populated in "plan" view only. */
   planRows: MonthlyPlanRow[];

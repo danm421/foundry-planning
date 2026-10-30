@@ -1,8 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { scaleLinear } from "d3-scale";
 import {
+  LEGEND_LABEL_GAP,
+  LEGEND_LABEL_PT_PER_CHAR,
   LEGEND_LABEL_X,
   LEGEND_MIN_ITEM_W,
+  fitLegendLabel,
   legendLayout,
   legendSlot,
   stackRects,
@@ -90,5 +93,24 @@ describe("legend layout", () => {
     const layout = legendLayout(3, 40);
     expect(layout.perRow).toBe(1);
     expect(legendSlot(2, layout).y).toBeGreaterThan(0);
+  });
+
+  it("lays out a set number to a row when the chart asks, at an even pitch", () => {
+    const w = inner(DECK);
+    const layout = legendLayout(7, w, w / 4);
+    expect(layout.perRow).toBe(4);
+    expect(layout.rows).toBe(2);
+    expect(layout.itemW).toBeCloseTo(w / 4, 9);
+  });
+
+  it("cuts a free-text label to its slot, and leaves one that fits alone", () => {
+    const itemW = inner(DECK) / 4;
+    expect(fitLegendLabel("IRA accounts", itemW)).toBe("IRA accounts");
+    const long = "Fidelity Rollover IRA (Traditional) — to Jane Smith";
+    const cut = fitLegendLabel(long, itemW);
+    expect(cut.endsWith("…")).toBe(true);
+    expect(long.startsWith(cut.slice(0, -1))).toBe(true);
+    // Its estimated end stays clear of the next item's marker.
+    expect(LEGEND_LABEL_X + cut.length * LEGEND_LABEL_PT_PER_CHAR).toBeLessThanOrEqual(itemW - LEGEND_LABEL_GAP);
   });
 });

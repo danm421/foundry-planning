@@ -55,6 +55,11 @@ export interface ChartSpec {
   legend: {
     position: "bottom";
     items: Array<{ label: string; color: string; kind: "swatch" | "line" }>;
+    /** Lay the legend out this many to a row, and cut a label that won't fit
+     *  its slot with an ellipsis. For labels that are free text (account
+     *  names), which the default pitch was not sized for. Omitted → the
+     *  default layout, labels untouched. */
+    itemsPerRow?: number;
   };
 }
 

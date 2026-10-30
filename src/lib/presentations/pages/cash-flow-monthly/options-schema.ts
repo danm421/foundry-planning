@@ -23,20 +23,24 @@ export function summarizeMonthlyCashFlowOptions(o: MonthlyCashFlowPageOptions): 
   return `Across the plan · ${summarizeRange(o.range)} · ${basis}`;
 }
 
-/** Distributions rows that fit one sheet under the table's repeated header
- *  (measured by rendering; see page-count.test.tsx). */
+/** Distributions table rows per sheet. The page breaks after exactly this many
+ *  (page-pdf.tsx), so a sheet's height never decides the count; that the
+ *  last, fullest sheet — head, a three-line header, 36 rows, both notes and
+ *  the footnote — clears the footer is measured in page-count.test.tsx. */
 export const DISTRIBUTIONS_ROWS_PER_PAGE = 36;
 
-/** Distributions: card + chart on page 1, the table from page 2 (a forced
- *  break), wrapping on to further sheets only past `DISTRIBUTIONS_ROWS_PER_PAGE`
- *  years. */
+/** Distributions: card + chart on page 1 (the chart on a sheet of its own when
+ *  the card leaves too little room), then one sheet per
+ *  `DISTRIBUTIONS_ROWS_PER_PAGE` table rows — the same sheets page-pdf.tsx
+ *  renders. */
 export function estimateMonthlyCashFlowPageCount(
-  data?: { distribution?: { rows: unknown[] } },
+  data?: { distribution?: { rows: unknown[]; chartOnOwnSheet: boolean } },
   options?: Pick<MonthlyCashFlowPageOptions, "mode">,
 ): number {
   if (options?.mode !== "distributions") return 1;
   const rows = data?.distribution?.rows.length ?? 0;
   // A range with no years renders the single "No projection years" sheet.
   if (rows === 0) return 1;
-  return 1 + Math.ceil(rows / DISTRIBUTIONS_ROWS_PER_PAGE);
+  const chartSheet = data?.distribution?.chartOnOwnSheet ? 1 : 0;
+  return 1 + chartSheet + Math.ceil(rows / DISTRIBUTIONS_ROWS_PER_PAGE);
 }

@@ -2074,7 +2074,7 @@ export const cashFlowMonthlyPage: PresentationPage<
   id: "cashFlowMonthly",
   title: "Monthly Cash Flow",
   description:
-    "What the household has to live on each month: income, the portfolio draw that tops it up, and the costs already committed. Prints across the plan or month by month for one year.",
+    "What the household has to live on each month: income, the portfolio draw that tops it up, and the costs already committed. Prints across the plan or month by month for one year — or as Distributions: the monthly spending need in retirement, which accounts pay it, and taxes on top.",
   category: "Cash Flow",
   defaultOptions: MONTHLY_CASH_FLOW_OPTIONS_DEFAULT,
   optionsSchema: monthlyCashFlowOptionsSchema,

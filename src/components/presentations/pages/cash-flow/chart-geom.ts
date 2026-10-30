@@ -121,10 +121,33 @@ export interface LegendLayout {
   rows: number;
 }
 
-export function legendLayout(count: number, availableW: number): LegendLayout {
-  const fit = Math.floor(availableW / LEGEND_MIN_ITEM_W);
+export function legendLayout(
+  count: number,
+  availableW: number,
+  minItemW: number = LEGEND_MIN_ITEM_W,
+): LegendLayout {
+  // The epsilon keeps `availableW / (availableW / n)` from flooring to n − 1.
+  const fit = Math.floor(availableW / minItemW + 1e-9);
   const perRow = Math.max(1, Math.min(Math.max(count, 1), fit));
   return { perRow, itemW: availableW / perRow, rows: Math.ceil(Math.max(count, 1) / perRow) };
+}
+
+/** 7pt Inter, per character: the marker labels' measured 6pt range scaled up,
+ *  top of it (see `MARKER_LABEL_PT_PER_CHAR` for why the top). */
+export const LEGEND_LABEL_PT_PER_CHAR = 3.9;
+/** Clear space between a label's end and the next item's marker. */
+export const LEGEND_LABEL_GAP = 6;
+
+/**
+ * A free-text label (an account name) cut to the slot it is drawn in, with an
+ * ellipsis — `LEGEND_MIN_ITEM_W` was sized for the deck's own fixed labels, and
+ * a longer one runs into its neighbour or past the canvas edge, where react-pdf
+ * silently stops drawing it.
+ */
+export function fitLegendLabel(label: string, itemW: number): string {
+  const maxChars = Math.floor((itemW - LEGEND_LABEL_X - LEGEND_LABEL_GAP) / LEGEND_LABEL_PT_PER_CHAR);
+  if (label.length <= maxChars) return label;
+  return `${label.slice(0, Math.max(1, maxChars - 1)).trimEnd()}…`;
 }
 
 export function legendSlot(index: number, layout: LegendLayout): { x: number; y: number } {

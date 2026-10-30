@@ -3,7 +3,7 @@ import type { ChartSpec } from "@/lib/presentations/charts/types";
 import { scaleLinear } from "d3-scale";
 import { PRESENTATION_THEME } from "@/lib/presentations/theme";
 import {
-  bandScale, legendLayout, legendSlot, markerLabelLayout, polylineRuns,
+  bandScale, fitLegendLabel, legendLayout, legendSlot, markerLabelLayout, polylineRuns,
   LEGEND_LABEL_X, stackRects,
 } from "./chart-geom";
 
@@ -30,7 +30,14 @@ export function CashflowChartPdf({ spec }: { spec: ChartSpec }) {
 
   // The legend starts at the left margin, so the room it has is the plot's own
   // width — never the canvas's.
-  const legend = legendLayout(spec.legend.items.length, innerW);
+  const perRow = spec.legend.itemsPerRow;
+  const legend = legendLayout(
+    spec.legend.items.length,
+    innerW,
+    perRow == null ? undefined : innerW / perRow,
+  );
+  const legendLabel = (label: string) =>
+    perRow == null ? label : fitLegendLabel(label, legend.itemW);
 
   // Marker labels are laid out together, not one at a time: whether one has to
   // move depends on where its neighbours landed.
@@ -203,7 +210,7 @@ export function CashflowChartPdf({ spec }: { spec: ChartSpec }) {
                   textAnchor="start"
                   style={{ fontFamily: "Inter", fontSize: 7, fill: PRESENTATION_THEME.ink2 }}
                 >
-                  {item.label}
+                  {legendLabel(item.label)}
                 </SvgText>
               </G>
             );

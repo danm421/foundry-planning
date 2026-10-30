@@ -99,9 +99,24 @@ const s = StyleSheet.create({
     paddingVertical: 3,
     paddingHorizontal: 2,
   },
-  th: { fontFamily: "Inter", fontSize: 6.5, fontWeight: 600, color: T.ink, paddingHorizontal: 1 },
-  td: { fontFamily: "Inter", fontSize: 6.5, color: T.ink2, paddingHorizontal: 1 },
-  tdStrong: { fontFamily: "Inter", fontSize: 6.5, fontWeight: 600, color: T.ink, paddingHorizontal: 1 },
+  // 3pt a side, header and body alike (so the columns stay aligned): right-
+  // aligned neighbours keep a 6pt gutter, and a header too wide for its column
+  // wraps instead of running into the next one. Three lines at most, so a long
+  // account name can't grow the header past what a sheet of 36 rows leaves.
+  th: {
+    fontFamily: "Inter",
+    fontSize: 6.5,
+    fontWeight: 600,
+    color: T.ink,
+    paddingHorizontal: 3,
+    maxLines: 3,
+    textOverflow: "ellipsis",
+  },
+  td: { fontFamily: "Inter", fontSize: 6.5, color: T.ink2, paddingHorizontal: 3 },
+  tdStrong: { fontFamily: "Inter", fontSize: 6.5, fontWeight: 600, color: T.ink, paddingHorizontal: 3 },
+  tableHead: { flexDirection: "row", alignItems: "baseline", gap: 6, marginBottom: 6 },
+  tableTitle: { fontSize: 11, fontWeight: 700, color: T.ink },
+  tableSub: { fontSize: 8, color: T.ink3 },
   right: { textAlign: "right" },
   left: { textAlign: "left" },
 });
@@ -111,14 +126,42 @@ const YEAR_W = 40;
 const AGES_W = 46;
 const cell = { flex: 1 } as const;
 
+/** M8: what the table sheets are, since they carry no section head of their
+ *  own. Kept to one line — a sheet holds `DISTRIBUTIONS_ROWS_PER_PAGE` rows
+ *  plus the notes, and a full head would not leave room for them. */
+export function DistributionsTableHead({
+  subtitle,
+  continued,
+}: {
+  subtitle: string;
+  continued: boolean;
+}) {
+  return (
+    <View style={s.tableHead}>
+      <Text style={s.tableTitle}>
+        {`Distributions across the plan${continued ? " (continued)" : ""}`}
+      </Text>
+      <Text style={s.tableSub}>{`Per month · ${subtitle}`}</Text>
+    </View>
+  );
+}
+
+/** Printed under the chart: the screen key's `DISTRIBUTIONS_LEGEND_NOTE`,
+ *  worded for the printed chart, which draws the need as a solid line. */
+export const DISTRIBUTIONS_PRINT_LEGEND_NOTE =
+  "The part of each bar above the Spending need line pays taxes and anything else listed under Total from accounts.";
+
+/** One sheet's run of the table: the header, then `rows`. */
 export function DistributionsTable({
   distribution,
+  rows,
   accent,
 }: {
   distribution: Distribution;
+  rows: DistributionRow[];
   accent: SectionAccent;
 }) {
-  const { rows, columns, showOther } = distribution;
+  const { columns, showOther } = distribution;
   const labels = [
     "Year",
     "Ages",
@@ -131,13 +174,8 @@ export function DistributionsTable({
     "Goals\n(set-aside)",
   ];
   return (
-    // A FLAT run of rows (no wrapper View): the caller puts it in a `flow`
-    // PageFrame, which is what lets react-pdf break it onto further sheets.
     <>
-      <View
-        style={[s.headerRow, { backgroundColor: accent.tint, borderBottomColor: accent.accent }]}
-        fixed
-      >
+      <View style={[s.headerRow, { backgroundColor: accent.tint, borderBottomColor: accent.accent }]}>
         {labels.map((l, i) => (
           <Text
             key={`${l}-${i}`}

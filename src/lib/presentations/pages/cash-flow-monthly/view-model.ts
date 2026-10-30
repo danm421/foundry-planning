@@ -22,6 +22,7 @@ import {
   type DistributionRow,
 } from "@/lib/solver/monthly-distributions";
 import { DISTRIBUTIONS_DEPLETED_NOTE } from "@/lib/solver/distribution-card-lines";
+import { distributionsChartPlacement } from "./distributions-layout";
 import { colorsLight, dataLight } from "@/brand";
 import { PRESENTATION_THEME } from "../../theme";
 import type { ChartSpec } from "../../charts/types";
@@ -48,6 +49,8 @@ const DEPLETED_NOTE =
 
 const DISTRIBUTIONS_NOTE =
   "Taxes and goals paid from set-aside accounts are shown separately and are not part of the monthly spending need.";
+
+const DISTRIBUTIONS_LEGEND_PER_ROW = 4;
 
 /** Account stacks take these in rank order, as the screen chart does, so the
  *  largest account is the same colour on both. */
@@ -201,9 +204,13 @@ function buildDistributionsBranch(
   if (rows.some((r) => r.depleted)) notes.push(DISTRIBUTIONS_DEPLETED_NOTE);
   notes.push(DISTRIBUTIONS_NOTE);
 
+  const chart = distributionsChartPlacement(summary);
   return {
-    distribution: { summary, rows, columns, showOther },
-    chartSpec: rows.length > 0 ? distributionsChartSpec(rows, columns, showOther) : undefined,
+    distribution: { summary, rows, columns, showOther, chartOnOwnSheet: chart.ownSheet },
+    chartSpec:
+      rows.length > 0
+        ? { ...distributionsChartSpec(rows, columns, showOther), height: chart.height }
+        : undefined,
     planRows: [],
     monthRows: [],
     notes,
@@ -247,7 +254,7 @@ function distributionsChartSpec(
       : []),
   ];
   // Ids come from the label, which can collide when two accounts share a name.
-  return buildDrillChartSpec({
+  const spec = buildDrillChartSpec({
     years: rows.map((r) => r.year),
     stacks: stacks.map((s, i) => ({ ...s, seriesId: `${s.seriesId}-${i}` })),
     lines: [
@@ -260,6 +267,10 @@ function distributionsChartSpec(
     ],
     markers: [],
   });
+  // Account names are free text, longer than the default legend pitch was
+  // sized for: at most seven items (Income, four accounts, Other accounts,
+  // Spending need) at four to a row, a long name cut to its slot.
+  return { ...spec, legend: { ...spec.legend, itemsPerRow: DISTRIBUTIONS_LEGEND_PER_ROW } };
 }
 
 function toSummary(r: MonthlyCashFlowRow): MonthlySummary {

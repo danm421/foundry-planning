@@ -7,6 +7,7 @@ import { View, Text, StyleSheet } from "@react-pdf/renderer";
 import { PRESENTATION_THEME as T, type SectionAccent } from "@/lib/presentations/theme";
 import { exactCurrency, compactCurrency, jointAge } from "@/lib/presentations/format";
 import { DEPLETED_GLYPH } from "@/lib/presentations/pages/cash-flow-monthly/view-model";
+import { DISTRIBUTIONS_ROWS_PER_PAGE } from "@/lib/presentations/pages/cash-flow-monthly/options-schema";
 import type {
   MonthlyCashFlowPageData,
   MonthlyMonthRow,
@@ -16,7 +17,12 @@ import type {
 import { PageFrame } from "../../shared/page-frame";
 import { SectionHead } from "../../shared/section-head";
 import { CashflowChartPdf } from "../cash-flow/chart-pdf";
-import { DistributionsCard, DistributionsTable } from "./distributions-pdf";
+import {
+  DISTRIBUTIONS_PRINT_LEGEND_NOTE,
+  DistributionsCard,
+  DistributionsTable,
+  DistributionsTableHead,
+} from "./distributions-pdf";
 
 const s = StyleSheet.create({
   card: {
@@ -133,26 +139,53 @@ export function MonthlyCashFlowPagePdf({
   const frame = { firmName, clientName, reportDate, totalPages };
 
   if (dist && !empty) {
-    // Two sheets by construction: card + chart on the first, the table from the
-    // second (a flow frame, so a long plan wraps on). The deck numbers pages
-    // from `estimateMonthlyCashFlowPageCount`, so the sheet count cannot depend
-    // on how many years the range happens to hold.
+    // Every sheet is its own one-sheet frame: card + chart on the first (the
+    // chart on its own sheet when the card leaves too little room — decided
+    // in the view-model, `distributionsChartPlacement`), then the table in runs
+    // of `DISTRIBUTIONS_ROWS_PER_PAGE` rows, the notes after the last. The deck
+    // numbers its pages from `estimateMonthlyCashFlowPageCount`, which counts
+    // these same sheets — so the two agree by construction, never by how far
+    // react-pdf happens to flow.
+    const sheets: (typeof dist.rows)[] = [];
+    for (let i = 0; i < dist.rows.length; i += DISTRIBUTIONS_ROWS_PER_PAGE) {
+      sheets.push(dist.rows.slice(i, i + DISTRIBUTIONS_ROWS_PER_PAGE));
+    }
+    const chart = data.chartSpec && (
+      <>
+        <CashflowChartPdf spec={data.chartSpec} />
+        <Text style={s.note}>{DISTRIBUTIONS_PRINT_LEGEND_NOTE}</Text>
+      </>
+    );
+    const firstTableSheet = pageIndex + (dist.chartOnOwnSheet ? 2 : 1);
     return (
       <>
         <PageFrame {...frame} pageIndex={pageIndex}>
           <SectionHead title={data.title} subtitle={data.subtitle} accent={accent} />
           {dist.summary && <DistributionsCard row={dist.summary} />}
-          {data.chartSpec && <CashflowChartPdf spec={data.chartSpec} />}
+          {!dist.chartOnOwnSheet && chart}
         </PageFrame>
-        <PageFrame {...frame} pageIndex={pageIndex + 1} flow>
-          <DistributionsTable distribution={dist} accent={accent} />
-          {data.notes.map((n, i) => (
-            <Text key={i} style={s.note}>
-              {n}
-            </Text>
-          ))}
-          <Text style={s.footnote}>{data.footnote}</Text>
-        </PageFrame>
+        {dist.chartOnOwnSheet && (
+          <PageFrame {...frame} pageIndex={pageIndex + 1}>
+            <SectionHead title={`${data.title} (continued)`} subtitle={data.subtitle} accent={accent} />
+            {chart}
+          </PageFrame>
+        )}
+        {sheets.map((rows, i) => (
+          <PageFrame key={rows[0].year} {...frame} pageIndex={firstTableSheet + i}>
+            <DistributionsTableHead subtitle={data.subtitle} continued={i > 0} />
+            <DistributionsTable distribution={dist} rows={rows} accent={accent} />
+            {i === sheets.length - 1 && (
+              <>
+                {data.notes.map((n, j) => (
+                  <Text key={j} style={s.note}>
+                    {n}
+                  </Text>
+                ))}
+                <Text style={s.footnote}>{data.footnote}</Text>
+              </>
+            )}
+          </PageFrame>
+        ))}
       </>
     );
   }
