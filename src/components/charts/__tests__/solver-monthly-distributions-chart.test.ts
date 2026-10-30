@@ -209,4 +209,28 @@ describe("distributionTooltipExtras", () => {
       "From accounts, more than needed — reinvested / kept in cash: $700/mo",
     ]);
   });
+
+  it("includes the leftover, so the parts add to the accounts' share of the bar", () => {
+    const r = row(2040, [A("a", 7_000)], {
+      fromAccounts: {
+        total: 7_000,
+        accounts: [{ accountId: "a", name: "Acct a", amount: 7_000, annualNominal: 84_000, borrowed: 0 }],
+        parts: {
+          spending: 5_100,
+          taxes: 1_200,
+          goalShortfall: 0,
+          surplusSpent: 0,
+          absorbedExtra: 0,
+          keptOrReinvested: 0,
+        },
+        unexplained: 700,
+      },
+    });
+    const extras = distributionTooltipExtras(r);
+    expect(extras.at(-1)).toBe("From accounts, not accounted for: +$700/mo");
+    const fromAccounts = extras
+      .filter((l) => l.startsWith("From accounts, "))
+      .map((l) => Number(l.replace(/^.*: ([+−]?)\$([\d,]+)\/mo$/, "$1$2").replace("−", "-").replace(/,/g, "")));
+    expect(fromAccounts.reduce((s, v) => s + v, 0)).toBe(r.fromAccounts.total);
+  });
 });

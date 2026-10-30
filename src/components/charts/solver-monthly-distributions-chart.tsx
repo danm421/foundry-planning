@@ -19,9 +19,16 @@ import { chartChrome, useThemeName } from "@/lib/chart-colors";
 import { colors, colorsLight, data as brandData, dataLight as brandDataLight } from "@/brand";
 import {
   hasOtherAccounts,
+  MIN_LINE_PER_MONTH,
   rankDistributionAccounts,
   type DistributionRow,
 } from "@/lib/solver/monthly-distributions";
+import {
+  NOT_ACCOUNTED_FOR,
+  distributionCardLines,
+  money,
+  signedMoney,
+} from "@/lib/solver/distribution-card-lines";
 
 ChartJS.register(
   BarController,
@@ -41,17 +48,9 @@ const fmtCompact = new Intl.NumberFormat("en-US", {
   notation: "compact",
   maximumFractionDigits: 1,
 });
-const fmtFull = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
 
 /** The selected year's outline, matching `SolverMonthlyCashFlowChart`. */
 const SELECTED_BORDER_WIDTH = 2;
-
-/** Under fifty cents a month a part would print as "$0" (the panel's cut-off). */
-const MIN_PART = 0.5;
 
 const LABEL = {
   income: "Income",
@@ -83,16 +82,6 @@ const otherAccountsColor = (theme: "dark" | "light") =>
   theme === "light" ? colorsLight.ink2 : colors.hair2;
 
 const palette = (theme: "dark" | "light") => (theme === "light" ? brandDataLight : brandData);
-
-/** Same wording as the panel's "made of" line, so chart and card agree. */
-const PART_LABELS: { key: keyof DistributionRow["fromAccounts"]["parts"]; label: string }[] = [
-  { key: "spending", label: "spending" },
-  { key: "taxes", label: "taxes" },
-  { key: "goalShortfall", label: "goal shortfall" },
-  { key: "surplusSpent", label: "extra spending of surplus" },
-  { key: "absorbedExtra", label: "extra spending (whatever's left)" },
-  { key: "keptOrReinvested", label: "more than needed — reinvested / kept in cash" },
-];
 
 /**
  * Pure dataset builder. The bars stack to income + total from accounts, and the
@@ -192,15 +181,17 @@ function withSelectedOutline(
   };
 }
 
-/** The tooltip lines after the per-series rows: taxes, then every non-zero
- *  part of "Total from accounts". */
+/** The tooltip lines after the per-series rows: taxes, then every part of
+ *  "Total from accounts" the card lists — its leftover included, so the parts
+ *  add to the accounts' share of the bar. */
 export function distributionTooltipExtras(r: DistributionRow): string[] {
-  const fmt = (v: number) => `${fmtFull.format(v)}/mo`;
+  const card = distributionCardLines(r);
   return [
-    ...(Math.abs(r.taxes) >= MIN_PART ? [`Taxes: ${fmt(r.taxes)}`] : []),
-    ...PART_LABELS.filter(({ key }) => Math.abs(r.fromAccounts.parts[key]) >= MIN_PART).map(
-      ({ key, label }) => `From accounts, ${label}: ${fmt(r.fromAccounts.parts[key])}`,
-    ),
+    ...(r.taxes >= MIN_LINE_PER_MONTH ? [`Taxes: ${money(r.taxes)}/mo`] : []),
+    ...card.madeOf.map((p) => `From accounts, ${p.label}: ${money(p.amount)}/mo`),
+    ...(card.unexplained != null
+      ? [`From accounts, ${NOT_ACCOUNTED_FOR}: ${signedMoney(card.unexplained)}/mo`]
+      : []),
   ];
 }
 
@@ -255,7 +246,7 @@ export function SolverMonthlyDistributionsChart({ rows, selectedYear, onYearClic
                 filter: (item) => Number(item.parsed.y) !== 0,
                 callbacks: {
                   label: (ctx) =>
-                    `${ctx.dataset.label ?? ""}: ${fmtFull.format(Number(ctx.parsed.y))}/mo`,
+                    `${ctx.dataset.label ?? ""}: ${money(Number(ctx.parsed.y))}/mo`,
                   afterBody: (items) => {
                     const r = rows[items[0]?.dataIndex ?? -1];
                     return r ? distributionTooltipExtras(r) : [];

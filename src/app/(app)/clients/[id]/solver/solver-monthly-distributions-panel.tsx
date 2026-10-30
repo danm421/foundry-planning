@@ -12,11 +12,16 @@ import {
   type DistributionRow,
   type MonthlyMode,
 } from "@/lib/solver/monthly-distributions";
+import {
+  DISTRIBUTIONS_DEPLETED_NOTE,
+  NOT_ACCOUNTED_FOR,
+  distributionCardLines,
+  money,
+  moneyOrDash,
+  signedMoney,
+} from "@/lib/solver/distribution-card-lines";
 import { MonthlyModeSwitch } from "./solver-monthly-mode-switch";
-import { BasisButton, fmt } from "./solver-monthly-shared";
-
-/** Under a dollar a month a line would print as "$0" or be float dust. */
-const MIN_LINE = 1;
+import { BasisButton } from "./solver-monthly-shared";
 
 interface Props {
   rows: DistributionRow[];
@@ -57,41 +62,7 @@ export const SolverMonthlyDistributionsPanel = memo(
     const showOther = hasOtherAccounts(rows, ranked);
 
     const { need, fromAccounts: from } = selected;
-    const needLines = [
-      { label: "Living expenses", amount: need.living },
-      { label: "Debt payments", amount: need.liabilities },
-      { label: "Real estate", amount: need.realEstate },
-      { label: "Insurance", amount: need.insurance },
-      ...need.goalLines.map((g) => ({
-        label: `${g.name} (goal)`,
-        amount: g.amount,
-      })),
-      { label: "Other expenses", amount: need.other },
-      { label: "Savings contributions", amount: need.savings },
-    ].filter((l) => l.amount >= MIN_LINE);
-
-    const madeOf: { label: string; amount: number }[] = [
-      { label: "spending", amount: from.parts.spending },
-      { label: "taxes", amount: from.parts.taxes },
-      { label: "goal shortfall", amount: from.parts.goalShortfall },
-      { label: "extra spending of surplus", amount: from.parts.surplusSpent },
-      {
-        label: "extra spending (whatever's left)",
-        amount: from.parts.absorbedExtra,
-      },
-      {
-        label: "more than needed — reinvested / kept in cash",
-        amount: from.parts.keptOrReinvested,
-      },
-    ].filter((p) => Math.abs(p.amount) >= 0.5);
-    const showUnexplained = Math.abs(from.unexplained) >= MIN_LINE;
-    const madeOfText = madeOf
-      .map((p, i) => {
-        const sign = p.amount < 0 ? "−" : i === 0 ? "" : "+";
-        const body = `${fmt.format(Math.abs(p.amount))} ${p.label}`;
-        return i === 0 ? `${sign}${body}` : `${sign} ${body}`;
-      })
-      .join(" ");
+    const card = distributionCardLines(selected);
 
     return (
       <div className="mt-3 space-y-3">
@@ -125,12 +96,13 @@ export const SolverMonthlyDistributionsPanel = memo(
           <span className="text-[12px] text-ink-3">{selected.ageLabel}</span>
         </div>
 
-        {selected.depleted ? (
+        {card.depletedBanner ? (
           <p className="rounded border border-crit/40 bg-crit/10 px-2 py-1.5 text-[11px] text-crit">
-            † The accounts are exhausted this year. The plan keeps spending
-            against an overdrawn account, so this figure is money that does not
-            exist.
+            {card.depletedBanner}
           </p>
+        ) : null}
+        {card.lifeInsuranceNote ? (
+          <p className="text-[11.5px] text-ink-3">{card.lifeInsuranceNote}</p>
         ) : null}
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -140,18 +112,18 @@ export const SolverMonthlyDistributionsPanel = memo(
               className="rounded-lg border border-hair border-l-[3px] border-l-data-teal bg-card px-3 py-2.5 text-[13px]"
             >
               <Eyebrow>Monthly spending need</Eyebrow>
-              <div className="text-2xl font-semibold tabular text-ink">
-                {fmt.format(need.total)}
+              <div className="text-2xl font-semibold tabular-nums text-ink">
+                {money(need.total)}
               </div>
               <div className="text-[11.5px] text-ink-3">
                 Before taxes · not counting goals paid from set-aside accounts
               </div>
               <div className="my-1.5 border-t border-hair" />
-              {needLines.map((l) => (
+              {card.needLines.map((l) => (
                 <Row
                   key={l.label}
                   label={l.label}
-                  amount={fmt.format(l.amount)}
+                  amount={money(l.amount)}
                   indent
                 />
               ))}
@@ -159,22 +131,20 @@ export const SolverMonthlyDistributionsPanel = memo(
               <Row
                 label={
                   <>
-                    Covered by income
-                    {selected.income.sources.length > 0 ? (
+                    {card.coveredByIncome.label}
+                    {card.coveredByIncome.sources ? (
                       <span className="text-ink-3">
                         {" "}
-                        (
-                        {selected.income.sources.map((s) => s.label).join(", ")}
-                        )
+                        {card.coveredByIncome.sources}
                       </span>
                     ) : null}
                   </>
                 }
-                amount={`−${fmt.format(selected.income.total)}`}
+                amount={`−${money(selected.income.total)}`}
               />
               <Row
                 label="From accounts for spending"
-                amount={fmt.format(from.parts.spending)}
+                amount={money(from.parts.spending)}
                 strong
               />
             </div>
@@ -184,7 +154,7 @@ export const SolverMonthlyDistributionsPanel = memo(
             >
               <Row
                 label="+ Taxes (paid separately)"
-                amount={fmt.format(selected.taxes)}
+                amount={money(selected.taxes)}
                 strong
               />
               <div className="text-[11.5px] text-ink-3">
@@ -199,46 +169,42 @@ export const SolverMonthlyDistributionsPanel = memo(
               className="rounded-lg border border-hair bg-card px-3 py-2.5 text-[13px]"
             >
               <Eyebrow>Total from accounts each month</Eyebrow>
-              <div className="text-2xl font-semibold tabular text-ink">
-                {fmt.format(from.total)}
+              <div className="text-2xl font-semibold tabular-nums text-ink">
+                {money(from.total)}
                 {selected.depleted ? (
                   <span aria-label="Accounts exhausted"> †</span>
                 ) : null}
               </div>
-              <div className="text-[11.5px] text-ink-3">{madeOfText}</div>
-              {showUnexplained ? (
+              <div className="text-[11.5px] text-ink-3">{card.madeOfText}</div>
+              {card.unexplained != null ? (
                 <div data-testid="distributions-unexplained">
                   <Row
-                    label="not accounted for"
-                    amount={`${from.unexplained < 0 ? "−" : "+"}${fmt.format(Math.abs(from.unexplained))}`}
+                    label={NOT_ACCOUNTED_FOR}
+                    amount={signedMoney(card.unexplained)}
                     tone="text-crit"
                   />
                 </div>
               ) : null}
               <div className="my-1.5 border-t border-hair" />
-              {from.accounts.map((a) => (
+              {card.accounts.map((a) => (
                 <Row
                   key={a.accountId}
                   label={
                     <>
                       {a.name}
-                      {a.borrowed > 0 ? (
+                      {a.note ? (
                         <span className="ml-1 text-[11.5px] text-ink-3">
-                          (borrowed on margin)
+                          {a.note}
                         </span>
                       ) : null}
                     </>
                   }
-                  amount={fmt.format(a.amount)}
+                  amount={money(a.amount)}
                 />
               ))}
-              {selected.qcds.map((q) => (
-                <div
-                  key={q.accountId}
-                  className="mt-1 text-[11.5px] text-ink-3"
-                >
-                  Also from {q.name}: {fmt.format(q.amount)}/mo straight to
-                  charity (QCD), not in the totals above
+              {card.qcdNotes.map((note) => (
+                <div key={note} className="mt-1 text-[11.5px] text-ink-3">
+                  {note}
                 </div>
               ))}
             </div>
@@ -250,40 +216,31 @@ export const SolverMonthlyDistributionsPanel = memo(
               >
                 <Eyebrow>Goals — paid from set-aside accounts</Eyebrow>
                 <div className="mb-1 text-[11.5px] text-ink-3">
-                  Not part of the {fmt.format(need.total)} or the{" "}
-                  {fmt.format(from.total)}
+                  {card.goalsCaption}
                 </div>
-                {selected.goals.map((g) => (
+                {card.goals.map((g) => (
                   <div key={g.goalId}>
                     <Row
                       label={
                         <>
                           {g.name}
-                          {g.setAsideAccountNames.length > 0 && (
-                            <span className="text-ink-3">
-                              {" "}
-                              ← {g.setAsideAccountNames.join(", ")}
-                            </span>
-                          )}
+                          {g.from ? (
+                            <span className="text-ink-3"> {g.from}</span>
+                          ) : null}
                         </>
                       }
-                      amount={fmt.format(g.fromSetAside)}
+                      amount={g.amount == null ? "" : money(g.amount)}
                     />
-                    {g.fromGeneral >= MIN_LINE ? (
+                    {g.fromGeneral ? (
                       <Row
-                        label="from general accounts — included in the account draws above"
-                        amount={fmt.format(g.fromGeneral)}
+                        label={g.fromGeneral.label}
+                        amount={money(g.fromGeneral.amount)}
                         indent
                         muted
                       />
                     ) : null}
-                    {g.unfunded >= MIN_LINE ? (
-                      <Row
-                        label={`short by ${fmt.format(g.unfunded)}`}
-                        amount=""
-                        indent
-                        tone="text-crit"
-                      />
+                    {g.shortBy ? (
+                      <Row label={g.shortBy} amount="" indent tone="text-crit" />
                     ) : null}
                   </div>
                 ))}
@@ -344,27 +301,29 @@ export const SolverMonthlyDistributionsPanel = memo(
                       </button>
                       {r.depleted ? (
                         <span
-                          title="Accounts exhausted — this year's figure is money that does not exist"
+                          title={DISTRIBUTIONS_DEPLETED_NOTE}
                           className="ml-1 font-semibold text-crit"
                         >
                           †
                         </span>
                       ) : null}
                     </td>
-                    <Td align="left" tone="text-ink-3">
+                    <Td align="left" tone="whitespace-nowrap text-ink-3">
                       {r.ageLabel}
                     </Td>
-                    <Td>{fmt.format(r.need.total)}</Td>
-                    <Td>{fmt.format(r.income.total)}</Td>
-                    <Td>{fmt.format(r.taxes)}</Td>
+                    <Td>{money(r.need.total)}</Td>
+                    <Td>{money(r.income.total)}</Td>
+                    <Td>{money(r.taxes)}</Td>
                     <Td tone="font-medium text-ink">
-                      {fmt.format(r.fromAccounts.total)}
+                      {money(r.fromAccounts.total)}
                     </Td>
                     {ranked.map((a) => (
-                      <Td key={a.accountId}>{dash(byId.get(a.accountId))}</Td>
+                      <Td key={a.accountId}>
+                        {moneyOrDash(byId.get(a.accountId))}
+                      </Td>
                     ))}
-                    {showOther ? <Td>{dash(other)}</Td> : null}
-                    <Td>{dash(setAside)}</Td>
+                    {showOther ? <Td>{moneyOrDash(other)}</Td> : null}
+                    <Td>{moneyOrDash(setAside)}</Td>
                   </tr>
                 );
               })}
@@ -375,10 +334,6 @@ export const SolverMonthlyDistributionsPanel = memo(
     );
   },
 );
-
-function dash(amount: number | undefined): string {
-  return amount !== undefined && amount >= 0.5 ? fmt.format(amount) : "—";
-}
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
   return (
@@ -408,7 +363,7 @@ function Row({
       className={`flex justify-between gap-3 py-0.5 ${indent ? "pl-3.5" : ""} ${strong ? "font-semibold" : ""} ${tone ?? (muted ? "text-ink-3" : "text-ink")}`}
     >
       <span>{label}</span>
-      <span className="tabular">{amount}</span>
+      <span className="tabular-nums">{amount}</span>
     </div>
   );
 }
@@ -440,7 +395,7 @@ function Td({
 }) {
   return (
     <td
-      className={`border-b border-hair px-3 py-2 tabular ${align === "left" ? "text-left" : "text-right"} ${tone}`}
+      className={`border-b border-hair px-3 py-2 tabular-nums ${align === "left" ? "text-left" : "text-right"} ${tone}`}
     >
       {children}
     </td>

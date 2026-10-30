@@ -329,6 +329,49 @@ describe("SolverMonthlyDistributionsPanel", () => {
     ).not.toContain("(");
   });
 
+  it("notes life insurance proceeds outside the figures", () => {
+    setup([drow(2027, { lifeInsuranceProceeds: 1_000_000 })]);
+    expect(
+      screen.getByText(
+        "Life insurance proceeds of $1,000,000 received this year — not in the monthly figures.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("lists a goal with no set-aside account only for its shortfall, with no amount", () => {
+    setup([
+      drow(2027, {
+        goals: [
+          {
+            goalId: "college",
+            name: "Grandkid college",
+            setAsideAccountNames: [],
+            fromSetAside: 0,
+            fromGeneral: 0,
+            unfunded: 3_000,
+          },
+        ],
+      }),
+    ]);
+    const goals = screen.getByTestId("distributions-goals");
+    expect(within(goals).getByText("Grandkid college")).toBeTruthy();
+    expect(within(goals).queryByText("$0")).toBeNull();
+    expect(within(goals).queryByText(/←/)).toBeNull();
+    expect(within(goals).getByText("short by $3,000")).toBeTruthy();
+  });
+
+  it("sets figures in the sans tabular-nums face, never the mono .tabular one", () => {
+    const { container } = setup([drow(2027)]);
+    expect(container.querySelector(".tabular")).toBeNull();
+    expect(container.querySelectorAll(".tabular-nums").length).toBeGreaterThan(0);
+  });
+
+  it("keeps the Ages cell on one line", () => {
+    setup([drow(2027)]);
+    const ages = within(screen.getByTestId("distributions-row-2027")).getByText("Age 68 / 66");
+    expect(ages.className).toContain("whitespace-nowrap");
+  });
+
   it("marks a depleted year with a dagger and the exhausted wording", () => {
     setup([drow(2027, { depleted: true })]);
     expect(

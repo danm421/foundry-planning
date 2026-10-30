@@ -21,6 +21,7 @@ import {
   rankDistributionAccounts,
   type DistributionRow,
 } from "@/lib/solver/monthly-distributions";
+import { DISTRIBUTIONS_DEPLETED_NOTE } from "@/lib/solver/distribution-card-lines";
 import { colorsLight, dataLight } from "@/brand";
 import { PRESENTATION_THEME } from "../../theme";
 import type { ChartSpec } from "../../charts/types";
@@ -195,7 +196,9 @@ function buildDistributionsBranch(
   const showOther = hasOtherAccounts(rows, columns);
 
   const notes: string[] = [];
-  if (rows.some((r) => r.depleted)) notes.push(DEPLETED_NOTE);
+  // The Distributions wording, not the Cash flow sheet's: a Distributions row
+  // has several figures, so "that year's figure" would not say which.
+  if (rows.some((r) => r.depleted)) notes.push(DISTRIBUTIONS_DEPLETED_NOTE);
   notes.push(DISTRIBUTIONS_NOTE);
 
   return {

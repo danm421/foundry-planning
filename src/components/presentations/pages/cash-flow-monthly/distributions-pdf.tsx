@@ -1,8 +1,8 @@
 // The Distributions branch of the Monthly Cash Flow sheet: a two-column year
 // card (layout A of the approved screen), the chart, then the across-the-plan
-// table. Wording mirrors `solver-monthly-distributions-panel.tsx` — the
-// reviewed source — and every figure is a `DistributionRow` field; nothing is
-// recomputed here.
+// table. Which card lines show and their wording come from
+// `distributionCardLines`, the screen panel's own source, and every figure is
+// a `DistributionRow` field; nothing is recomputed here.
 //
 // Colour is never the only carrier: the spending box has a thick teal left
 // rule, the taxes box a thick orange one, and the goals box a dashed violet
@@ -11,18 +11,21 @@
 import { View, Text, StyleSheet } from "@react-pdf/renderer";
 import { PRESENTATION_THEME as T, type SectionAccent } from "@/lib/presentations/theme";
 import { dataLight } from "@/brand";
-import { exactCurrency } from "@/lib/presentations/format";
 import {
   DEPLETED_GLYPH,
   otherAccountsAmount,
 } from "@/lib/presentations/pages/cash-flow-monthly/view-model";
 import type { MonthlyCashFlowPageData } from "@/lib/presentations/pages/cash-flow-monthly/types";
 import type { DistributionRow } from "@/lib/solver/monthly-distributions";
+import {
+  NOT_ACCOUNTED_FOR,
+  distributionCardLines,
+  money,
+  moneyOrDash,
+  signedMoney,
+} from "@/lib/solver/distribution-card-lines";
 
 type Distribution = NonNullable<MonthlyCashFlowPageData["distribution"]>;
-
-/** Under a dollar a month a line would print as "$0" or be float dust. */
-const MIN_LINE = 1;
 
 const s = StyleSheet.create({
   card: {
@@ -108,10 +111,6 @@ const YEAR_W = 40;
 const AGES_W = 46;
 const cell = { flex: 1 } as const;
 
-const money = (v: number) => exactCurrency(v);
-const signed = (v: number) => `${v < 0 ? "−" : "+"}${exactCurrency(Math.abs(v))}`;
-const dash = (v: number | undefined) => (v !== undefined && v >= 0.5 ? exactCurrency(v) : "—");
-
 export function DistributionsTable({
   distribution,
   accent,
@@ -167,14 +166,14 @@ export function DistributionsTable({
             <Text style={[s.tdStrong, cell, s.right]}>{money(r.fromAccounts.total)}</Text>
             {columns.map((c) => (
               <Text key={c.accountId} style={[s.td, cell, s.right]}>
-                {dash(byId.get(c.accountId))}
+                {moneyOrDash(byId.get(c.accountId))}
               </Text>
             ))}
             {showOther && (
-              <Text style={[s.td, cell, s.right]}>{dash(otherAccountsAmount(r, columns))}</Text>
+              <Text style={[s.td, cell, s.right]}>{moneyOrDash(otherAccountsAmount(r, columns))}</Text>
             )}
             <Text style={[s.td, cell, s.right]}>
-              {dash(r.goals.reduce((sum, g) => sum + g.fromSetAside, 0))}
+              {moneyOrDash(r.goals.reduce((sum, g) => sum + g.fromSetAside, 0))}
             </Text>
           </View>
         );
@@ -211,31 +210,7 @@ function Row({
 
 export function DistributionsCard({ row: r }: { row: DistributionRow }) {
   const { need, fromAccounts: from } = r;
-  const needLines = [
-    { label: "Living expenses", amount: need.living },
-    { label: "Debt payments", amount: need.liabilities },
-    { label: "Real estate", amount: need.realEstate },
-    { label: "Insurance", amount: need.insurance },
-    ...need.goalLines.map((g) => ({ label: `${g.name} (goal)`, amount: g.amount })),
-    { label: "Other expenses", amount: need.other },
-    { label: "Savings contributions", amount: need.savings },
-  ].filter((l) => l.amount >= MIN_LINE);
-
-  const madeOf = [
-    { label: "spending", amount: from.parts.spending },
-    { label: "taxes", amount: from.parts.taxes },
-    { label: "goal shortfall", amount: from.parts.goalShortfall },
-    { label: "extra spending of surplus", amount: from.parts.surplusSpent },
-    { label: "extra spending (whatever's left)", amount: from.parts.absorbedExtra },
-    { label: "more than needed — reinvested / kept in cash", amount: from.parts.keptOrReinvested },
-  ].filter((p) => Math.abs(p.amount) >= 0.5);
-  const madeOfText = madeOf
-    .map((p, i) => {
-      const sign = p.amount < 0 ? "−" : i === 0 ? "" : "+";
-      const body = `${exactCurrency(Math.abs(p.amount))} ${p.label}`;
-      return i === 0 ? `${sign}${body}` : `${sign} ${body}`;
-    })
-    .join(" ");
+  const card = distributionCardLines(r);
 
   return (
     <View style={s.card}>
@@ -244,10 +219,9 @@ export function DistributionsCard({ row: r }: { row: DistributionRow }) {
         <Text style={s.ages}>{r.ageLabel}</Text>
       </View>
 
-      {r.depleted && (
-        <Text style={s.banner}>
-          {`${DEPLETED_GLYPH} The accounts are exhausted this year. The plan keeps spending against an overdrawn account, so this figure is money that does not exist.`}
-        </Text>
+      {card.depletedBanner && <Text style={s.banner}>{card.depletedBanner}</Text>}
+      {card.lifeInsuranceNote && (
+        <Text style={[s.sub, { marginBottom: 4 }]}>{card.lifeInsuranceNote}</Text>
       )}
 
       <View style={s.cols}>
@@ -257,12 +231,12 @@ export function DistributionsCard({ row: r }: { row: DistributionRow }) {
             <Text style={s.hero}>{money(need.total)}</Text>
             <Text style={s.sub}>Before taxes · not counting goals paid from set-aside accounts</Text>
             <View style={s.rule} />
-            {needLines.map((l) => (
+            {card.needLines.map((l) => (
               <Row key={l.label} label={l.label} amount={money(l.amount)} indent />
             ))}
             <View style={s.rule} />
             <Row
-              label={`Covered by income${r.income.sources.length > 0 ? ` (${r.income.sources.map((x) => x.label).join(", ")})` : ""}`}
+              label={[card.coveredByIncome.label, card.coveredByIncome.sources].filter(Boolean).join(" ")}
               amount={`−${money(r.income.total)}`}
             />
             <Row label="From accounts for spending" amount={money(from.parts.spending)} strong />
@@ -277,26 +251,26 @@ export function DistributionsCard({ row: r }: { row: DistributionRow }) {
           <View style={s.box}>
             <Text style={s.eyebrow}>Total from accounts each month</Text>
             <Text style={s.hero}>{`${money(from.total)}${r.depleted ? ` ${DEPLETED_GLYPH}` : ""}`}</Text>
-            <Text style={s.sub}>{madeOfText}</Text>
-            {Math.abs(from.unexplained) >= MIN_LINE && (
-              <Row label="not accounted for" amount={signed(from.unexplained)} crit />
+            <Text style={s.sub}>{card.madeOfText}</Text>
+            {card.unexplained != null && (
+              <Row label={NOT_ACCOUNTED_FOR} amount={signedMoney(card.unexplained)} crit />
             )}
             <View style={s.rule} />
-            {from.accounts.map((a) => (
+            {card.accounts.map((a) => (
               <Row
                 key={a.accountId}
-                label={a.borrowed > 0 ? `${a.name} (borrowed on margin)` : a.name}
+                label={a.note ? `${a.name} ${a.note}` : a.name}
                 amount={money(a.amount)}
               />
             ))}
-            {r.qcds.map((q) => (
-              <Text key={q.accountId} style={[s.sub, { marginTop: 2 }]}>
-                {`Also from ${q.name}: ${money(q.amount)}/mo straight to charity (QCD), not in the totals above`}
+            {card.qcdNotes.map((note) => (
+              <Text key={note} style={[s.sub, { marginTop: 2 }]}>
+                {note}
               </Text>
             ))}
           </View>
 
-          {r.goals.length > 0 && (
+          {card.goals.length > 0 && (
             <View
               style={[
                 s.box,
@@ -304,30 +278,17 @@ export function DistributionsCard({ row: r }: { row: DistributionRow }) {
               ]}
             >
               <Text style={s.eyebrow}>Goals — paid from set-aside accounts</Text>
-              <Text style={[s.sub, { marginBottom: 2 }]}>
-                {`Not part of the ${money(need.total)} or the ${money(from.total)}`}
-              </Text>
-              {r.goals.map((g) => (
+              <Text style={[s.sub, { marginBottom: 2 }]}>{card.goalsCaption}</Text>
+              {card.goals.map((g) => (
                 <View key={g.goalId}>
                   <Row
-                    label={
-                      g.setAsideAccountNames.length > 0
-                        ? `${g.name} ← ${g.setAsideAccountNames.join(", ")}`
-                        : g.name
-                    }
-                    amount={money(g.fromSetAside)}
+                    label={g.from ? `${g.name} ${g.from}` : g.name}
+                    amount={g.amount == null ? "" : money(g.amount)}
                   />
-                  {g.fromGeneral >= MIN_LINE && (
-                    <Row
-                      label="from general accounts — included in the account draws above"
-                      amount={money(g.fromGeneral)}
-                      indent
-                      muted
-                    />
+                  {g.fromGeneral && (
+                    <Row label={g.fromGeneral.label} amount={money(g.fromGeneral.amount)} indent muted />
                   )}
-                  {g.unfunded >= MIN_LINE && (
-                    <Row label={`short by ${money(g.unfunded)}`} amount="" indent crit />
-                  )}
+                  {g.shortBy && <Row label={g.shortBy} amount="" indent crit />}
                 </View>
               ))}
             </View>
