@@ -5,15 +5,15 @@ import DialogShell from "@/components/dialog-shell";
 import { fieldLabelClassName, inputClassName, textareaClassName } from "@/components/forms/input-styles";
 import type { WorkspaceTodo } from "@/lib/workspace/types";
 
-/** A subset of `PATCH /api/workspace/todos/[listId]/[taskId]`'s body: only what changed. */
+/** A subset of `PATCH /api/workspace/accounts/[connectionId]/todos/[listId]/[taskId]`'s body: only what changed. */
 export type TodoPatch = { title?: string; dueDate?: string | null; notes?: string };
 
 const FORM_ID = "workspace-todo-editor";
 const SAVE_FAILED = "Couldn't save the to-do. Try again.";
 
 /**
- * Edits one Outlook to-do. Save sends only the fields the advisor changed;
- * nothing changed, Save just closes. Formatted (HTML) notes can't be shown in
+ * Edits one account's to-do. Save sends only the fields the advisor changed;
+ * nothing changed, Save just closes. Formatted (HTML) Outlook notes can't be shown in
  * a plain-text box, so they aren't offered at all — typing into an empty box
  * would replace notes the advisor never saw — and Save never sends `notes`.
  */
@@ -34,6 +34,8 @@ export function TodoEditorDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Only Microsoft stores formatted notes; every other to-do's notes are plain text.
+  const htmlNotes = todo.provider === "microsoft" && todo.notesAreHtml;
   const canSave = title.trim() !== "" && !busy;
 
   async function submit(e: FormEvent) {
@@ -42,7 +44,7 @@ export function TodoEditorDialog({
     const patch: TodoPatch = {};
     if (title.trim() !== todo.title) patch.title = title.trim();
     if ((due || null) !== todo.dueDate) patch.dueDate = due || null;
-    if (!todo.notesAreHtml && notes !== todo.notes) patch.notes = notes;
+    if (!htmlNotes && notes !== todo.notes) patch.notes = notes;
     if (Object.keys(patch).length === 0) {
       onClose();
       return;
@@ -94,7 +96,7 @@ export function TodoEditorDialog({
             onChange={(e) => setDue(e.target.value)}
           />
         </div>
-        {todo.notesAreHtml ? (
+        {htmlNotes ? (
           <div>
             <p className={fieldLabelClassName}>Notes</p>
             <p className="text-[13px] text-ink-3">This to-do has formatted notes. Edit them in Outlook.</p>

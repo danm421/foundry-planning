@@ -528,7 +528,7 @@ export function WorkspacePage({
         </div>
         {/* Beside every calendar state: Foundry tasks don't wait on Microsoft.
             A new connection state (after Disconnect) reads the to-dos afresh. */}
-        <TodoPanel key={paneState} userId={userId} households={households} />
+        <TodoPanel key={paneState} userId={userId} households={households} accounts={accounts} />
       </div>
 
       <DialogShell

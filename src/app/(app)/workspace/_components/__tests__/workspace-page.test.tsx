@@ -636,11 +636,13 @@ describe("WorkspacePage — hydration (F4)", () => {
 
 describe("WorkspacePage — the to-do panel", () => {
   it.each(["connect", "impersonating", "ready"] as const)(
-    "mounts beside the %s calendar pane, with the advisor and their households",
+    "mounts beside the %s calendar pane, with the advisor, their households and accounts",
     (paneState) => {
       renderPage(paneState);
       expect(screen.getByRole("complementary", { name: "To-dos" })).toBeInTheDocument();
-      expect(todoPanelProps).toHaveBeenLastCalledWith({ userId: "user_me", households: HOUSEHOLDS });
+      expect(todoPanelProps).toHaveBeenLastCalledWith(
+        expect.objectContaining({ userId: "user_me", households: HOUSEHOLDS, accounts: expect.any(Array) }),
+      );
     },
   );
 

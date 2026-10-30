@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { AccountSummary } from "@/lib/workspace/types";
 import { TodoPanel } from "../todo-panel";
 
 type FakeResponse = { ok: boolean; status: number; json: () => Promise<unknown> };
@@ -55,6 +56,11 @@ function answer(foundry: unknown[], accounts: unknown[], blocked: string | null 
 
 const TODOS = answer([FOUNDRY_TASK], [account([OUTLOOK_TODO])]);
 
+const MS_ACCOUNT = { id: MS_ID, provider: "microsoft", email: "dan@foundryplanning.com", status: "connected", connectedAt: "2026-10-01T00:00:00Z" } as const;
+const GOOGLE_ACCOUNT = { id: GOOGLE_ID, provider: "google", email: "dan@gmail.com", status: "connected", connectedAt: "2026-10-02T00:00:00Z" } as const;
+const GOOGLE_TODO = { ...OUTLOOK_TODO, provider: "google", id: "g-1", listId: "@default", title: "Book the Schwab call" };
+const GOOGLE_URL = `/api/workspace/accounts/${GOOGLE_ID}/todos/%40default/g-1`;
+
 const OUTLOOK_URL = `/api/workspace/accounts/${MS_ID}/todos/AAMk%2Flist%3D/AAMk%2Ftask%3D`;
 const HOUSEHOLDS = [
   { id: "11111111-1111-4111-8111-111111111111", name: "Hartley" },
@@ -72,8 +78,8 @@ const sent = (i = 0) => {
   return { url, method: init.method, body: JSON.parse(String(init.body)) as Record<string, unknown> };
 };
 
-function renderPanel() {
-  return render(<TodoPanel userId="user_me" households={HOUSEHOLDS} />);
+function renderPanel(accounts: AccountSummary[] = [MS_ACCOUNT]) {
+  return render(<TodoPanel userId="user_me" households={HOUSEHOLDS} accounts={accounts} />);
 }
 
 const panel = () => screen.getByRole("complementary", { name: "To-dos" });
@@ -90,6 +96,11 @@ beforeEach(() => {
     init?.method ? writeMock(url, init) : Promise.resolve(respond(200, serverTodos)),
   );
   vi.stubGlobal("fetch", fetchMock);
+  try {
+    localStorage.clear();
+  } catch {
+    // jsdom storage is always there; nothing to clear otherwise.
+  }
 });
 
 afterEach(() => {
@@ -164,52 +175,72 @@ describe("TodoPanel — Outlook's side", () => {
     expect(screen.getByText("3 open")).toBeInTheDocument();
   });
 
-  it("(Review Focus 1) one account failing never hides another account's to-dos", async () => {
-    const googleTodo = { ...OUTLOOK_TODO, provider: "google", id: "g-1", listId: "@default", title: "Book the Schwab call" };
-    serverTodos = answer(
-      [FOUNDRY_TASK],
-      [account(null, "unavailable"), account([googleTodo], null, GOOGLE_ID, "google")],
-    );
-    renderPanel();
-    expect(await screen.findByText("Book the Schwab call")).toBeInTheDocument();
-    expect(screen.getByText("Prep Nguyen proposal")).toBeInTheDocument();
-  });
-
-  it("needs_reconnect: a one-line notice links to reconnect, and Foundry tasks still show", async () => {
+  it("needs_reconnect: a one-line notice links to reconnect that address, and Foundry tasks still show", async () => {
     serverTodos = answer([FOUNDRY_TASK], [account(null, "needs_reconnect")]);
     renderPanel();
-    const link = await screen.findByRole("link", {
-      name: "Reconnect Microsoft 365 to see your Outlook to-dos.",
-    });
-    expect(link).toHaveAttribute("href", "/api/workspace/microsoft/connect");
+    const link = await screen.findByRole("link", { name: "Reconnect dan@foundryplanning.com to see its to-dos." });
+    expect(link).toHaveAttribute("href", "/api/workspace/microsoft/connect?hint=dan%40foundryplanning.com");
     expect(screen.getByText("Prep Nguyen proposal")).toBeInTheDocument();
   });
 
-  it("throttled: says Outlook's to-dos are unavailable", async () => {
+  it("throttled: says that address's to-dos are unavailable right now", async () => {
     serverTodos = answer([FOUNDRY_TASK], [account(null, "throttled")]);
     renderPanel();
-    expect(await screen.findByText("Outlook to-dos are unavailable right now.")).toBeInTheDocument();
+    expect(await screen.findByText("dan@foundryplanning.com's to-dos are unavailable right now.")).toBeInTheDocument();
     expect(screen.getByText("Prep Nguyen proposal")).toBeInTheDocument();
   });
 
-  it("unavailable: a failure that isn't throttling points to the admin", async () => {
+  it("unavailable: says it couldn't load that address's to-dos", async () => {
     serverTodos = answer([FOUNDRY_TASK], [account(null, "unavailable")]);
     renderPanel();
-    expect(
-      await screen.findByText(
-        "Couldn't load your Outlook to-dos from Microsoft. If this keeps happening, ask your firm's admin.",
-      ),
-    ).toBeInTheDocument();
-    expect(screen.queryByText("Outlook to-dos are unavailable right now.")).toBeNull();
+    expect(await screen.findByText("Couldn't load dan@foundryplanning.com's to-dos.")).toBeInTheDocument();
+    expect(screen.queryByText(/unavailable right now/)).toBeNull();
     expect(screen.getByText("Prep Nguyen proposal")).toBeInTheDocument();
+  });
+
+  it("(Review Focus 1) one unavailable account and one good one: the good one's to-dos plus the failing one's notice", async () => {
+    serverTodos = answer(
+      [FOUNDRY_TASK],
+      [account(null, "unavailable"), account([GOOGLE_TODO], null, GOOGLE_ID, "google")],
+    );
+    renderPanel([MS_ACCOUNT, GOOGLE_ACCOUNT]);
+    expect(await screen.findByText("Book the Schwab call")).toBeInTheDocument();
+    expect(screen.getByText("Couldn't load dan@foundryplanning.com's to-dos.")).toBeInTheDocument();
+    expect(screen.queryByText(/dan@gmail.com's to-dos/)).toBeNull();
+  });
+
+  it("shows one notice per failing account", async () => {
+    serverTodos = answer(
+      [],
+      [account(null, "needs_reconnect"), account(null, "throttled", GOOGLE_ID, "google")],
+    );
+    renderPanel([MS_ACCOUNT, GOOGLE_ACCOUNT]);
+    expect(await screen.findByText("Reconnect dan@foundryplanning.com to see its to-dos.")).toBeInTheDocument();
+    expect(screen.getByText("dan@gmail.com's to-dos are unavailable right now.")).toBeInTheDocument();
+  });
+
+  it("two accounts: each to-do's chip is its address label; one account keeps Outlook", async () => {
+    serverTodos = answer([], [account([OUTLOOK_TODO]), account([GOOGLE_TODO], null, GOOGLE_ID, "google")]);
+    renderPanel([MS_ACCOUNT, GOOGLE_ACCOUNT]);
+    await screen.findByText("Book the Schwab call");
+    expect(screen.getByText("foundryplanning")).toBeInTheDocument();
+    expect(screen.getByText("gmail")).toBeInTheDocument();
+    expect(screen.queryByText("Outlook")).toBeNull();
+  });
+
+  it("a Google to-do without labels reads Google", async () => {
+    serverTodos = answer([], [account([GOOGLE_TODO], null, GOOGLE_ID, "google")]);
+    renderPanel([GOOGLE_ACCOUNT]);
+    await screen.findByText("Book the Schwab call");
+    expect(screen.getByText("Google")).toBeInTheDocument();
   });
 
   it("no connected accounts: no notice, and new to-dos can only be Foundry tasks", async () => {
     serverTodos = answer([FOUNDRY_TASK], []);
     const user = userEvent.setup();
-    renderPanel();
+    renderPanel([]);
     await screen.findByText("Prep Nguyen proposal");
-    expect(screen.queryByText(/Outlook to-dos/)).toBeNull();
+    expect(screen.queryByText(/to-dos (are|from)/)).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "+ Add a to-do" }));
     const toggle = screen.getByRole("switch", { name: "Make it a Foundry task" });
@@ -221,8 +252,11 @@ describe("TodoPanel — Outlook's side", () => {
   it("(Review Focus 5) impersonating: Foundry tasks still listed, and new to-dos can only be Foundry tasks", async () => {
     serverTodos = answer([FOUNDRY_TASK], [], "impersonating");
     const user = userEvent.setup();
-    renderPanel();
+    renderPanel([MS_ACCOUNT]);
     expect(await screen.findByText("Prep Nguyen proposal")).toBeInTheDocument();
+    expect(
+      screen.getByText("To-dos from your connected addresses are hidden while you're signed in as someone else."),
+    ).toBeInTheDocument();
     expect(screen.getByText("1 open")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "+ Add a to-do" }));
@@ -239,6 +273,14 @@ describe("TodoPanel — checking one off", () => {
     expect(sent()).toEqual({ url: OUTLOOK_URL, method: "PATCH", body: { completed: true } });
     await waitFor(() => expect(screen.queryByText("Send Hartley the updated plan")).toBeNull());
     expect(screen.getByText("1 open")).toBeInTheDocument();
+  });
+
+  it("a Google to-do PATCHes its own account's URL with completed", async () => {
+    serverTodos = answer([], [account([OUTLOOK_TODO]), account([GOOGLE_TODO], null, GOOGLE_ID, "google")]);
+    writeMock.mockResolvedValueOnce(respond(200, { ok: true }));
+    renderPanel([MS_ACCOUNT, GOOGLE_ACCOUNT]);
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Mark Book the Schwab call done" }));
+    expect(sent()).toEqual({ url: GOOGLE_URL, method: "PATCH", body: { completed: true } });
   });
 
   it("(M2) a repeating Outlook to-do re-reads the list, so its next occurrence shows and the done one stays gone", async () => {
@@ -333,6 +375,71 @@ describe("TodoPanel — adding one", () => {
     });
     await waitFor(() => expect(reads()).toHaveLength(2));
     expect(screen.queryByLabelText("Title")).toBeNull();
+  });
+
+  describe("with two connected addresses", () => {
+    async function openTwo() {
+      serverTodos = answer([FOUNDRY_TASK], [account([OUTLOOK_TODO]), account([GOOGLE_TODO], null, GOOGLE_ID, "google")]);
+      const user = userEvent.setup();
+      renderPanel([MS_ACCOUNT, GOOGLE_ACCOUNT]);
+      await screen.findByText("Book the Schwab call");
+      await user.click(screen.getByRole("button", { name: "+ Add a to-do" }));
+      return user;
+    }
+
+    it("offers an Add to select of each address plus Foundry task, and posts to the chosen account", async () => {
+      writeMock.mockResolvedValueOnce(respond(201, { todo: {} }));
+      const user = await openTwo();
+      const select = screen.getByLabelText("Add to");
+      expect(within(select).getAllByRole("option").map((o) => o.textContent)).toEqual([
+        "foundryplanning",
+        "gmail",
+        "Foundry task",
+      ]);
+      expect(screen.queryByRole("switch")).toBeNull();
+
+      await user.selectOptions(select, "gmail");
+      await user.type(screen.getByLabelText("Title"), "Call Schwab{Enter}");
+      expect(sent()).toEqual({
+        url: `/api/workspace/accounts/${GOOGLE_ID}/todos`,
+        method: "POST",
+        body: { title: "Call Schwab", dueDate: null, notes: "" },
+      });
+      expect(localStorage.getItem("workspace.lastTodoDestination")).toBe(GOOGLE_ID);
+    });
+
+    it("starts on the last destination used, and falls back to the first when it's gone", async () => {
+      localStorage.setItem("workspace.lastTodoDestination", GOOGLE_ID);
+      await openTwo();
+      expect(screen.getByLabelText("Add to")).toHaveValue(GOOGLE_ID);
+    });
+
+    it("a stored destination that no longer exists falls back to the first", async () => {
+      localStorage.setItem("workspace.lastTodoDestination", "gone");
+      await openTwo();
+      expect(screen.getByLabelText("Add to")).toHaveValue(MS_ID);
+    });
+
+    it("choosing Foundry task shows the household and priority and posts to the CRM", async () => {
+      writeMock.mockResolvedValueOnce(respond(201, { task: {} }));
+      const user = await openTwo();
+      await user.selectOptions(screen.getByLabelText("Add to"), "Foundry task");
+      expect(localStorage.getItem("workspace.lastTodoDestination")).toBe("foundry");
+      await user.type(screen.getByLabelText("Title"), "Review book");
+      await user.click(screen.getByRole("button", { name: "Add" }));
+      expect(sent().url).toBe("/api/crm/tasks");
+    });
+
+    it("an address that needs to reconnect is not a destination", async () => {
+      serverTodos = answer([], [account(null, "needs_reconnect"), account([GOOGLE_TODO], null, GOOGLE_ID, "google")]);
+      const user = userEvent.setup();
+      renderPanel([MS_ACCOUNT, GOOGLE_ACCOUNT]);
+      await screen.findByText("Book the Schwab call");
+      await user.click(screen.getByRole("button", { name: "+ Add a to-do" }));
+      // One destination left: the phase-1 switch, posting to Google.
+      expect(screen.queryByLabelText("Add to")).toBeNull();
+      expect(screen.getByRole("switch", { name: "Make it a Foundry task" })).not.toBeChecked();
+    });
   });
 
   it("an Outlook to-do with no date sends null", async () => {

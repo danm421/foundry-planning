@@ -36,20 +36,22 @@ function todo(over: Partial<AccountTodo> = {}): AccountTodo {
 }
 
 function item(title: string, dueDate: string | null): TodoItem {
-  return { key: title, source: "microsoft", title, dueDate, meta: null, href: null };
+  return { key: title, source: "account", sourceLabel: "Outlook", title, dueDate, meta: null, href: null };
 }
 
 describe("toTodoItems", () => {
   it("labels a high-priority Foundry task with its household and links to it", () => {
-    const [foundry] = toTodoItems([task({ id: "t-9", priority: "high" })], []);
+    const [foundry] = toTodoItems([task({ id: "t-9", priority: "high" })], [], null);
     expect(foundry.source).toBe("foundry");
     expect(foundry.meta).toBe("Nguyen household · High");
     expect(foundry.href).toBe("/tasks?task=t-9");
     expect(foundry.foundry).toEqual({ taskId: "t-9" });
+    expect(foundry.source).toBe("foundry");
+    expect(foundry.sourceLabel).toBe("Foundry");
   });
 
   it("names only the household when the priority isn't high", () => {
-    const [foundry] = toTodoItems([task({ priority: "med" })], []);
+    const [foundry] = toTodoItems([task({ priority: "med" })], [], null);
     expect(foundry.meta).toBe("Nguyen household");
   });
 
@@ -60,26 +62,60 @@ describe("toTodoItems", () => {
         task({ id: "b", priority: "low", householdId: null, householdName: null }),
       ],
       [],
+      null,
     );
     expect(high.meta).toBe("High");
     expect(plain.meta).toBeNull();
   });
 
   it("keeps an Outlook to-do's list and task ids, with no meta and no link", () => {
-    const [outlook] = toTodoItems([], [todo({ dueDate: "2026-10-30" })]);
+    const [outlook] = toTodoItems([], [todo({ dueDate: "2026-10-30" })], null);
     expect(outlook).toMatchObject({
-      source: "microsoft",
+      source: "account",
+      provider: "microsoft",
+      sourceLabel: "Outlook",
       title: "Send Hartley the updated plan",
       dueDate: "2026-10-30",
       meta: null,
       href: null,
-      outlook: { connectionId: "conn-1", listId: "AAMk/list=", taskId: "AAMk/task=" },
+      account: { connectionId: "conn-1", listId: "AAMk/list=", taskId: "AAMk/task=" },
     });
   });
 
   it("gives every item a key unique across both sources", () => {
-    const items = toTodoItems([task({ id: "x" })], [todo({ id: "x" })]);
+    const items = toTodoItems([task({ id: "x" })], [todo({ id: "x" })], null);
     expect(new Set(items.map((i) => i.key)).size).toBe(2);
+  });
+
+  it("keys an account to-do by its connection, list and task, so two accounts never collide", () => {
+    const items = toTodoItems(
+      [],
+      [todo({ connectionId: "conn-1", listId: "@default", id: "1" }), todo({ connectionId: "conn-2", listId: "@default", id: "1" })],
+      null,
+    );
+    expect(items.map((i) => i.key)).toEqual(["conn-1:@default:1", "conn-2:@default:1"]);
+  });
+
+  it("labels each row by its address when there are labels", () => {
+    const labels = new Map([
+      ["conn-1", "foundryplanning"],
+      ["conn-2", "gmail"],
+    ]);
+    const items = toTodoItems(
+      [task()],
+      [todo({ connectionId: "conn-1" }), todo({ connectionId: "conn-2", provider: "google", id: "g" })],
+      labels,
+    );
+    expect(items.map((i) => i.sourceLabel)).toEqual(["Foundry", "foundryplanning", "gmail"]);
+  });
+
+  it("without labels, labels by provider: Outlook / Google", () => {
+    const items = toTodoItems(
+      [],
+      [todo({ connectionId: "conn-1" }), todo({ connectionId: "conn-2", provider: "google", id: "g" })],
+      null,
+    );
+    expect(items.map((i) => i.sourceLabel)).toEqual(["Outlook", "Google"]);
   });
 });
 

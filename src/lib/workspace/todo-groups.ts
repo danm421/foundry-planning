@@ -4,7 +4,7 @@ import type { WorkspaceProvider, WorkspaceTodo } from "./types";
 import { addDays, mondayOf } from "./week";
 
 /**
- * The Workspace to-do list's pure half: Foundry tasks and Outlook to-dos as one
+ * The Workspace to-do list's pure half: Foundry tasks and every connected account's to-dos as one
  * kind of row, filed by due date. Dates are `YYYY-MM-DD` strings, which compare
  * in calendar order as text.
  */
@@ -12,15 +12,18 @@ import { addDays, mondayOf } from "./week";
 /** An account's to-do, tagged with the connection it came from (the one its writes go through). */
 export type AccountTodo = WorkspaceTodo & { connectionId: string };
 
-/** One row of the combined list. `outlook` / `foundry` carry the ids the source's routes take. */
+/** One row of the combined list. `account` / `foundry` carry the ids the source's routes take. */
 export type TodoItem = {
   key: string;
-  source: WorkspaceProvider | "foundry";
+  source: "account" | "foundry";
+  provider?: WorkspaceProvider;
+  /** The chip beside the title: `Foundry`, the address's label, or `Outlook` / `Google`. */
+  sourceLabel: string;
   title: string;
   dueDate: string | null;
   meta: string | null;
   href: string | null;
-  outlook?: { connectionId: string; listId: string; taskId: string };
+  account?: { connectionId: string; listId: string; taskId: string };
   foundry?: { taskId: string };
 };
 
@@ -38,12 +41,20 @@ function foundryMeta(t: TaskListRow): string | null {
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
-export function toTodoItems(foundry: TaskListRow[], outlook: AccountTodo[]): TodoItem[] {
+const PROVIDER_LABEL: Record<WorkspaceProvider, string> = { microsoft: "Outlook", google: "Google" };
+
+/** `labels` (connection id to address label) is null with a single account, which reads as plain `Outlook` / `Google`. */
+export function toTodoItems(
+  foundry: TaskListRow[],
+  accountTodos: AccountTodo[],
+  labels: Map<string, string> | null,
+): TodoItem[] {
   return [
     ...foundry.map(
       (t): TodoItem => ({
         key: `foundry:${t.id}`,
         source: "foundry",
+        sourceLabel: "Foundry",
         title: t.title,
         dueDate: t.dueDate,
         meta: foundryMeta(t),
@@ -51,15 +62,17 @@ export function toTodoItems(foundry: TaskListRow[], outlook: AccountTodo[]): Tod
         foundry: { taskId: t.id },
       }),
     ),
-    ...outlook.map(
+    ...accountTodos.map(
       (t): TodoItem => ({
-        key: `outlook:${t.listId}:${t.id}`,
-        source: t.provider,
+        key: `${t.connectionId}:${t.listId}:${t.id}`,
+        source: "account",
+        provider: t.provider,
+        sourceLabel: labels?.get(t.connectionId) ?? PROVIDER_LABEL[t.provider],
         title: t.title,
         dueDate: t.dueDate,
         meta: null,
         href: null,
-        outlook: { connectionId: t.connectionId, listId: t.listId, taskId: t.id },
+        account: { connectionId: t.connectionId, listId: t.listId, taskId: t.id },
       }),
     ),
   ];
