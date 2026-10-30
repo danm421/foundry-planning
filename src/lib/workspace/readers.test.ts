@@ -4,7 +4,7 @@ import type { WorkspaceConnection } from "./connections";
 import type { WorkspaceEvent, WorkspaceProvider, WorkspaceTodo } from "./types";
 import type { WorkspaceProviderAdapter } from "./provider-adapter";
 import { ProviderRequestError, ProviderThrottledError, WorkspaceReconnectRequiredError } from "./errors";
-import { readTodos, readWeek, resolveDisplayZone } from "./readers";
+import { ACCOUNT_DEADLINE_MS, readTodos, readWeek, resolveDisplayZone } from "./readers";
 
 function conn(id: string, provider: WorkspaceProvider, status: WorkspaceConnection["status"] = "connected") {
   return { id, provider, status, externalEmail: `${id}@secret-mail.test` } as WorkspaceConnection;
@@ -80,11 +80,16 @@ describe("readers", () => {
       expect(await resolveDisplayZone([a, b], lookup(fakes, [a, b]))).toEqual({ timeZone: "UTC", fallback: true });
     });
 
-    it("skips an account whose getTimeZone throws", async () => {
+    it("skips an account whose getTimeZone throws, and (M4) logs its ids, never the message or address", async () => {
       const a = conn("a", "google");
       const b = conn("b", "microsoft");
-      const fakes = { a: fake({ tz: new Error("boom") }), b: fake({ tz: "Europe/Paris" }) };
+      const fakes = { a: fake({ tz: new Error("boom secret") }), b: fake({ tz: "Europe/Paris" }) };
       expect((await resolveDisplayZone([a, b], lookup(fakes, [a, b]))).timeZone).toBe("Europe/Paris");
+      expect(warn).toHaveBeenCalledTimes(1);
+      const out = JSON.stringify(warn.mock.calls);
+      expect(out).toContain('"connectionId":"a"');
+      expect(out).toContain('"name":"Error"');
+      expect(out).not.toContain("secret");
     });
 
     it("(R17) treats an invalid zone like null", async () => {
@@ -219,6 +224,72 @@ describe("readers", () => {
       const fakes = { a: fake({ events: new ProviderRequestError("google", 400, "badRequest", null) }) };
       await readWeek({ connections: [a], startDate: "2026-11-02", days: 7, adapters: lookup(fakes, [a]) });
       expect(JSON.stringify([...warn.mock.calls, ...error.mock.calls])).toContain("badRequest");
+    });
+  });
+
+  describe("(I2) a provider that never answers", () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    const never = () => new Promise<never>(() => {});
+
+    /** Settles `p` across the deadline, checking it was still pending just before it. */
+    async function acrossTheDeadline<T>(p: Promise<T>): Promise<T> {
+      let settled = false;
+      void p.then(
+        () => (settled = true),
+        () => (settled = true),
+      );
+      await vi.advanceTimersByTimeAsync(ACCOUNT_DEADLINE_MS - 1);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      return p;
+    }
+
+    it("is 15 seconds per account", () => {
+      expect(ACCOUNT_DEADLINE_MS).toBe(15_000);
+    });
+
+    it("the week: the hung account is unavailable, the other's meetings still come back, and only ids are logged", async () => {
+      const a = conn("a", "google");
+      const b = conn("b", "microsoft");
+      const fakes = { a: fake({ tz: "America/Chicago" }), b: fake({ events: [event("mb")] }) };
+      fakes.a.listEvents.mockImplementation(never);
+      const res = await acrossTheDeadline(
+        readWeek({ connections: [a, b], startDate: "2026-11-02", days: 7, adapters: lookup(fakes, [a, b]) }),
+      );
+      expect(res.events.map((e) => [e.id, e.connectionId])).toEqual([["mb", "b"]]);
+      expect(res.accounts).toEqual([
+        { connectionId: "a", error: "unavailable" },
+        { connectionId: "b", error: null },
+      ]);
+      const out = JSON.stringify(warn.mock.calls);
+      expect(out).toContain('"connectionId":"a"');
+      expect(out).toContain('"provider":"google"');
+      expect(out).not.toContain("secret-mail");
+    });
+
+    it("the to-dos: the hung account is unavailable, the other's to-dos still come back", async () => {
+      const a = conn("a", "google");
+      const b = conn("b", "microsoft");
+      const fakes = { a: fake(), b: fake({ todos: [todo("t1", "microsoft")] }) };
+      fakes.a.listOpenTodos.mockImplementation(never);
+      expect(await acrossTheDeadline(readTodos({ connections: [a, b], adapters: lookup(fakes, [a, b]) }))).toEqual([
+        { connectionId: "a", provider: "google", todos: null, error: "unavailable" },
+        { connectionId: "b", provider: "microsoft", todos: [todo("t1", "microsoft")], error: null },
+      ]);
+    });
+
+    it("the zone: a hung getTimeZone falls through to the next account, and is logged", async () => {
+      const a = conn("a", "google");
+      const b = conn("b", "microsoft");
+      const fakes = { a: fake(), b: fake({ tz: "Europe/Paris" }) };
+      fakes.a.getTimeZone.mockImplementation(never);
+      expect(await acrossTheDeadline(resolveDisplayZone([a, b], lookup(fakes, [a, b])))).toEqual({
+        timeZone: "Europe/Paris",
+        fallback: false,
+      });
+      expect(JSON.stringify(warn.mock.calls)).toContain('"connectionId":"a"');
     });
   });
 
