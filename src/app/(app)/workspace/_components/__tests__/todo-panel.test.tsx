@@ -262,6 +262,18 @@ describe("TodoPanel — Outlook's side", () => {
     await user.click(screen.getByRole("button", { name: "+ Add a to-do" }));
     expect(screen.getByRole("switch", { name: "Make it a Foundry task" })).toBeDisabled();
   });
+
+  it("addresses that couldn't be listed: Foundry tasks still listed, the notice says so, and new to-dos can only be Foundry tasks", async () => {
+    serverTodos = answer([FOUNDRY_TASK], [], "unavailable");
+    const user = userEvent.setup();
+    renderPanel([MS_ACCOUNT]);
+    expect(await screen.findByText("Prep Nguyen proposal")).toBeInTheDocument();
+    expect(screen.getByText("Couldn't load the to-dos from your connected addresses.")).toBeInTheDocument();
+    expect(screen.queryByText(/signed in as someone else/)).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "+ Add a to-do" }));
+    expect(screen.getByRole("switch", { name: "Make it a Foundry task" })).toBeDisabled();
+  });
 });
 
 describe("TodoPanel — checking one off", () => {

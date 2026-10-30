@@ -22,8 +22,8 @@ type AccountTodos = {
 type Loaded = {
   foundry: TaskListRow[];
   accounts: AccountTodos[];
-  /** Why the accounts' half is missing altogether: an ops "sign in as" session reads none. */
-  blocked: "impersonating" | null;
+  /** Why the accounts' half is missing altogether: an ops "sign in as" session reads none, or they couldn't be listed. */
+  blocked: "impersonating" | "unavailable" | null;
   /** Every account's to-dos in one list. */
   todos: AccountTodo[];
   today: string;
@@ -44,7 +44,10 @@ const NOTICE = "mb-3 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-
 const CHIP =
   "ml-1.5 inline-block rounded-full border border-hair-2 px-1.5 align-[1px] font-mono text-[9px] uppercase leading-[1.5] tracking-[0.08em] text-ink-3";
 
-const IMPERSONATING_NOTICE = "To-dos from your connected addresses are hidden while you're signed in as someone else.";
+const BLOCKED_NOTICES = {
+  impersonating: "To-dos from your connected addresses are hidden while you're signed in as someone else.",
+  unavailable: "Couldn't load the to-dos from your connected addresses.",
+} as const;
 
 const todoUrl = (o: { connectionId: string; listId: string; taskId: string }) =>
   `/api/workspace/accounts/${o.connectionId}/todos/${encodeURIComponent(o.listId)}/${encodeURIComponent(o.taskId)}`;
@@ -65,7 +68,7 @@ async function loadTodos(signal: AbortSignal): Promise<ListState> {
           kind: "ready",
           foundry: body.foundry as TaskListRow[],
           accounts,
-          blocked: body.blocked === "impersonating" ? "impersonating" : null,
+          blocked: body.blocked === "impersonating" || body.blocked === "unavailable" ? body.blocked : null,
           todos: accounts.flatMap((a) => (a.todos ?? []).map((t) => ({ ...t, connectionId: a.connectionId }))),
           today: localToday(),
         };
@@ -210,7 +213,7 @@ export function TodoPanel({
   const items = ready ? toTodoItems(ready.foundry, ready.todos, labels).filter((i) => !done.has(i.key)) : [];
   const groups = ready ? groupTodos(items, ready.today) : null;
   const openCount = items.filter((i) => !checking.has(i.key)).length;
-  // A new to-do can go to any connected address whose sign-in still works; none (or impersonating) leaves Foundry only.
+  // A new to-do can go to any connected address whose sign-in still works; none (or blocked) leaves Foundry only.
   const reconnecting = new Set(ready?.accounts.filter((a) => a.error === "needs_reconnect").map((a) => a.connectionId));
   const destinations =
     !ready || ready.blocked
@@ -259,7 +262,7 @@ export function TodoPanel({
         </div>
       ) : groups && ready ? (
         <>
-          {ready.blocked ? <p className={NOTICE}>{IMPERSONATING_NOTICE}</p> : null}
+          {ready.blocked ? <p className={NOTICE}>{BLOCKED_NOTICES[ready.blocked]}</p> : null}
           {notices.map(({ account, error }) => (
             <p key={account.id} className={NOTICE}>
               {error === "needs_reconnect" ? (

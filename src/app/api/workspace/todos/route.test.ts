@@ -70,12 +70,12 @@ describe("GET /api/workspace/todos", () => {
     expect(mocks.readTodos).not.toHaveBeenCalled();
   });
 
-  it("a connection that can't be read (e.g. a token that won't decrypt) never hides Foundry tasks, and logs its name only", async () => {
+  it("a connection that can't be read (e.g. a token that won't decrypt) never hides Foundry tasks, says so, and logs its name only", async () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     mocks.listActingConnections.mockRejectedValue(new Error("Unsupported state: secret detail"));
     const res = await GET();
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ foundry: FOUNDRY, accounts: [], blocked: null });
+    expect(await res.json()).toEqual({ foundry: FOUNDRY, accounts: [], blocked: "unavailable" });
     expect(spy).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(spy.mock.calls)).toContain("Error");
     expect(JSON.stringify(spy.mock.calls)).not.toContain("secret detail");

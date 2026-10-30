@@ -15,20 +15,20 @@ export const dynamic = "force-dynamic";
  * Every connected account's open to-dos, or that account's error. An
  * impersonation session reads no account, and says so as `blocked`. Any other
  * failure to list the accounts (e.g. a row whose token won't decrypt) is
- * logged by name only and reads as no accounts, so the Foundry tasks beside
- * them still load.
+ * logged by name only and is `blocked: "unavailable"`, so the Foundry tasks
+ * beside them still load.
  */
 async function loadAccounts(
   firmId: string,
   userId: string,
-): Promise<{ accounts: Awaited<ReturnType<typeof readTodos>>; blocked: "impersonating" | null }> {
+): Promise<{ accounts: Awaited<ReturnType<typeof readTodos>>; blocked: "impersonating" | "unavailable" | null }> {
   try {
     const connections = await listActingConnections({ firmId, actorUserId: userId });
     return { accounts: await readTodos({ connections }), blocked: null };
   } catch (err) {
     if (err instanceof WorkspaceImpersonationError) return { accounts: [], blocked: "impersonating" };
     console.error("Workspace to-dos: accounts failed:", safeErrorFields(err));
-    return { accounts: [], blocked: null };
+    return { accounts: [], blocked: "unavailable" };
   }
 }
 
