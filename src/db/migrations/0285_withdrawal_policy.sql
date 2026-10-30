@@ -1,0 +1,1 @@
+ALTER TABLE "plan_settings" ADD COLUMN "withdrawal_policy" jsonb;
