@@ -20,8 +20,7 @@ const mockGetConnection = vi.fn();
 const mockListOwned = vi.fn();
 const mockPlaidUsage = vi.fn();
 const mockApproval = vi.fn();
-const mockAccess = vi.fn();
-const mockSummaries = vi.fn();
+const mockFirmConnections = vi.fn();
 const mockMembers = vi.fn();
 
 vi.mock("@clerk/nextjs/server", () => ({ auth: () => mockAuth() }));
@@ -44,27 +43,33 @@ vi.mock("@/lib/integrations/plaid-usage", () => ({
 vi.mock("@/lib/workspace/approvals", () => ({
   getFirmApproval: (...a: unknown[]) => mockApproval(...a),
 }));
-vi.mock("@/lib/workspace/access", () => ({
-  listMemberAccess: (...a: unknown[]) => mockAccess(...a),
-}));
 vi.mock("@/lib/workspace/connections", () => ({
-  listFirmConnectionSummaries: (...a: unknown[]) => mockSummaries(...a),
+  listFirmConnections: (...a: unknown[]) => mockFirmConnections(...a),
 }));
 vi.mock("@/lib/crm-tasks/members", () => ({
   listFirmMembers: (...a: unknown[]) => mockMembers(...a),
 }));
-vi.mock("@/components/MicrosoftWorkspaceAdminCard", () => ({
-  MicrosoftWorkspaceAdminCard: (p: {
+vi.mock("@/components/WorkspaceAdminCard", () => ({
+  WorkspaceAdminCard: (p: {
     approval: { approvedAt: string } | null;
-    members: { userId: string; status: string; connectedEmail: string | null; enabled: boolean }[];
+    members: {
+      userId: string;
+      displayName: string;
+      accounts: { connectionId: string; provider: string; email: string; status: string }[];
+    }[];
     flash: string | null;
   }) => (
     <div
-      data-testid="ms-card"
+      data-testid="ws-card"
       data-approved-at={p.approval?.approvedAt ?? ""}
       data-flash={p.flash ?? ""}
       data-members={p.members
-        .map((m) => `${m.userId}:${m.status}:${m.connectedEmail ?? ""}:${m.enabled}`)
+        .map(
+          (m) =>
+            `${m.userId}=${m.displayName}=${m.accounts
+              .map((a) => `${a.connectionId}:${a.provider}:${a.email}:${a.status}`)
+              .join(",")}`,
+        )
         .join("|")}
     />
   ),
@@ -173,8 +178,7 @@ beforeEach(() => {
   mockListOwned.mockReset().mockResolvedValue([]);
   mockPlaidUsage.mockReset().mockResolvedValue({ clientCount: 0, institutionCount: 0 });
   mockApproval.mockReset().mockResolvedValue(null);
-  mockAccess.mockReset().mockResolvedValue(new Map());
-  mockSummaries.mockReset().mockResolvedValue([]);
+  mockFirmConnections.mockReset().mockResolvedValue([]);
   mockMembers.mockReset().mockResolvedValue([]);
 });
 
@@ -397,7 +401,7 @@ describe("Integration detail — the role gate", () => {
   });
 });
 
-describe("Integration detail — Microsoft 365", () => {
+describe("Integration detail — Calendar & to-dos (Workspace)", () => {
   beforeEach(() => vi.stubEnv("WORKSPACE_ENABLED", "true"));
 
   it("404s for everyone with the flag off, before the admin check or any read", async () => {
@@ -407,18 +411,25 @@ describe("Integration detail — Microsoft 365", () => {
     await expect(renderPage("microsoft_365")).rejects.toThrow("NEXT_NOT_FOUND");
     expect(mockApproval).not.toHaveBeenCalled();
     expect(mockMembers).not.toHaveBeenCalled();
+    expect(mockFirmConnections).not.toHaveBeenCalled();
   });
 
   it("shows a non-admin the forbidden page without reading anything", async () => {
     mockAuth.mockResolvedValue({ orgId: "org_acme", userId: "user_ana", orgRole: "org:member" });
     const { container } = await renderPage("microsoft_365");
-    expect(container.querySelector("[data-testid='ms-card']")).toBeNull();
+    expect(container.querySelector("[data-testid='ws-card']")).toBeNull();
     expect(container.textContent ?? "").toContain("Not available for your role");
     expect(mockApproval).not.toHaveBeenCalled();
     expect(mockMembers).not.toHaveBeenCalled();
+    expect(mockFirmConnections).not.toHaveBeenCalled();
   });
 
-  it("gives an admin the card with members merged from roster, access and connections", async () => {
+  it("is titled Calendar & to-dos", async () => {
+    const { getByRole } = await renderPage("microsoft_365");
+    expect(getByRole("heading", { level: 1 }).textContent).toBe("Calendar & to-dos");
+  });
+
+  it("gives an admin each member's connected addresses, every provider", async () => {
     mockApproval.mockResolvedValue({
       tenantId: "t",
       approvedScopes: "s",
@@ -427,39 +438,32 @@ describe("Integration detail — Microsoft 365", () => {
     mockMembers.mockResolvedValue([
       { userId: "u1", displayName: "Dana" },
       { userId: "u2", displayName: "Marcus" },
-      { userId: "u3", displayName: "Priya" },
-      { userId: "u4", displayName: "Sam" },
+      { userId: "u3", displayName: "Sam" },
     ]);
-    mockAccess.mockResolvedValue(
-      new Map([
-        ["u1", true],
-        ["u2", true],
-        ["u3", false],
-        ["u4", true],
-      ]),
-    );
-    mockSummaries.mockResolvedValue([
-      { userId: "u1", externalEmail: "dana@h.com", status: "connected" },
-      { userId: "u3", externalEmail: "priya@h.com", status: "connected" },
-      { userId: "u4", externalEmail: "sam@h.com", status: "needs_reconnect" },
+    mockFirmConnections.mockResolvedValue([
+      { id: "c1", userId: "u1", provider: "microsoft", email: "dana@h.com", status: "connected", connectedAt: "2026-10-01T00:00:00.000Z" },
+      { id: "c2", userId: "u3", provider: "microsoft", email: "sam@h.com", status: "needs_reconnect", connectedAt: "2026-10-02T00:00:00.000Z" },
+      { id: "c3", userId: "u1", provider: "google", email: "dana@gmail.com", status: "connected", connectedAt: "2026-10-03T00:00:00.000Z" },
     ]);
 
     const { container } = await renderPage("microsoft_365", { approved: "1" });
-    const card = container.querySelector("[data-testid='ms-card']");
+    const card = container.querySelector("[data-testid='ws-card']");
 
+    expect(mockFirmConnections).toHaveBeenCalledWith("org_acme");
     expect(mockApproval).toHaveBeenCalledWith("org_acme", "microsoft");
     expect(card?.getAttribute("data-approved-at")).toBe("2026-10-28T15:00:00.000Z");
     expect(card?.getAttribute("data-flash")).toBe("approved");
-    // Priya is off, so her email stays hidden even though a connection exists.
     expect(card?.getAttribute("data-members")).toBe(
-      "u1:connected:dana@h.com:true|u2:not_connected::true|u3:off::false|u4:needs_reconnect:sam@h.com:true",
+      "u1=Dana=c1:microsoft:dana@h.com:connected,c3:google:dana@gmail.com:connected" +
+        "|u2=Marcus=" +
+        "|u3=Sam=c2:microsoft:sam@h.com:needs_reconnect",
     );
   });
 
   it("maps the error query values to a flash, and anything else to none", async () => {
     const flash = async (sp: Record<string, string>) =>
       (await renderPage("microsoft_365", sp)).container
-        .querySelector("[data-testid='ms-card']")
+        .querySelector("[data-testid='ws-card']")
         ?.getAttribute("data-flash");
     expect(await flash({ error: "consent_declined" })).toBe("consent_declined");
     expect(await flash({ error: "consent_expired" })).toBe("consent_expired");

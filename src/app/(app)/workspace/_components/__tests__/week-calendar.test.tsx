@@ -2,21 +2,26 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { HouseholdLink } from "@/lib/workspace/client-links";
-import type { WorkspaceEvent } from "@/lib/workspace/types";
-import { WeekCalendar } from "../week-calendar";
+import { WeekCalendar, type WeekEvent } from "../week-calendar";
 
-type Row = WorkspaceEvent & { editable: boolean; household: HouseholdLink | null };
+type Row = WeekEvent;
+
+/** The connection every row comes from; a row's key is `${connectionId}:${id}`, as the route builds it. */
+const CONN = "conn-1";
 
 function row(over: Partial<Row> & Pick<Row, "id" | "start" | "end">): Row {
   return {
+    key: `${CONN}:${over.id}`,
+    connectionId: CONN,
+    provider: "microsoft",
     subject: over.id,
     isAllDay: false,
     isOrganizer: true,
     isCancelled: false,
     type: "singleInstance",
     attendees: [],
-    teamsUrl: null,
+    meetingUrl: null,
+    iCalUid: null,
     webLink: `https://outlook.office.com/calendar/item/${over.id}`,
     editable: true,
     household: null,
@@ -100,6 +105,38 @@ describe("WeekCalendar", () => {
     );
   });
 
+  it("a locked Google meeting names Google Calendar", () => {
+    render(
+      <WeekCalendar
+        {...noop}
+        weekStart="2026-10-26"
+        days={5}
+        today="2026-10-28"
+        events={[
+          row({
+            id: "training",
+            provider: "google",
+            webLink: "https://www.google.com/calendar/event?eid=abc",
+            subject: "Compliance training",
+            start: "2026-10-30T09:00",
+            end: "2026-10-30T10:30",
+            isOrganizer: false,
+            editable: false,
+          }),
+        ]}
+      />,
+    );
+    const lock = screen.getByRole("img", { name: "Organized by someone else" });
+    expect(lock.closest("[title]")).toHaveAttribute(
+      "title",
+      "You didn't organize this meeting — open it in Google Calendar to change it.",
+    );
+    expect(screen.getByRole("link", { name: "Compliance training" })).toHaveAttribute(
+      "href",
+      "https://www.google.com/calendar/event?eid=abc",
+    );
+  });
+
   it("a meeting the advisor organized has no lock", () => {
     render(
       <WeekCalendar
@@ -158,7 +195,7 @@ describe("WeekCalendar", () => {
     );
     screen.getByRole("button", { name: /Team huddle/ }).focus();
     await user.keyboard("{Enter}");
-    expect(onOpen).toHaveBeenCalledWith("huddle");
+    expect(onOpen).toHaveBeenCalledWith(`${CONN}:huddle`);
   });
 
   it("clicking a meeting the advisor organized opens it", async () => {
@@ -183,7 +220,7 @@ describe("WeekCalendar", () => {
     );
     await user.click(screen.getByRole("button", { name: /Team huddle/ }));
     expect(onOpen).toHaveBeenCalledTimes(1);
-    expect(onOpen).toHaveBeenCalledWith("huddle");
+    expect(onOpen).toHaveBeenCalledWith(`${CONN}:huddle`);
   });
 
   it("a meeting someone else organized is not a button, and Enter on it opens nothing", () => {
@@ -423,7 +460,7 @@ describe("WeekCalendar — dragging", () => {
     press(block, 0, 540);
     moveTo(block, 1, 600);
     release(1, 600);
-    expect(onMove).toHaveBeenCalledWith("huddle", "2026-10-27T10:00", "2026-10-27T10:30");
+    expect(onMove).toHaveBeenCalledWith(`${CONN}:huddle`, "2026-10-27T10:00", "2026-10-27T10:30");
   });
 
   it("dragging the bottom edge resizes, and a drop back where it was moves nothing", () => {
@@ -433,7 +470,7 @@ describe("WeekCalendar — dragging", () => {
     press(handle, 0, 570);
     moveTo(handle, 0, 600);
     release(0, 600);
-    expect(onMove).toHaveBeenCalledWith("huddle", "2026-10-26T09:00", "2026-10-26T10:00");
+    expect(onMove).toHaveBeenCalledWith(`${CONN}:huddle`, "2026-10-26T09:00", "2026-10-26T10:00");
 
     onMove.mockClear();
     press(block, 0, 540, 2);
@@ -461,7 +498,7 @@ describe("WeekCalendar — dragging", () => {
     moveTo(handle, 0, 600);
     release(0, 600);
     fireEvent.click(handle);
-    expect(onMove).toHaveBeenCalledWith("huddle", "2026-10-26T09:00", "2026-10-26T10:00");
+    expect(onMove).toHaveBeenCalledWith(`${CONN}:huddle`, "2026-10-26T09:00", "2026-10-26T10:00");
     expect(onOpen).not.toHaveBeenCalled();
   });
 
@@ -512,7 +549,7 @@ describe("WeekCalendar — dragging", () => {
     fireEvent.pointerDown(block, { pointerId: 3, pointerType: "pen", button: 0, buttons: 1, clientX: x(0), clientY: y(540) });
     fireEvent.pointerMove(block, { pointerId: 3, pointerType: "pen", buttons: 1, clientX: x(1), clientY: y(600) });
     fireEvent.pointerUp(calendar(), { pointerId: 3, pointerType: "pen", clientX: x(1), clientY: y(600) });
-    expect(onMove).toHaveBeenCalledWith("huddle", "2026-10-27T10:00", "2026-10-27T10:30");
+    expect(onMove).toHaveBeenCalledWith(`${CONN}:huddle`, "2026-10-27T10:00", "2026-10-27T10:30");
   });
 
   it("a move after a release it never heard about starts no drag", () => {
@@ -522,5 +559,72 @@ describe("WeekCalendar — dragging", () => {
     fireEvent.pointerMove(block, { pointerId: 1, buttons: 0, clientX: x(1), clientY: y(600) });
     release(1, 600);
     expect(onMove).not.toHaveBeenCalled();
+  });
+
+  describe("account labels (I4)", () => {
+    const EMAIL = "dan@foundryplanning.com";
+    const tags = new Map([[CONN, { label: "foundryplanning", email: EMAIL }]]);
+    const renderWith = (events: Row[], withTags = true) =>
+      render(
+        <WeekCalendar
+          {...noop}
+          weekStart="2026-10-26"
+          days={5}
+          events={events}
+          today="2026-10-28"
+          tags={withTags ? tags : null}
+        />,
+      );
+
+    it("an hour-long block shows its account's label on its own line, and its full address on hover", () => {
+      renderWith([row({ id: "standup", start: "2026-10-27T10:00", end: "2026-10-27T11:00" })]);
+      const label = screen.getByText("foundryplanning");
+      expect(label).not.toHaveClass("sr-only");
+      expect(label).toHaveClass("text-ink-4");
+      expect(boxOf("standup")).toHaveAttribute("title", EMAIL);
+    });
+
+    it("a 30-minute (compact) block shows the label on its subject line, visibly", () => {
+      renderWith([row({ id: "sync", start: "2026-10-27T10:00", end: "2026-10-27T10:30" })]);
+      const label = screen.getByText("· foundryplanning");
+      expect(label).not.toHaveClass("sr-only");
+      expect(label).toHaveClass("text-ink-4");
+      expect(label.parentElement).toHaveTextContent(/^sync · foundryplanning$/);
+      expect(screen.getAllByText(/foundryplanning/)).toHaveLength(1);
+      expect(screen.getByText("· foundryplanning").closest("[title]")).toHaveAttribute("title", EMAIL);
+    });
+
+    it("someone else's compact meeting shows the label too, and hovers its address before the lock hint", () => {
+      renderWith([
+        row({ id: "training", start: "2026-10-27T10:00", end: "2026-10-27T10:30", isOrganizer: false, editable: false }),
+      ]);
+      expect(screen.getByText("· foundryplanning")).not.toHaveClass("sr-only");
+      expect(screen.getByText("· foundryplanning").closest("[title]")).toHaveAttribute(
+        "title",
+        `${EMAIL}\nYou didn't organize this meeting — open it in Outlook to change it.`,
+      );
+    });
+
+    it("an all-day chip carries the label and its address on hover", () => {
+      renderWith([
+        row({ id: "offsite", subject: "Team offsite", start: "2026-10-27T00:00", end: "2026-10-28T00:00", isAllDay: true }),
+      ]);
+      const strip = screen.getByRole("group", { name: "All-day events" });
+      expect(within(strip).getByText("· foundryplanning")).toHaveClass("text-ink-4");
+      expect(within(strip).getByText("Team offsite").closest("[title]")).toHaveAttribute("title", EMAIL);
+    });
+
+    it("without tags (one account), no label and no address", () => {
+      renderWith(
+        [
+          row({ id: "standup", start: "2026-10-27T10:00", end: "2026-10-27T11:00" }),
+          row({ id: "sync", start: "2026-10-28T10:00", end: "2026-10-28T10:30" }),
+          row({ id: "offsite", start: "2026-10-29T00:00", end: "2026-10-30T00:00", isAllDay: true }),
+        ],
+        false,
+      );
+      expect(screen.queryByText(/foundryplanning/)).toBeNull();
+      expect(document.querySelector(`[title*="${EMAIL}"]`)).toBeNull();
+    });
   });
 });

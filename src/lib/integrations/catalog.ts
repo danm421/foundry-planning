@@ -10,7 +10,8 @@ import type { ProviderId } from "./types";
  *  registry entry — but it still gets a row and a page. */
 export type IntegrationSlug = ProviderId | "plaid" | "microsoft_365";
 
-export const MICROSOFT_365_LABEL = "Microsoft 365";
+/** Workspace's calendar & to-dos row. Its slug stays `microsoft_365` from phase 1. */
+export const WORKSPACE_LABEL = "Calendar & to-dos";
 
 export const PLAID_LABEL = "Plaid";
 
@@ -32,8 +33,8 @@ export const INTEGRATION_INFO: Record<IntegrationSlug, { category: string; blurb
     blurb: "Clients link their own bank, investment and loan accounts from the client portal.",
   },
   microsoft_365: {
-    category: "Calendar & to-dos",
-    blurb: "Bring your advisors' Outlook calendars and Microsoft To Do lists into Workspace.",
+    category: "Workspace",
+    blurb: "Your advisors' Google and Outlook calendars and to-do lists, in Workspace.",
   },
   azure_openai: {
     category: "AI",

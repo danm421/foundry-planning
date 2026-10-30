@@ -4,16 +4,14 @@ import { notFound } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { getConnection, listOwnedConnections } from "@/lib/integrations/connections";
 import { getProvider, isProviderId } from "@/lib/integrations/registry";
-import { INTEGRATION_INFO, MICROSOFT_365_LABEL, PLAID_LABEL, type IntegrationSlug } from "@/lib/integrations/catalog";
+import { INTEGRATION_INFO, PLAID_LABEL, WORKSPACE_LABEL, type IntegrationSlug } from "@/lib/integrations/catalog";
 import { getPlaidUsage } from "@/lib/integrations/plaid-usage";
 import { decodeAzureConfig, type AzureConfig } from "@/lib/ai/credentials";
 import { getFirmApproval } from "@/lib/workspace/approvals";
-import { listMemberAccess } from "@/lib/workspace/access";
-import { listFirmConnectionSummaries } from "@/lib/workspace/connections";
+import { listFirmConnections } from "@/lib/workspace/connections";
 import { isWorkspaceEnabled } from "@/lib/workspace/flag";
-import { memberStatus } from "@/lib/workspace/member-status";
 import { listFirmMembers } from "@/lib/crm-tasks/members";
-import { MicrosoftWorkspaceAdminCard } from "@/components/MicrosoftWorkspaceAdminCard";
+import { WorkspaceAdminCard } from "@/components/WorkspaceAdminCard";
 import { IntegrationConnectionList } from "@/components/IntegrationConnectionList";
 import { PlaidIntegrationTile } from "@/components/PlaidIntegrationTile";
 import { AzureOpenAiCard } from "@/components/AzureOpenAiCard";
@@ -39,34 +37,30 @@ export default async function IntegrationDetailPage({ params, searchParams }: Pr
 
   const { integration: slug } = await params;
 
-  // Microsoft 365 is firm-wide too. The flag is checked first so a switched-off
-  // Workspace has no page for anyone, then the admin gate, then the reads.
+  // Workspace (calendar & to-dos; slug `microsoft_365` from phase 1) is
+  // firm-wide too. The flag is checked first so a switched-off Workspace has
+  // no page for anyone, then the admin gate, then the reads.
   if (slug === "microsoft_365") {
     if (!isWorkspaceEnabled()) notFound();
     if (!isAdmin) return <Forbidden requiredRole="admin or owner" />;
-    const [approval, roster, access, summaries, sp] = await Promise.all([
+    const [approval, roster, connections, sp] = await Promise.all([
       getFirmApproval(firmId, "microsoft"),
       listFirmMembers(firmId),
-      listMemberAccess(firmId, "microsoft"),
-      listFirmConnectionSummaries(firmId, "microsoft"),
+      listFirmConnections(firmId),
       searchParams ?? Promise.resolve({}),
     ]);
-    const members = roster.map((m) => {
-      const enabled = access.get(m.userId) === true;
-      const summary = summaries.find((c) => c.userId === m.userId) ?? null;
-      return {
-        userId: m.userId,
-        displayName: m.displayName,
-        status: memberStatus({ enabled, connection: summary }),
-        connectedEmail: enabled && summary ? summary.externalEmail : null,
-        enabled,
-      };
-    });
+    const members = roster.map((m) => ({
+      userId: m.userId,
+      displayName: m.displayName,
+      accounts: connections
+        .filter((c) => c.userId === m.userId)
+        .map((c) => ({ connectionId: c.id, provider: c.provider, email: c.email, status: c.status })),
+    }));
     return (
-      <DetailShell slug="microsoft_365" label={MICROSOFT_365_LABEL}>
-        <MicrosoftWorkspaceAdminCard
-          approval={approval ? { approvedAt: approval.approvedAt.toISOString() } : null}
+      <DetailShell slug="microsoft_365" label={WORKSPACE_LABEL}>
+        <WorkspaceAdminCard
           members={members}
+          approval={approval ? { approvedAt: approval.approvedAt.toISOString() } : null}
           flash={microsoftFlash(sp)}
         />
       </DetailShell>

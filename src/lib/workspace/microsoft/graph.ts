@@ -1,33 +1,34 @@
 // src/lib/workspace/microsoft/graph.ts
 import type { WorkspaceConnection } from "../connections";
-import { GraphRequestError, GraphThrottledError } from "../errors";
+import { ProviderRequestError, ProviderThrottledError } from "../errors";
+import { MAX_BUSY_RETRIES, defaultSleep, discardBody, hasDotSegment, retryAfterMs } from "../provider-http";
 import { getAccessToken } from "./token";
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
 /** Graph's "busy" answers: throttled, unavailable, gateway timeout. */
 const BUSY_STATUSES = new Set([429, 503, 504]);
-const MAX_BUSY_RETRIES = 2;
-const DEFAULT_RETRY_AFTER_SEC = 1;
-const MAX_RETRY_AFTER_SEC = 5;
 
 export type GraphContext = {
   conn: WorkspaceConnection;
   fetchImpl?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
+  /** Cancels the Graph requests (not a token refresh) once it aborts. */
+  signal?: AbortSignal;
 };
-
-const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
  * One Graph call, acting with `ctx.conn`. `path` is relative to v1.0 and
  * starts with `/`. `timeZone` (a Windows or IANA name) asks Graph for
  * wall-clock times in that zone via `Prefer: outlook.timezone`.
  *
+ * - A `.` or `..` path segment (an id that would climb to the parent path,
+ *   e.g. `/me/events/..` is `/me`) throws `ProviderRequestError` 404 before
+ *   any request.
  * - A 401 forces one token refresh and one retry.
  * - A 429/503/504 waits `Retry-After` seconds (default 1, at most 5) and
- *   retries up to twice, then throws `GraphThrottledError`.
- * - Any other non-2xx throws `GraphRequestError` with Graph's `error.code`.
+ *   retries up to twice, then throws `ProviderThrottledError`.
+ * - Any other non-2xx throws `ProviderRequestError` with Graph's `error.code`.
  *   The body is read for that code only; it is never logged or kept.
  *
  * Retries resend `init.body`, so pass a string, not a stream.
@@ -37,6 +38,7 @@ export async function graphFetch(
   path: string,
   init: RequestInit & { timeZone?: string } = {},
 ): Promise<Response> {
+  if (hasDotSegment(path)) throw new ProviderRequestError("microsoft", 404, null, null);
   const { timeZone, ...requestInit } = init;
   const fetchImpl = ctx.fetchImpl ?? fetch;
   const sleep = ctx.sleep ?? defaultSleep;
@@ -49,7 +51,7 @@ export async function graphFetch(
     headers.set("authorization", `Bearer ${token}`);
     if (timeZone) headers.append("prefer", `outlook.timezone="${timeZone}"`);
 
-    const res = await fetchImpl(`${GRAPH_BASE}${path}`, { ...requestInit, headers });
+    const res = await fetchImpl(`${GRAPH_BASE}${path}`, { ...requestInit, headers, signal: ctx.signal });
     if (res.ok) return res;
 
     const requestId = res.headers.get("request-id");
@@ -61,12 +63,12 @@ export async function graphFetch(
     }
     if (BUSY_STATUSES.has(res.status)) {
       await discardBody(res);
-      if (busyRetries >= MAX_BUSY_RETRIES) throw new GraphThrottledError(requestId);
+      if (busyRetries >= MAX_BUSY_RETRIES) throw new ProviderThrottledError("microsoft", requestId);
       busyRetries++;
       await sleep(retryAfterMs(res.headers.get("retry-after")));
       continue;
     }
-    throw new GraphRequestError(res.status, await readGraphCode(res), requestId);
+    throw new ProviderRequestError("microsoft", res.status, await readGraphCode(res), requestId);
   }
 }
 
@@ -113,13 +115,6 @@ export async function graphPages<T>(
   return items;
 }
 
-/** `Retry-After` in seconds; 0 is valid. Missing or unparseable → the default. */
-function retryAfterMs(header: string | null): number {
-  const sec = header === null || header.trim() === "" ? NaN : Number(header);
-  const wait = Number.isFinite(sec) && sec >= 0 ? sec : DEFAULT_RETRY_AFTER_SEC;
-  return Math.min(wait, MAX_RETRY_AFTER_SEC) * 1000;
-}
-
 /** Graph's `error.code`, or null. Never throws, and never lets the body out. */
 async function readGraphCode(res: Response): Promise<string | null> {
   try {
@@ -129,9 +124,4 @@ async function readGraphCode(res: Response): Promise<string | null> {
   } catch {
     return null;
   }
-}
-
-/** Frees the connection of a response we won't read before retrying. */
-async function discardBody(res: Response): Promise<void> {
-  await res.body?.cancel().catch(() => {});
 }

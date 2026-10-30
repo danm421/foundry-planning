@@ -16,15 +16,18 @@ const BLANK = {
   start: "2026-10-28T09:00",
   end: "2026-10-28T09:30",
   attendees: [],
-  teamsUrl: null,
+  meetingUrl: null,
 };
+
+const MS = { id: "ms-1", provider: "microsoft" as const, email: "dana@hartwell.com" };
+const GOOGLE = { id: "g-1", provider: "google" as const, email: "dana@gmail.com" };
 
 const REVIEW = {
   subject: "Annual review",
   start: "2026-10-27T10:00",
   end: "2026-10-27T11:30",
   attendees: ["pat@example.com"],
-  teamsUrl: "https://teams.microsoft.com/l/meetup-join/abc",
+  meetingUrl: "https://teams.microsoft.com/l/meetup-join/abc",
 };
 
 beforeEach(() => {
@@ -47,7 +50,9 @@ describe("EventEditorDialog — create", () => {
   it("submits the subject, the times, the attendees and the Teams choice", async () => {
     const onSave = vi.fn(async () => {});
     const user = userEvent.setup();
-    render(<EventEditorDialog mode="create" initial={BLANK} onSave={onSave} onClose={() => {}} />);
+    render(
+      <EventEditorDialog mode="create" accounts={[MS]} initial={BLANK} onSave={onSave} onClose={() => {}} />,
+    );
 
     await user.type(screen.getByLabelText("Subject"), "Plan review");
     fireEvent.change(screen.getByLabelText("Start"), {
@@ -61,11 +66,12 @@ describe("EventEditorDialog — create", () => {
     await user.click(save());
 
     expect(onSave).toHaveBeenCalledWith({
+      connectionId: "ms-1",
       subject: "Plan review",
       start: "2026-10-28T14:00",
       end: "2026-10-28T14:30",
       attendees: ["pat@example.com"],
-      teams: true,
+      video: true,
     });
   });
 
@@ -197,7 +203,105 @@ describe("EventEditorDialog — create", () => {
   });
 });
 
+describe("EventEditorDialog — which calendar", () => {
+  const two = [MS, GOOGLE];
+  const renderCreate = (onSave = vi.fn(async () => {}), accounts = two) =>
+    render(
+      <EventEditorDialog
+        mode="create"
+        accounts={accounts}
+        initial={{ ...BLANK, subject: "Call" }}
+        onSave={onSave}
+        onClose={() => {}}
+      />,
+    );
+
+  beforeEach(() => localStorage.clear());
+
+  it("with two accounts, picking Google offers a Meet link and saves to Google", async () => {
+    const onSave = vi.fn(async () => {});
+    const user = userEvent.setup();
+    renderCreate(onSave);
+    expect(screen.getByLabelText("Add a Teams link")).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Calendar"), "g-1");
+    await user.click(screen.getByLabelText("Add a Google Meet link"));
+    await user.click(save());
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ connectionId: "g-1", video: true }));
+    expect(localStorage.getItem("workspace.lastAccount")).toBe("g-1");
+  });
+
+  it("(M12) lists each calendar by its full address", () => {
+    renderCreate();
+    const options = within(screen.getByLabelText("Calendar")).getAllByRole("option");
+    expect(options.map((o) => [o.getAttribute("value"), o.textContent])).toEqual([
+      ["ms-1", "dana@hartwell.com"],
+      ["g-1", "dana@gmail.com"],
+    ]);
+  });
+
+  it("with one account there is no select", () => {
+    renderCreate(vi.fn(), [GOOGLE]);
+    expect(screen.queryByLabelText("Calendar")).toBeNull();
+    expect(screen.getByLabelText("Add a Google Meet link")).toBeInTheDocument();
+  });
+
+  it("starts on the last account used, when it is still offered", () => {
+    localStorage.setItem("workspace.lastAccount", "g-1");
+    renderCreate();
+    expect(screen.getByLabelText("Calendar")).toHaveValue("g-1");
+  });
+
+  it("ignores a last account that is no longer offered", () => {
+    localStorage.setItem("workspace.lastAccount", "gone");
+    renderCreate();
+    expect(screen.getByLabelText("Calendar")).toHaveValue("ms-1");
+  });
+});
+
 describe("EventEditorDialog — edit", () => {
+  it("(I4) names the meeting's calendar by its full address, read-only", () => {
+    render(
+      <EventEditorDialog
+        mode="edit"
+        provider="google"
+        calendar="dana@gmail.com"
+        initial={REVIEW}
+        onSave={vi.fn()}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.getByText("Calendar")).toBeInTheDocument();
+    expect(screen.getByText("dana@gmail.com")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox")).toBeNull();
+  });
+
+  it("(I4) without an address (one account), no Calendar line", () => {
+    render(<EventEditorDialog mode="edit" initial={REVIEW} onSave={vi.fn()} onClose={() => {}} />);
+    expect(screen.queryByText("Calendar")).toBeNull();
+  });
+
+  it("a Google meeting shows the Meet link, and Cancel says Google Calendar", async () => {
+    const user = userEvent.setup();
+    render(
+      <EventEditorDialog
+        mode="edit"
+        provider="google"
+        initial={{ ...REVIEW, meetingUrl: "https://meet.google.com/abc-defg-hij" }}
+        onSave={vi.fn()}
+        onCancelMeeting={vi.fn()}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.getByRole("link", { name: /Join the Google Meet/ })).toHaveAttribute(
+      "href",
+      "https://meet.google.com/abc-defg-hij",
+    );
+    await user.click(screen.getByRole("button", { name: "Cancel meeting" }));
+    expect(
+      screen.getByText("Cancel this meeting? Everyone invited gets a cancellation from Google Calendar."),
+    ).toBeInTheDocument();
+  });
+
   it("shows the subject read-only, the attendees and the Teams link", () => {
     render(
       <EventEditorDialog
@@ -214,7 +318,7 @@ describe("EventEditorDialog — edit", () => {
     expect(screen.queryByLabelText("Add a Teams link")).toBeNull();
     expect(screen.getByRole("link", { name: /Join the Teams meeting/ })).toHaveAttribute(
       "href",
-      REVIEW.teamsUrl,
+      REVIEW.meetingUrl,
     );
   });
 

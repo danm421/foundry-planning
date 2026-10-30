@@ -3,25 +3,41 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactElement } from "react";
 import { z } from "zod";
 import DialogShell from "@/components/dialog-shell";
-import { checkboxClassName, fieldLabelClassName, inputClassName } from "@/components/forms/input-styles";
+import { checkboxClassName, fieldLabelClassName, inputClassName, selectClassName } from "@/components/forms/input-styles";
 import { ExternalLinkIcon, XIcon } from "@/components/icons";
-import type { AttendeeSuggestion, WallClock } from "@/lib/workspace/types";
+import type { AccountSummary, AttendeeSuggestion, WallClock, WorkspaceProvider } from "@/lib/workspace/types";
 import { addDays, daysBetween, minutesOfTime, monthDay, timeOf, toWallClock } from "@/lib/workspace/week";
 
-/** What Save hands back — exactly `POST /api/workspace/events`'s body. */
+/** What Save hands back: the account it goes to, plus the create route's body. */
 export type EventDraft = {
+  connectionId: string;
   subject: string;
   start: WallClock;
   end: WallClock;
   attendees: string[];
-  teams: boolean;
+  video: boolean;
 };
 
 const FORM_ID = "workspace-event-editor";
 const MAX_ATTENDEES = 50; // createEventSchema's cap
 const SUGGEST_DELAY_MS = 200;
 const BAD_TIMES = "End time must be after the start time.";
-const CONFIRM_CANCEL = "Cancel this meeting? Everyone invited gets a cancellation from Outlook.";
+const LAST_ACCOUNT_KEY = "workspace.lastAccount";
+const CONFIRM_CANCEL: Record<WorkspaceProvider, string> = {
+  microsoft: "Cancel this meeting? Everyone invited gets a cancellation from Outlook.",
+  google: "Cancel this meeting? Everyone invited gets a cancellation from Google Calendar.",
+};
+const VIDEO_LABEL: Record<WorkspaceProvider, string> = {
+  microsoft: "Add a Teams link",
+  google: "Add a Google Meet link",
+};
+const JOIN_LABEL: Record<WorkspaceProvider, string> = {
+  microsoft: "Join the Teams meeting",
+  google: "Join the Google Meet",
+};
+
+/** An address a new meeting can go on; the `Calendar` select lists each by its full address. */
+export type EditorAccount = Pick<AccountSummary, "id" | "provider" | "email">;
 const SAVE_FAILED = "Couldn't save the meeting. Try again.";
 const CANCEL_FAILED = "Couldn't cancel the meeting. Try again.";
 
@@ -54,18 +70,27 @@ const hasEmail = (list: string[], email: string) => list.some((a) => a.toLowerCa
 
 export function EventEditorDialog({
   mode,
+  accounts = [],
+  provider = "microsoft",
+  calendar,
   initial,
   onSave,
   onCancelMeeting,
   onClose,
 }: {
   mode: "create" | "edit";
+  /** Create: the connected, visible accounts a meeting can go on. */
+  accounts?: EditorAccount[];
+  /** Edit: the provider that holds the meeting. */
+  provider?: WorkspaceProvider;
+  /** Edit: the address that holds the meeting, shown read-only; given with 2+ accounts, as the create select is. */
+  calendar?: string;
   initial: {
     subject: string;
     start: WallClock;
     end: WallClock;
     attendees: string[];
-    teamsUrl: string | null;
+    meetingUrl: string | null;
   };
   /** Rejects to keep the dialog open with an error; the caller closes it on success. */
   onSave: (input: EventDraft) => Promise<void>;
@@ -82,7 +107,27 @@ export function EventEditorDialog({
   const [span, setSpan] = useState(() => spanOf(initial.start, initial.end));
   const [attendees, setAttendees] = useState(initial.attendees);
   const [typed, setTyped] = useState("");
-  const [teams, setTeams] = useState(false);
+  const [video, setVideo] = useState(false);
+  // Opens on the last account used here, else the first; storage is client-only and this dialog never server-renders.
+  const [accountId, setAccountId] = useState(() => {
+    try {
+      const last = localStorage.getItem(LAST_ACCOUNT_KEY);
+      if (last && accounts.some((a) => a.id === last)) return last;
+    } catch {
+      // Storage blocked: the first account.
+    }
+    return accounts[0]?.id ?? "";
+  });
+  const account = accounts.find((a) => a.id === accountId) ?? accounts[0];
+  const kind = account?.provider ?? provider;
+  function pickAccount(id: string) {
+    setAccountId(id);
+    try {
+      localStorage.setItem(LAST_ACCOUNT_KEY, id);
+    } catch {
+      // Storage blocked: the choice lasts for this dialog only.
+    }
+  }
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -129,11 +174,12 @@ export function EventEditorDialog({
     setError(null);
     try {
       await onSave({
+        connectionId: account?.id ?? "",
         subject: subject.trim(),
         start: `${date}T${startTime}`,
         end: toWallClock(date, endAt),
         attendees: invite,
-        teams: creating && teams,
+        video: creating && video,
       });
     } catch {
       setError(SAVE_FAILED);
@@ -168,7 +214,7 @@ export function EventEditorDialog({
       <DialogShell open onOpenChange={(open) => !open && onClose()} title="Edit event" size="sm">
         <div className="flex flex-col gap-4">
           <p role="alert" className="text-[14px] text-ink-2">
-            {CONFIRM_CANCEL}
+            {CONFIRM_CANCEL[kind]}
           </p>
           {errorLine}
           <div className="flex justify-end gap-2">
@@ -222,6 +268,31 @@ export function EventEditorDialog({
       }
     >
       <form id={FORM_ID} noValidate onSubmit={submit} className="flex flex-col gap-4">
+        {creating && accounts.length >= 2 ? (
+          <div>
+            <label htmlFor={field("account")} className={fieldLabelClassName}>
+              Calendar
+            </label>
+            <select
+              id={field("account")}
+              className={selectClassName}
+              value={account?.id}
+              onChange={(e) => pickAccount(e.target.value)}
+            >
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.email}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : !creating && calendar ? (
+          <div>
+            <p className={fieldLabelClassName}>Calendar</p>
+            <p className="text-[14px] text-ink">{calendar}</p>
+          </div>
+        ) : null}
+
         {creating ? (
           <div>
             <label htmlFor={field("subject")} className={fieldLabelClassName}>
@@ -316,19 +387,19 @@ export function EventEditorDialog({
             <input
               type="checkbox"
               className={checkboxClassName}
-              checked={teams}
-              onChange={(e) => setTeams(e.target.checked)}
+              checked={video}
+              onChange={(e) => setVideo(e.target.checked)}
             />
-            Add a Teams link
+            {VIDEO_LABEL[kind]}
           </label>
-        ) : initial.teamsUrl?.startsWith("https://") ? (
+        ) : initial.meetingUrl?.startsWith("https://") ? (
           <a
-            href={initial.teamsUrl}
+            href={initial.meetingUrl}
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-1.5 self-start text-[14px] text-ink-2 hover:text-ink hover:underline"
           >
-            Join the Teams meeting
+            {JOIN_LABEL[kind]}
             <ExternalLinkIcon width={13} height={13} aria-hidden="true" />
           </a>
         ) : null}

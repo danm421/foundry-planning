@@ -153,10 +153,35 @@ describe("GET /api/workspace/microsoft/admin-consent/callback", () => {
     expect(mocks.upsertFirmApproval).not.toHaveBeenCalled();
   });
 
-  it("no state param → expired, and nothing is consumed", async () => {
+  // The IT approval link (buildItApprovalUrl) carries no state: any
+  // organization's admin can use it, and Foundry records nothing.
+  it("no state at all (the IT approval link) + admin_consent=True for a real tenant → approved, nothing recorded", async () => {
+    mocks.auth.mockResolvedValue({ userId: "user_admin", orgId: "org_1" });
     const res = await GET(callback({ tenant: TENANT, admin_consent: "True" }));
-    expect(target(res)).toBe("/microsoft-approval?result=expired");
+    expect(res.status).toBe(307);
+    expect(target(res)).toBe("/microsoft-approval?result=approved");
     expect(mocks.consumeWorkspaceOauthState).not.toHaveBeenCalled();
+    expect(mocks.upsertFirmApproval).not.toHaveBeenCalled();
+    expect(mocks.recordAudit).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["error=access_denied", { error: "access_denied", error_description: "AADSTS65004", tenant: TENANT }],
+    ["admin_consent missing", { tenant: TENANT }],
+    ["admin_consent=False", { tenant: TENANT, admin_consent: "False" }],
+    ["a non-GUID tenant", { tenant: "common", admin_consent: "True" }],
+    ["no tenant", { admin_consent: "True" }],
+  ])("the IT approval link with %s → declined, nothing recorded", async (_label, params) => {
+    const res = await GET(callback(params));
+    expect(target(res)).toBe("/microsoft-approval?result=declined");
+    expect(mocks.consumeWorkspaceOauthState).not.toHaveBeenCalled();
+    expect(mocks.upsertFirmApproval).not.toHaveBeenCalled();
+    expect(mocks.recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("a state that's present but empty → expired, not the IT approval link", async () => {
+    const res = await GET(callback({ ...approvedParams, state: "" }));
+    expect(target(res)).toBe("/microsoft-approval?result=expired");
     expect(mocks.upsertFirmApproval).not.toHaveBeenCalled();
   });
 

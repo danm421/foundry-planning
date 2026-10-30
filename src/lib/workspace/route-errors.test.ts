@@ -4,12 +4,15 @@ import { ForbiddenError } from "@/lib/authz";
 import { UnauthorizedError } from "@/lib/db-helpers";
 import { workspaceErrorResponse } from "./route-errors";
 import {
-  GraphRequestError,
-  GraphThrottledError,
+  ProviderRequestError,
+  ProviderThrottledError,
+  WorkspaceConnectionNotFoundError,
+  WorkspaceImpersonationError,
   WorkspaceNotConnectedError,
   WorkspaceReconnectRequiredError,
 } from "./errors";
 import { MicrosoftAuthError } from "./microsoft/oauth";
+import { GoogleAuthError } from "./google/oauth";
 
 async function read(res: Response): Promise<{ status: number; body: unknown }> {
   return { status: res.status, body: await res.json() };
@@ -31,15 +34,28 @@ describe("workspaceErrorResponse", () => {
     return JSON.stringify(consoleError.mock.calls);
   }
 
-  it.each(["firm_not_approved", "member_off", "connect"] as const)(
-    "WorkspaceNotConnectedError %s → 409 with the pane state",
-    async (state) => {
-      expect(await read(workspaceErrorResponse(new WorkspaceNotConnectedError(state)))).toEqual({
-        status: 409,
-        body: { error: state },
-      });
-    },
-  );
+  it("WorkspaceNotConnectedError → 409 connect", async () => {
+    expect(await read(workspaceErrorResponse(new WorkspaceNotConnectedError("connect")))).toEqual({
+      status: 409,
+      body: { error: "connect" },
+    });
+  });
+
+  it("(Review Focus 5) WorkspaceImpersonationError → 403 impersonating", async () => {
+    expect(await read(workspaceErrorResponse(new WorkspaceImpersonationError()))).toEqual({
+      status: 403,
+      body: { error: "impersonating" },
+    });
+    expect(consoleError).not.toHaveBeenCalled();
+  });
+
+  it("WorkspaceConnectionNotFoundError → 404 not_found", async () => {
+    expect(await read(workspaceErrorResponse(new WorkspaceConnectionNotFoundError()))).toEqual({
+      status: 404,
+      body: { error: "not_found" },
+    });
+    expect(consoleError).not.toHaveBeenCalled();
+  });
 
   it("(Review Focus 1) WorkspaceReconnectRequiredError → 409 needs_reconnect", async () => {
     expect(await read(workspaceErrorResponse(new WorkspaceReconnectRequiredError()))).toEqual({
@@ -48,22 +64,29 @@ describe("workspaceErrorResponse", () => {
     });
   });
 
-  it("(Review Focus 2) GraphThrottledError → 503 throttled", async () => {
-    expect(await read(workspaceErrorResponse(new GraphThrottledError("req-1")))).toEqual({
+  it.each(["microsoft", "google"] as const)("(Review Focus 2) ProviderThrottledError (%s) → 503 throttled", async (provider) => {
+    expect(await read(workspaceErrorResponse(new ProviderThrottledError(provider, null)))).toEqual({
       status: 503,
       body: { error: "throttled" },
     });
   });
 
-  it("GraphRequestError 403 → 403 not_allowed", async () => {
-    expect(await read(workspaceErrorResponse(new GraphRequestError(403, "ErrorAccessDenied", "req-1")))).toEqual({
+  it("ProviderRequestError 403 → 403 not_allowed", async () => {
+    expect(await read(workspaceErrorResponse(new ProviderRequestError("microsoft", 403, "ErrorAccessDenied", "req-1")))).toEqual({
       status: 403,
       body: { error: "not_allowed" },
     });
   });
 
-  it("GraphRequestError 404 → 404 not_found", async () => {
-    expect(await read(workspaceErrorResponse(new GraphRequestError(404, "ErrorItemNotFound", "req-1")))).toEqual({
+  it("ProviderRequestError 404 → 404 not_found", async () => {
+    expect(await read(workspaceErrorResponse(new ProviderRequestError("microsoft", 404, "ErrorItemNotFound", "req-1")))).toEqual({
+      status: 404,
+      body: { error: "not_found" },
+    });
+  });
+
+  it("ProviderRequestError 410 (Google's deleted event) → 404 not_found", async () => {
+    expect(await read(workspaceErrorResponse(new ProviderRequestError("google", 410, "deleted", null)))).toEqual({
       status: 404,
       body: { error: "not_found" },
     });
@@ -81,14 +104,37 @@ describe("workspaceErrorResponse", () => {
     expect(consoleError).not.toHaveBeenCalled();
   });
 
-  it("any other GraphRequestError → 500, logging its name, status and request-id only", async () => {
-    const res = workspaceErrorResponse(new GraphRequestError(400, "ErrorInvalidRequest", "req-400"));
+  it("any other ProviderRequestError → 500, logging its name, status and request-id only", async () => {
+    const res = workspaceErrorResponse(new ProviderRequestError("microsoft", 400, "ErrorInvalidRequest", "req-400"));
 
     expect(await read(res)).toEqual({ status: 500, body: { error: "Internal server error" } });
     expect(consoleError).toHaveBeenCalledTimes(1);
-    expect(logged()).toContain("GraphRequestError");
+    expect(logged()).toContain("ProviderRequestError");
     expect(logged()).toContain("400");
     expect(logged()).toContain("req-400");
+  });
+
+  it("a Google ProviderRequestError logs its provider and status", async () => {
+    const res = workspaceErrorResponse(new ProviderRequestError("google", 400, "badRequest", null));
+
+    expect(await read(res)).toEqual({ status: 500, body: { error: "Internal server error" } });
+    expect(consoleError).toHaveBeenCalledWith(expect.any(String), {
+      name: "ProviderRequestError",
+      provider: "google",
+      status: 400,
+      requestId: null,
+      code: "badRequest",
+    });
+  });
+
+  it("(R15) a ProviderRequestError with no code omits the code field", async () => {
+    workspaceErrorResponse(new ProviderRequestError("google", 400, null, null));
+    expect(consoleError).toHaveBeenCalledWith(expect.any(String), {
+      name: "ProviderRequestError",
+      provider: "google",
+      status: 400,
+      requestId: null,
+    });
   });
 
   it("an unknown error → 500, logging its name and never its message", async () => {
@@ -114,7 +160,22 @@ describe("workspaceErrorResponse", () => {
     const res = workspaceErrorResponse(new MicrosoftAuthError("invalid_client", 401));
 
     expect(await read(res)).toEqual({ status: 500, body: { error: "Internal server error" } });
-    expect(consoleError).toHaveBeenCalledWith(expect.any(String), { name: "MicrosoftAuthError", code: "invalid_client" });
+    expect(consoleError).toHaveBeenCalledWith(expect.any(String), {
+      name: "MicrosoftAuthError",
+      provider: "microsoft",
+      code: "invalid_client",
+    });
+  });
+
+  it("a Google sign-in failure → 500, logging Google's short code and never its description", async () => {
+    const res = workspaceErrorResponse(new GoogleAuthError("invalid_client", 401));
+
+    expect(await read(res)).toEqual({ status: 500, body: { error: "Internal server error" } });
+    expect(consoleError).toHaveBeenCalledWith(expect.any(String), {
+      name: "GoogleAuthError",
+      provider: "google",
+      code: "invalid_client",
+    });
   });
 
   it("a thrown non-Error → 500 without crashing the mapper", async () => {

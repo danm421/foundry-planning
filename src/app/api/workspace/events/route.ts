@@ -1,16 +1,13 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { recordAudit } from "@/lib/audit";
-import { requireActiveSubscription } from "@/lib/authz";
 import { requireOrgAndUser } from "@/lib/db-helpers";
-import { parseBody } from "@/lib/schemas/common";
 import { findHouseholdsByEmail, linkEventHousehold } from "@/lib/workspace/client-links";
-import { resolveActingConnection } from "@/lib/workspace/acting-connection";
+import { listActingConnections } from "@/lib/workspace/acting-connection";
+import { WorkspaceNotConnectedError } from "@/lib/workspace/errors";
 import { isWorkspaceEnabled } from "@/lib/workspace/flag";
-import { canEditEvent, createEvent, getMailboxTimeZone, listEvents } from "@/lib/workspace/microsoft/calendar";
-import type { GraphContext } from "@/lib/workspace/microsoft/graph";
+import { canEditEvent } from "@/lib/workspace/provider-adapter";
+import { readWeek } from "@/lib/workspace/readers";
 import { workspaceErrorResponse } from "@/lib/workspace/route-errors";
-import { createEventSchema } from "@/lib/workspace/schemas";
 
 export const dynamic = "force-dynamic";
 
@@ -21,59 +18,47 @@ function isMonday(date: string): boolean {
   return !Number.isNaN(d.getTime()) && d.toISOString().startsWith(date) && d.getUTCDay() === 1;
 }
 
-/** The signed-in advisor's Outlook week (Monday start) with household links. */
+/**
+ * The signed-in advisor's week (Monday start) across every connected account
+ * they haven't hidden (`hidden=<id>,<id>`), in one display time zone, with
+ * household links. One account failing is that account's `error` in
+ * `accounts`, never a failed week. Hidden ids only ever narrow the caller's own
+ * connections; anyone else's id matches nothing.
+ */
 export async function GET(req: Request): Promise<Response> {
   if (!isWorkspaceEnabled()) return new Response("Not found", { status: 404 });
   try {
-    const start = new URL(req.url).searchParams.get("start");
+    const params = new URL(req.url).searchParams;
+    const start = params.get("start");
     if (!start || !isMonday(start)) {
       return NextResponse.json({ error: "start must be a Monday (YYYY-MM-DD)" }, { status: 400 });
     }
+    const hidden = new Set((params.get("hidden") ?? "").split(",").filter(Boolean));
     const { orgId: firmId, userId } = await requireOrgAndUser();
     const { orgRole } = await auth();
 
-    const conn = await resolveActingConnection({ firmId, actorUserId: userId, provider: "microsoft" });
-    const ctx: GraphContext = { conn };
-    const timeZone = await getMailboxTimeZone(ctx);
-    const events = await listEvents(ctx, { startDate: start, days: 7, timeZone });
+    const connections = await listActingConnections({ firmId, actorUserId: userId });
+    if (connections.length === 0) throw new WorkspaceNotConnectedError("connect");
+    const week = await readWeek({ connections, hidden, startDate: start, days: 7 });
 
     const links = await findHouseholdsByEmail({
       firmId,
       userId,
       orgRole,
-      emails: events.flatMap((e) => e.attendees.map((a) => a.email)),
+      emails: week.events.flatMap((e) => e.attendees.map((a) => a.email)),
     });
     return NextResponse.json({
-      timeZone,
-      events: events.map((e) => ({ ...e, editable: canEditEvent(e), household: linkEventHousehold(e, links) })),
+      timeZone: week.timeZone,
+      timeZoneFallback: week.timeZoneFallback,
+      accounts: week.accounts,
+      events: week.events.map((e) => ({
+        ...e,
+        // Provider ids are unique per account only.
+        key: `${e.connectionId}:${e.id}`,
+        editable: canEditEvent(e),
+        household: linkEventHousehold(e, links),
+      })),
     });
-  } catch (err) {
-    return workspaceErrorResponse(err);
-  }
-}
-
-/** Creates an event on the advisor's own calendar, optionally with a Teams meeting. */
-export async function POST(req: Request): Promise<Response> {
-  if (!isWorkspaceEnabled()) return new Response("Not found", { status: 404 });
-  try {
-    await requireActiveSubscription();
-    const { orgId: firmId, userId } = await requireOrgAndUser();
-    const parsed = await parseBody(createEventSchema, req);
-    if (!parsed.ok) return parsed.response;
-
-    const conn = await resolveActingConnection({ firmId, actorUserId: userId, provider: "microsoft" });
-    const ctx: GraphContext = { conn };
-    const timeZone = await getMailboxTimeZone(ctx);
-    const { event, teamsFailed } = await createEvent(ctx, { ...parsed.data, timeZone });
-
-    await recordAudit({
-      action: "workspace.event_create",
-      resourceType: "workspace_event",
-      resourceId: event.id,
-      firmId,
-      metadata: { eventId: event.id },
-    });
-    return NextResponse.json({ event, teamsFailed }, { status: 201 });
   } catch (err) {
     return workspaceErrorResponse(err);
   }

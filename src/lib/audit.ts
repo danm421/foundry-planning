@@ -454,12 +454,13 @@ export type AuditAction =
   | "integration.account.connect" // an advisor fed an existing plan account from a provider account
   | "integration.account.add" // an advisor added a provider account to the plan as a new account
   | "integration.account.disconnect" // an advisor stopped a provider feeding a plan account
-  // Workspace (Microsoft 365 calendar & to-dos)
+  // Workspace (Google and Microsoft 365 calendars & to-dos)
   | "workspace.firm_approve"
   | "workspace.firm_disconnect"
   | "workspace.member_access"
   | "workspace.connect"
-  | "workspace.disconnect" // an advisor dropped their own Microsoft connection
+  | "workspace.admin_disconnect"
+  | "workspace.disconnect" // an advisor dropped one of their own connected addresses (Google or Microsoft)
   | "workspace.event_create"
   | "workspace.event_move"
   | "workspace.event_cancel"

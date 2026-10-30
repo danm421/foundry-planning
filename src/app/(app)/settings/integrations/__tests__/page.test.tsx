@@ -11,6 +11,7 @@ const mockAuth = vi.fn();
 const mockGetConnection = vi.fn();
 const mockListOwned = vi.fn();
 const mockPlaidUsage = vi.fn();
+const mockFirmConnections = vi.fn();
 
 vi.mock("@clerk/nextjs/server", () => ({ auth: () => mockAuth() }));
 
@@ -21,6 +22,10 @@ vi.mock("@/lib/integrations/connections", () => ({
 
 vi.mock("@/lib/integrations/plaid-usage", () => ({
   getPlaidUsage: (...a: unknown[]) => mockPlaidUsage(...a),
+}));
+
+vi.mock("@/lib/workspace/connections", () => ({
+  listFirmConnections: (...a: unknown[]) => mockFirmConnections(...a),
 }));
 
 import IntegrationsPage from "../page";
@@ -73,6 +78,7 @@ beforeEach(() => {
   mockGetConnection.mockReset().mockResolvedValue(null);
   mockListOwned.mockReset().mockResolvedValue([]);
   mockPlaidUsage.mockReset().mockResolvedValue({ clientCount: 0, institutionCount: 0 });
+  mockFirmConnections.mockReset().mockResolvedValue([]);
 });
 
 afterEach(() => vi.unstubAllEnvs());
@@ -208,5 +214,55 @@ describe("IntegrationsPage — signed-out or org-less", () => {
     expect(mockGetConnection).not.toHaveBeenCalled();
     expect(mockListOwned).not.toHaveBeenCalled();
     expect(mockPlaidUsage).not.toHaveBeenCalled();
+  });
+});
+
+describe("IntegrationsPage — Calendar & to-dos (Workspace)", () => {
+  beforeEach(() => vi.stubEnv("WORKSPACE_ENABLED", "true"));
+
+  /** One connected address as listFirmConnections returns it. */
+  const address = (userId: string, provider: string, status: string) => ({
+    id: `${userId}-${provider}`,
+    userId,
+    provider,
+    email: `${userId}@x.com`,
+    status,
+    connectedAt: "2026-10-01T00:00:00.000Z",
+  });
+
+  it("an admin sees it under Workspace, named Calendar & to-dos, until someone connects", async () => {
+    const { getByRole } = await renderPage();
+
+    const row = getByRole("link", { name: /Calendar & to-dos/ });
+    expect(row.getAttribute("href")).toBe("/settings/integrations/microsoft_365");
+    expect(within(row).getByText("Workspace")).toBeTruthy();
+    expect(
+      within(row).getByText("Your advisors' Google and Outlook calendars and to-do lists, in Workspace."),
+    ).toBeTruthy();
+    expect(within(row).getByText("Not connected")).toBeTruthy();
+    expect(mockFirmConnections).toHaveBeenCalledWith("org_acme");
+  });
+
+  it("is in use once anyone has connected an address, counting advisors with a working one", async () => {
+    mockFirmConnections.mockResolvedValue([
+      address("u1", "microsoft", "connected"),
+      address("u1", "google", "connected"),
+      address("u2", "google", "needs_reconnect"),
+    ]);
+
+    const { getByRole } = await renderPage();
+
+    const row = getByRole("link", { name: /Calendar & to-dos/ });
+    expect(within(row).getByText("Connected")).toBeTruthy();
+    expect(row.textContent).toContain("Advisors connected 1");
+  });
+
+  it("a member never sees it and no connection is read", async () => {
+    mockAuth.mockResolvedValue({ orgId: "org_acme", userId: "user_ana", orgRole: "org:member" });
+
+    const { container } = await renderPage();
+
+    expect(container.textContent).not.toContain("Calendar & to-dos");
+    expect(mockFirmConnections).not.toHaveBeenCalled();
   });
 });

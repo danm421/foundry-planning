@@ -1,91 +1,54 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { recordAudit } from "@/lib/audit";
-import { requireActiveSubscription } from "@/lib/authz";
 import { normalizeQuickFilters } from "@/lib/crm-tasks/filters";
 import { listTasks } from "@/lib/crm-tasks/queries";
 import { requireOrgAndUser } from "@/lib/db-helpers";
-import { parseBody } from "@/lib/schemas/common";
-import { resolveActingConnection } from "@/lib/workspace/acting-connection";
-import {
-  GraphThrottledError,
-  WorkspaceNotConnectedError,
-  WorkspaceReconnectRequiredError,
-} from "@/lib/workspace/errors";
+import { listActingConnections } from "@/lib/workspace/acting-connection";
+import { WorkspaceImpersonationError } from "@/lib/workspace/errors";
 import { isWorkspaceEnabled } from "@/lib/workspace/flag";
-import type { GraphContext } from "@/lib/workspace/microsoft/graph";
-import { createTodo, listOpenTodos } from "@/lib/workspace/microsoft/todo";
+import { readTodos } from "@/lib/workspace/readers";
 import { safeErrorFields, workspaceErrorResponse } from "@/lib/workspace/route-errors";
-import { createTodoSchema } from "@/lib/workspace/schemas";
-import type { OutlookError, WorkspaceTodo } from "@/lib/workspace/types";
 
 export const dynamic = "force-dynamic";
 
 /**
- * The Microsoft half of the list. Any failure here degrades to an
- * `outlookError` so the Foundry tasks still show: "throttled" ("Microsoft is
- * busy") for throttling only, "unavailable" for any other failure, which is
- * logged by name (plus Graph status / request-id) only.
+ * Every connected account's open to-dos, or that account's error. An
+ * impersonation session reads no account, and says so as `blocked`. Any other
+ * failure to list the accounts (e.g. a row whose token won't decrypt) is
+ * logged by name only and is `blocked: "unavailable"`, so the Foundry tasks
+ * beside them still load.
  */
-async function loadOutlook(
+async function loadAccounts(
   firmId: string,
   userId: string,
-): Promise<{ outlook: WorkspaceTodo[]; outlookError: null } | { outlook: null; outlookError: OutlookError }> {
+): Promise<{ accounts: Awaited<ReturnType<typeof readTodos>>; blocked: "impersonating" | "unavailable" | null }> {
   try {
-    const conn = await resolveActingConnection({ firmId, actorUserId: userId, provider: "microsoft" });
-    return { outlook: await listOpenTodos({ conn }), outlookError: null };
+    const connections = await listActingConnections({ firmId, actorUserId: userId });
+    return { accounts: await readTodos({ connections }), blocked: null };
   } catch (err) {
-    if (err instanceof WorkspaceNotConnectedError) return { outlook: null, outlookError: "not_connected" };
-    if (err instanceof WorkspaceReconnectRequiredError) return { outlook: null, outlookError: "needs_reconnect" };
-    if (err instanceof GraphThrottledError) return { outlook: null, outlookError: "throttled" };
-    console.error("Workspace to-dos: Microsoft side failed:", safeErrorFields(err));
-    return { outlook: null, outlookError: "unavailable" };
+    if (err instanceof WorkspaceImpersonationError) return { accounts: [], blocked: "impersonating" };
+    console.error("Workspace to-dos: accounts failed:", safeErrorFields(err));
+    return { accounts: [], blocked: "unavailable" };
   }
 }
 
-/** The advisor's Foundry tasks plus their open Outlook to-dos. */
+/** The advisor's open Foundry tasks plus every connected account's open to-dos. */
 export async function GET(): Promise<Response> {
   if (!isWorkspaceEnabled()) return new Response("Not found", { status: 404 });
   try {
     const { orgId: firmId, userId } = await requireOrgAndUser();
     const { orgRole } = await auth();
 
-    const [foundry, outlookSide] = await Promise.all([
+    const [foundry, accountSide] = await Promise.all([
       listTasks(
         firmId,
         { userId, orgRole },
         {},
         normalizeQuickFilters({ quick: "mine", explicitAssignee: null, currentUserId: userId }),
       ),
-      loadOutlook(firmId, userId),
+      loadAccounts(firmId, userId),
     ]);
-    return NextResponse.json({ foundry, ...outlookSide });
-  } catch (err) {
-    return workspaceErrorResponse(err);
-  }
-}
-
-/** Adds a to-do to the advisor's default Microsoft To Do list. */
-export async function POST(req: Request): Promise<Response> {
-  if (!isWorkspaceEnabled()) return new Response("Not found", { status: 404 });
-  try {
-    await requireActiveSubscription();
-    const { orgId: firmId, userId } = await requireOrgAndUser();
-    const parsed = await parseBody(createTodoSchema, req);
-    if (!parsed.ok) return parsed.response;
-
-    const conn = await resolveActingConnection({ firmId, actorUserId: userId, provider: "microsoft" });
-    const ctx: GraphContext = { conn };
-    const todo = await createTodo(ctx, parsed.data);
-
-    await recordAudit({
-      action: "workspace.todo_create",
-      resourceType: "workspace_todo",
-      resourceId: todo.id,
-      firmId,
-      metadata: { listId: todo.listId, taskId: todo.id },
-    });
-    return NextResponse.json({ todo }, { status: 201 });
+    return NextResponse.json({ foundry, ...accountSide });
   } catch (err) {
     return workspaceErrorResponse(err);
   }

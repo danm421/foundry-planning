@@ -3,8 +3,8 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import MicrosoftApprovalPage from "./page";
 
-const APPROVED = "Microsoft 365 is approved for your firm. You can close this tab.";
-const DECLINED = "Microsoft 365 wasn't approved. Your Foundry admin can send a new link.";
+const APPROVED = "Microsoft 365 is approved for your organization. You can close this tab.";
+const DECLINED = "Microsoft 365 wasn't approved. Whoever sent you this link can send it again.";
 const EXPIRED = "This approval link has expired or was already used. Ask your Foundry admin for a new one.";
 
 async function renderWith(searchParams: Record<string, string | string[] | undefined>) {

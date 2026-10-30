@@ -6537,7 +6537,7 @@ export const integrationSyncRuns = pgTable("integration_sync_runs", {
 // Workspace (calendar & to-dos)
 // ---------------------------------------------------------------------------
 
-export const workspaceProviderEnum = pgEnum("workspace_provider", ["microsoft"]);
+export const workspaceProviderEnum = pgEnum("workspace_provider", ["microsoft", "google"]);
 export const workspaceConnectionStatusEnum = pgEnum("workspace_connection_status", [
   "connected",
   "needs_reconnect",
@@ -6565,21 +6565,6 @@ export const workspaceFirmApprovals = pgTable(
   }),
 );
 
-export const workspaceMemberAccess = pgTable(
-  "workspace_member_access",
-  {
-    firmId: text("firm_id").notNull(),
-    userId: text("user_id").notNull(),
-    provider: workspaceProviderEnum("provider").notNull(),
-    enabled: boolean("enabled").notNull().default(false),
-    updatedByUserId: text("updated_by_user_id").notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    pk: primaryKey({ columns: [t.firmId, t.userId, t.provider] }),
-  }),
-);
-
 export const workspaceConnections = pgTable(
   "workspace_connections",
   {
@@ -6587,8 +6572,9 @@ export const workspaceConnections = pgTable(
     firmId: text("firm_id").notNull(),
     userId: text("user_id").notNull(),
     provider: workspaceProviderEnum("provider").notNull(),
+    // Microsoft `tid`; Google hosted domain `hd`, or "" for a personal Gmail.
     tenantId: text("tenant_id").notNull(),
-    // Microsoft `oid`.
+    // Microsoft `oid`; Google `sub`.
     externalUserId: text("external_user_id").notNull(),
     externalEmail: text("external_email").notNull(),
     // Non-null: offline_access is always requested, so a refresh token always comes back.
@@ -6602,8 +6588,8 @@ export const workspaceConnections = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    userUnique: uniqueIndex("ws_conn_user_uq").on(t.firmId, t.userId, t.provider),
-    // One Microsoft account <-> one Foundry user within a firm.
+    userIdx: index("ws_conn_user_idx").on(t.firmId, t.userId),
+    // One external account <-> one Foundry user within a firm.
     accountUnique: uniqueIndex("ws_conn_account_uq").on(t.firmId, t.provider, t.externalUserId),
   }),
 );

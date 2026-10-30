@@ -4,17 +4,28 @@ import { useEffect, useId, useRef, useState, type ReactElement } from "react";
 import Link from "next/link";
 import { checkboxClassName } from "@/components/forms/input-styles";
 import type { TaskListRow } from "@/lib/crm-tasks/queries";
-import { groupTodos, toTodoItems, type TodoGroups, type TodoItem } from "@/lib/workspace/todo-groups";
-import type { OutlookError, WorkspaceTodo } from "@/lib/workspace/types";
+import { groupTodos, toTodoItems, type AccountTodo, type TodoGroups, type TodoItem } from "@/lib/workspace/todo-groups";
+import { accountLabels } from "@/lib/workspace/accounts";
+import type { AccountError, AccountSummary, WorkspaceProvider, WorkspaceTodo } from "@/lib/workspace/types";
 import { localToday, monthDay } from "@/lib/workspace/week";
 import { AddTodoRow, type HouseholdOption, type TodoDraft } from "./add-todo-row";
-import { CONNECT_URL } from "./calendar-pane-state";
+import { reconnectUrl } from "./calendar-pane-state";
 import { TodoEditorDialog, type TodoPatch } from "./todo-editor-dialog";
 
+/** One connected account's half of `GET /api/workspace/todos`: its open to-dos, or why they're missing. */
+type AccountTodos = {
+  connectionId: string;
+  provider: WorkspaceProvider;
+  todos: WorkspaceTodo[] | null;
+  error: AccountError | null;
+};
 type Loaded = {
   foundry: TaskListRow[];
-  outlook: WorkspaceTodo[] | null;
-  outlookError: OutlookError | null;
+  accounts: AccountTodos[];
+  /** Why the accounts' half is missing altogether: an ops "sign in as" session reads none, or they couldn't be listed. */
+  blocked: "impersonating" | "unavailable" | null;
+  /** Every account's to-dos in one list. */
+  todos: AccountTodo[];
   today: string;
 };
 type ListState = { kind: "loading" } | { kind: "error" } | ({ kind: "ready" } & Loaded);
@@ -33,25 +44,32 @@ const NOTICE = "mb-3 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-
 const CHIP =
   "ml-1.5 inline-block rounded-full border border-hair-2 px-1.5 align-[1px] font-mono text-[9px] uppercase leading-[1.5] tracking-[0.08em] text-ink-3";
 
-const todoUrl = (o: { listId: string; taskId: string }) =>
-  `/api/workspace/todos/${encodeURIComponent(o.listId)}/${encodeURIComponent(o.taskId)}`;
+const BLOCKED_NOTICES = {
+  impersonating: "To-dos from your connected addresses are hidden while you're signed in as someone else.",
+  unavailable: "Couldn't load the to-dos from your connected addresses.",
+} as const;
+
+const todoUrl = (o: { connectionId: string; listId: string; taskId: string }) =>
+  `/api/workspace/accounts/${o.connectionId}/todos/${encodeURIComponent(o.listId)}/${encodeURIComponent(o.taskId)}`;
 
 /**
- * Reads both halves of the list. A 500, a network failure or an answer
- * without Foundry's half is an error the panel says out loud, never an empty
- * list; Microsoft's own failures arrive inside a 200 as `outlookError`.
+ * Reads the list. A 500, a network failure or an answer without Foundry's or
+ * the accounts' half is an error the panel says out loud, never an empty
+ * list; one account's own failure arrives inside a 200 as its `error`.
  */
 async function loadTodos(signal: AbortSignal): Promise<ListState> {
   try {
     const res = await fetch("/api/workspace/todos", { signal });
     if (res.ok) {
-      const body = (await res.json()) as Partial<Loaded> | null;
-      if (Array.isArray(body?.foundry) && (body.outlook === null || Array.isArray(body.outlook))) {
+      const body = (await res.json()) as { foundry?: unknown; accounts?: unknown; blocked?: unknown } | null;
+      if (Array.isArray(body?.foundry) && Array.isArray(body.accounts)) {
+        const accounts = body.accounts as AccountTodos[];
         return {
           kind: "ready",
-          foundry: body.foundry,
-          outlook: body.outlook,
-          outlookError: body.outlookError ?? null,
+          foundry: body.foundry as TaskListRow[],
+          accounts,
+          blocked: body.blocked === "impersonating" || body.blocked === "unavailable" ? body.blocked : null,
+          todos: accounts.flatMap((a) => (a.todos ?? []).map((t) => ({ ...t, connectionId: a.connectionId }))),
           today: localToday(),
         };
       }
@@ -78,7 +96,7 @@ async function send(url: string, method: "POST" | "PATCH", body: unknown): Promi
 
 /** Marks an item done at its source. */
 function complete(item: TodoItem): Promise<{ body: unknown } | null> {
-  if (item.outlook) return send(todoUrl(item.outlook), "PATCH", { completed: true });
+  if (item.account) return send(todoUrl(item.account), "PATCH", { completed: true });
   if (item.foundry) {
     return send(`/api/crm/tasks/${encodeURIComponent(item.foundry.taskId)}/status`, "POST", { status: "done" });
   }
@@ -98,17 +116,21 @@ function withoutKey(set: ReadonlySet<string>, key: string): ReadonlySet<string> 
 }
 
 /**
- * The advisor's open Outlook to-dos and Foundry tasks in one list, filed by
- * due date. It reads its own route, so it works beside every calendar state:
- * Foundry tasks show before Microsoft is connected, and `outlookError` says
- * why Outlook's half is missing.
+ * The advisor's open to-dos from every connected account and their Foundry
+ * tasks in one list, filed by due date. It reads its own route, so it works
+ * beside every calendar state: Foundry tasks show before any account is
+ * connected (and while impersonating), and an account's `error` says why its
+ * half is missing.
  */
 export function TodoPanel({
   userId,
   households,
+  accounts,
 }: {
   userId: string;
   households: HouseholdOption[];
+  /** The advisor's connected addresses: they name the notices, the row chips and where a new to-do can go. */
+  accounts: AccountSummary[];
 }): ReactElement {
   const ids = useId();
   const [list, setList] = useState<ListState>({ kind: "loading" });
@@ -132,7 +154,7 @@ export function TodoPanel({
   const [failed, setFailed] = useState<ReadonlySet<string>>(new Set());
 
   const [adding, setAdding] = useState(false);
-  const [editing, setEditing] = useState<WorkspaceTodo | null>(null);
+  const [editing, setEditing] = useState<AccountTodo | null>(null);
 
   async function checkOff(item: TodoItem): Promise<void> {
     if (inFlight.current.has(item.key)) return;
@@ -150,7 +172,17 @@ export function TodoPanel({
     setDone((s) => withKey(s, item.key));
     // A repeating to-do now has its next one, which only a re-read shows:
     // Microsoft makes it for any Outlook to-do; Foundry says so with `followOnId`.
-    if (item.outlook || (r.body as { followOnId?: unknown } | null)?.followOnId) reread();
+    if (item.account || (r.body as { followOnId?: unknown } | null)?.followOnId) reread();
+  }
+
+  /** Posts a new to-do to the address the advisor chose. */
+  function sendToAccount(d: TodoDraft): Promise<{ body: unknown } | null> {
+    if (!d.connectionId) return Promise.resolve(null);
+    return send(`/api/workspace/accounts/${d.connectionId}/todos`, "POST", {
+      title: d.title,
+      dueDate: d.dueDate,
+      notes: "",
+    });
   }
 
   async function addTodo(d: TodoDraft): Promise<void> {
@@ -162,29 +194,42 @@ export function TodoPanel({
           householdId: d.foundry.householdId,
           assigneeUserId: userId,
         })
-      : await send("/api/workspace/todos", "POST", { title: d.title, dueDate: d.dueDate, notes: "" });
+      : await sendToAccount(d);
     if (!r) throw new Error("add failed"); // the row says so and stays open
     setAdding(false);
     reread();
   }
 
-  async function saveTodo(todo: WorkspaceTodo, patch: TodoPatch): Promise<void> {
-    const r = await send(todoUrl({ listId: todo.listId, taskId: todo.id }), "PATCH", patch);
+  async function saveTodo(todo: AccountTodo, patch: TodoPatch): Promise<void> {
+    const r = await send(todoUrl({ connectionId: todo.connectionId, listId: todo.listId, taskId: todo.id }), "PATCH", patch);
     if (!r) throw new Error("save failed"); // the dialog says so and stays open
     setEditing(null);
     reread();
   }
 
   const ready = list.kind === "ready" ? list : null;
-  const items = ready ? toTodoItems(ready.foundry, ready.outlook ?? []).filter((i) => !done.has(i.key)) : [];
+  // One account looks like phase 1 (`Outlook` / `Google`); labels appear with 2+, as on the calendar.
+  const labels = accounts.length >= 2 ? accountLabels(accounts) : null;
+  const items = ready ? toTodoItems(ready.foundry, ready.todos, labels).filter((i) => !done.has(i.key)) : [];
   const groups = ready ? groupTodos(items, ready.today) : null;
   const openCount = items.filter((i) => !checking.has(i.key)).length;
-  // No working Outlook connection: a new to-do can only be a Foundry task.
-  const foundryOnly = ready?.outlookError === "not_connected" || ready?.outlookError === "needs_reconnect";
+  // A new to-do can go to any connected address whose sign-in still works; none (or blocked) leaves Foundry only.
+  const reconnecting = new Set(ready?.accounts.filter((a) => a.error === "needs_reconnect").map((a) => a.connectionId));
+  const destinations =
+    !ready || ready.blocked
+      ? []
+      : accounts
+          .filter((a) => a.status === "connected" && !reconnecting.has(a.id))
+          .map((a) => ({ connectionId: a.id, label: labels?.get(a.id) ?? a.email }));
+  // One notice per account that failed, in the connection order the route answered.
+  const notices = (ready?.accounts ?? []).flatMap((a) => {
+    const account = accounts.find((x) => x.id === a.connectionId);
+    return a.error && account ? [{ account, error: a.error }] : [];
+  });
 
   function openTodo(item: TodoItem) {
-    const o = item.outlook;
-    const todo = o && ready?.outlook?.find((t) => t.listId === o.listId && t.id === o.taskId);
+    const o = item.account;
+    const todo = o && ready?.todos.find((t) => t.connectionId === o.connectionId && t.listId === o.listId && t.id === o.taskId);
     if (todo) setEditing(todo);
   }
 
@@ -217,24 +262,24 @@ export function TodoPanel({
         </div>
       ) : groups && ready ? (
         <>
-          {ready.outlookError === "needs_reconnect" ? (
-            <p className={NOTICE}>
-              <a href={CONNECT_URL} className="underline underline-offset-2 hover:text-ink">
-                Reconnect Microsoft 365 to see your Outlook to-dos.
-              </a>
+          {ready.blocked ? <p className={NOTICE}>{BLOCKED_NOTICES[ready.blocked]}</p> : null}
+          {notices.map(({ account, error }) => (
+            <p key={account.id} className={NOTICE}>
+              {error === "needs_reconnect" ? (
+                <a href={reconnectUrl(account)} className="underline underline-offset-2 hover:text-ink">
+                  Reconnect {account.email} to see its to-dos.
+                </a>
+              ) : error === "throttled" ? (
+                `${account.email}'s to-dos are unavailable right now.`
+              ) : (
+                `Couldn't load ${account.email}'s to-dos.`
+              )}
             </p>
-          ) : ready.outlookError === "throttled" ? (
-            <p className={NOTICE}>Outlook to-dos are unavailable right now.</p>
-          ) : ready.outlookError === "unavailable" ? (
-            <p className={NOTICE}>
-              Couldn&apos;t load your Outlook to-dos from Microsoft. If this keeps happening, ask your
-              firm&apos;s admin.
-            </p>
-          ) : null}
+          ))}
 
           {adding ? (
             <AddTodoRow
-              foundryOnly={foundryOnly}
+              destinations={destinations}
               households={households}
               onAdd={addTodo}
               onCancel={() => setAdding(false)}
@@ -334,7 +379,7 @@ function TodoRow({
               {item.title}
             </button>
           )}
-          <span className={CHIP}>{item.source === "outlook" ? "Outlook" : "Foundry"}</span>
+          <span className={CHIP}>{item.sourceLabel}</span>
         </p>
         {item.meta || item.dueDate ? (
           <p className="mt-0.5 text-[11px] text-ink-3">

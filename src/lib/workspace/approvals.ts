@@ -4,7 +4,6 @@ import { db } from "@/db";
 import {
   workspaceConnections,
   workspaceFirmApprovals,
-  workspaceMemberAccess,
   workspaceOauthStates,
 } from "@/db/schema";
 import type { WorkspaceProvider } from "./types";
@@ -25,10 +24,9 @@ export async function getFirmApproval(
 }
 
 /**
- * An advisor's sign-in belongs to the tenant the firm approved, so a
- * re-approval from a DIFFERENT tenant drops the firm's advisor connections in
- * the same write; they sign in again against the new tenant. The access
- * switches are the firm's own choice and survive.
+ * Re-approving from a different tenant leaves advisors' connections alone:
+ * advisors now sign in from any organization, so a connection is not tied to
+ * the firm's approved tenant.
  */
 export async function upsertFirmApproval(input: {
   firmId: string;
@@ -37,38 +35,39 @@ export async function upsertFirmApproval(input: {
   approvedScopes: string;
   approvedByUserId: string;
 }): Promise<void> {
-  await db.transaction(async (tx) => {
-    const [existing] = await tx
-      .select({ tenantId: workspaceFirmApprovals.tenantId })
-      .from(workspaceFirmApprovals)
-      .where(and(eq(workspaceFirmApprovals.firmId, input.firmId), eq(workspaceFirmApprovals.provider, input.provider)))
-      .for("update");
-    if (existing && existing.tenantId !== input.tenantId) {
-      await tx
-        .delete(workspaceConnections)
-        .where(and(eq(workspaceConnections.firmId, input.firmId), eq(workspaceConnections.provider, input.provider)));
-    }
-    await tx
-      .insert(workspaceFirmApprovals)
-      .values(input)
-      .onConflictDoUpdate({
-        target: [workspaceFirmApprovals.firmId, workspaceFirmApprovals.provider],
-        set: {
-          tenantId: input.tenantId,
-          approvedScopes: input.approvedScopes,
-          approvedByUserId: input.approvedByUserId,
-          approvedAt: new Date(),
-        },
-      });
-  });
+  await db
+    .insert(workspaceFirmApprovals)
+    .values(input)
+    .onConflictDoUpdate({
+      target: [workspaceFirmApprovals.firmId, workspaceFirmApprovals.provider],
+      set: {
+        tenantId: input.tenantId,
+        approvedScopes: input.approvedScopes,
+        approvedByUserId: input.approvedByUserId,
+        approvedAt: new Date(),
+      },
+    });
 }
 
-/** Disconnecting a firm removes the approval and everything hanging off it, atomically. */
-export async function deleteFirmProvider(firmId: string, provider: WorkspaceProvider): Promise<void> {
-  await db.transaction(async (tx) => {
-    await tx.delete(workspaceConnections).where(and(eq(workspaceConnections.firmId, firmId), eq(workspaceConnections.provider, provider)));
-    await tx.delete(workspaceMemberAccess).where(and(eq(workspaceMemberAccess.firmId, firmId), eq(workspaceMemberAccess.provider, provider)));
-    await tx.delete(workspaceOauthStates).where(and(eq(workspaceOauthStates.firmId, firmId), eq(workspaceOauthStates.provider, provider)));
-    await tx.delete(workspaceFirmApprovals).where(and(eq(workspaceFirmApprovals.firmId, firmId), eq(workspaceFirmApprovals.provider, provider)));
+/**
+ * "Disconnect everyone": every advisor's connected addresses, pending
+ * sign-ins and the approval, every provider, atomically. Resolves to the
+ * removed addresses' ids, for the audit.
+ */
+export async function deleteFirmWorkspace(
+  firmId: string,
+): Promise<Array<{ id: string; provider: WorkspaceProvider; userId: string }>> {
+  return db.transaction(async (tx) => {
+    const removed = await tx
+      .delete(workspaceConnections)
+      .where(eq(workspaceConnections.firmId, firmId))
+      .returning({
+        id: workspaceConnections.id,
+        provider: workspaceConnections.provider,
+        userId: workspaceConnections.userId,
+      });
+    await tx.delete(workspaceOauthStates).where(eq(workspaceOauthStates.firmId, firmId));
+    await tx.delete(workspaceFirmApprovals).where(eq(workspaceFirmApprovals.firmId, firmId));
+    return removed;
   });
 }

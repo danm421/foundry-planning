@@ -1,81 +1,69 @@
 import type { ReactElement, ReactNode } from "react";
-import Link from "next/link";
-import type { CalendarPaneState as PaneState } from "@/lib/workspace/types";
+import type { CalendarPaneState as PaneState, WorkspaceProvider } from "@/lib/workspace/types";
 
 /**
- * Every calendar pane that isn't the week itself. `throttled` is Microsoft
- * being busy; `unavailable` is any other failure, which a retry may not fix.
+ * Every calendar pane that isn't the week itself. `unavailable` is any failure
+ * to read the week, which a retry may not fix. An expired sign-in is never a
+ * pane: it is that one account's banner, and the others stay.
  */
-export type PaneView = Exclude<PaneState, "ready"> | "throttled" | "unavailable";
+export type PaneView = Exclude<PaneState, "ready"> | "unavailable";
 
-// A plain anchor, never fetch(): the route answers with a redirect to Microsoft.
-export const CONNECT_URL = "/api/workspace/microsoft/connect";
-const SETTINGS_URL = "/settings/integrations/microsoft_365";
-const INTRO = "Bring in your Outlook calendar";
+// Plain anchors, never fetch(): the routes answer with a redirect to the provider.
+export const MICROSOFT_CONNECT_URL = "/api/workspace/microsoft/connect";
+export const GOOGLE_CONNECT_URL = "/api/workspace/google/connect";
+const CONNECT_URL: Record<WorkspaceProvider, string> = { microsoft: MICROSOFT_CONNECT_URL, google: GOOGLE_CONNECT_URL };
+
+/** An account's Reconnect link: its provider's connect route, the address pre-filled. */
+export const reconnectUrl = (account: { provider: WorkspaceProvider; email: string }) =>
+  `${CONNECT_URL[account.provider]}?hint=${encodeURIComponent(account.email)}`;
 
 export function CalendarPaneState({
   state,
-  isAdmin,
+  googleEnabled,
   onRetry,
 }: {
   state: PaneView;
-  isAdmin: boolean;
+  /** Google's sign-in is set up on this deployment. */
+  googleEnabled: boolean;
   onRetry?: () => void;
 }): ReactElement {
-  const retry = (
-    <button type="button" className="btn-ghost text-sm" onClick={onRetry}>
-      Retry
-    </button>
-  );
   switch (state) {
-    case "firm_not_approved":
-      return isAdmin ? (
-        <Pane
-          title={INTRO}
-          body="Approve Microsoft 365 for your firm, then choose which advisors get it."
-          action={
-            <Link href={SETTINGS_URL} className="btn-primary text-sm">
-              Connect Microsoft 365
-            </Link>
-          }
-        />
-      ) : (
-        <Pane title={INTRO} body="Your firm's admin can turn on Microsoft 365 in Settings → Integrations." />
-      );
-    case "member_off":
-      return <Pane title={INTRO} body="Ask your firm's admin to turn on Microsoft 365 for you." />;
     case "connect":
       return (
         <Pane
-          title={INTRO}
-          body="Your firm has approved Microsoft 365. Sign in once with your work account to see your week and your Outlook to-dos here."
+          title="Bring in your calendar and to-dos"
+          body="Connect any of your addresses — Google or Microsoft 365. You can add more later."
           action={
-            <a href={CONNECT_URL} className="btn-primary text-sm">
-              Connect Microsoft 365
-            </a>
+            <div className="flex flex-wrap justify-center gap-2">
+              {googleEnabled ? (
+                <a href={GOOGLE_CONNECT_URL} className="btn-primary text-sm">
+                  Connect Google
+                </a>
+              ) : null}
+              <a href={MICROSOFT_CONNECT_URL} className="btn-primary text-sm">
+                Connect Microsoft 365
+              </a>
+            </div>
           }
         />
       );
-    case "needs_reconnect":
+    case "impersonating":
       return (
         <Pane
-          title="Your Microsoft sign-in expired."
-          body="Sign in again with your work account to see your week."
-          action={
-            <a href={CONNECT_URL} className="btn-primary text-sm">
-              Reconnect
-            </a>
-          }
+          title="Hidden while you're signed in as someone else"
+          body="Workspace never shows an advisor's Google or Microsoft calendar or to-dos to Foundry staff."
         />
       );
-    case "throttled":
-      return <Pane title="Microsoft is busy right now — try again in a minute." action={retry} />;
     case "unavailable":
       return (
         <Pane
-          title="Couldn't load your calendar from Microsoft."
+          title="Couldn't load your calendar."
           body="If this keeps happening, ask your firm's admin."
-          action={retry}
+          action={
+            <button type="button" className="btn-ghost text-sm" onClick={onRetry}>
+              Retry
+            </button>
+          }
         />
       );
   }

@@ -8,12 +8,20 @@ export type HouseholdOption = { id: string; name: string };
 
 type Priority = "low" | "med" | "high";
 
-/** What the add row hands back: an Outlook to-do, or a Foundry task when `foundry` is set. */
+/** A connected address a new to-do can go to. */
+export type TodoDestination = { connectionId: string; label: string };
+
+/** What the add row hands back: an account's to-do (`connectionId`), or a Foundry task when `foundry` is set. */
 export type TodoDraft = {
   title: string;
   dueDate: string | null;
   foundry: { householdId: string | null; priority: Priority } | null;
+  connectionId: string | null;
 };
+
+/** `localStorage` key for where the last new to-do went; Foundry's own value is `FOUNDRY`. */
+export const LAST_TODO_DESTINATION_KEY = "workspace.lastTodoDestination";
+const FOUNDRY = "foundry";
 
 const ADD_FAILED = "Couldn't add the to-do. Try again.";
 
@@ -30,17 +38,18 @@ const QUIET_BUTTON =
   "inline-flex h-8 items-center rounded-[var(--radius-sm)] px-3 text-[12px] text-ink-2 transition-colors hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
 /**
- * The inline add row. Off, the switch makes an Outlook to-do; on, a Foundry
- * task with a household and priority. With no working Outlook connection the
- * switch is locked on. A failed add keeps the row open with what was typed.
+ * The inline add row. With no connected address it makes a Foundry task. With
+ * one, a switch picks an account to-do (off) or a Foundry task (on). With two
+ * or more, an `Add to` select lists each address plus `Foundry task`, opening
+ * on the last choice. A failed add keeps the row open with what was typed.
  */
 export function AddTodoRow({
-  foundryOnly,
+  destinations,
   households,
   onAdd,
   onCancel,
 }: {
-  foundryOnly: boolean;
+  destinations: TodoDestination[];
   households: HouseholdOption[];
   /** Rejects to keep the row open with an error; the caller closes it on success. */
   onAdd: (draft: TodoDraft) => Promise<void>;
@@ -50,6 +59,17 @@ export function AddTodoRow({
   const [title, setTitle] = useState("");
   const [due, setDue] = useState("");
   const [asFoundry, setAsFoundry] = useState(false);
+  // With 2+ addresses: a connection id or FOUNDRY. Storage is client-only and this row only mounts after a click.
+  const [target, setTarget] = useState(() => {
+    try {
+      const last = localStorage.getItem(LAST_TODO_DESTINATION_KEY);
+      if (last === FOUNDRY || destinations.some((d) => d.connectionId === last)) return last as string;
+    } catch {
+      // Storage blocked: the first address.
+    }
+    return destinations[0]?.connectionId ?? FOUNDRY;
+  });
+  const picking = destinations.length >= 2;
   const [householdId, setHouseholdId] = useState("");
   const [priority, setPriority] = useState<Priority>("med");
   const [busy, setBusy] = useState(false);
@@ -58,7 +78,22 @@ export function AddTodoRow({
   const titleRef = useRef<HTMLInputElement>(null);
   useEffect(() => titleRef.current?.focus(), []);
 
-  const foundry = foundryOnly || asFoundry;
+  const foundry = destinations.length === 0 || (picking ? target === FOUNDRY : asFoundry);
+  // A target that left the list (an address disconnected meanwhile) falls back to the first.
+  const connectionId = foundry
+    ? null
+    : picking
+      ? (destinations.find((d) => d.connectionId === target) ?? destinations[0]).connectionId
+      : destinations[0].connectionId;
+
+  function pickTarget(value: string) {
+    setTarget(value);
+    try {
+      localStorage.setItem(LAST_TODO_DESTINATION_KEY, value);
+    } catch {
+      // Storage blocked: the choice lasts for this row only.
+    }
+  }
   // createCrmTaskSchema caps a title at 200; createTodoSchema at 255.
   const maxTitle = foundry ? 200 : 255;
   const trimmed = title.trim();
@@ -74,6 +109,7 @@ export function AddTodoRow({
         title: trimmed,
         dueDate: due || null,
         foundry: foundry ? { householdId: householdId || null, priority } : null,
+        connectionId,
       });
     } catch {
       setError(true);
@@ -115,13 +151,34 @@ export function AddTodoRow({
           onChange={(e) => setDue(e.target.value)}
         />
       </div>
-      <SwitchControl
-        checked={foundry}
-        onChange={setAsFoundry}
-        disabled={foundryOnly}
-        ariaLabel="Make it a Foundry task"
-        stateLabel="Make it a Foundry task"
-      />
+      {picking ? (
+        <div>
+          <label htmlFor={field("target")} className={LABEL}>
+            Add to
+          </label>
+          <select
+            id={field("target")}
+            className={selectClassName}
+            value={target}
+            onChange={(e) => pickTarget(e.target.value)}
+          >
+            {destinations.map((d) => (
+              <option key={d.connectionId} value={d.connectionId}>
+                {d.label}
+              </option>
+            ))}
+            <option value={FOUNDRY}>Foundry task</option>
+          </select>
+        </div>
+      ) : (
+        <SwitchControl
+          checked={foundry}
+          onChange={setAsFoundry}
+          disabled={destinations.length === 0}
+          ariaLabel="Make it a Foundry task"
+          stateLabel="Make it a Foundry task"
+        />
+      )}
       {foundry ? (
         <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
           <div className="min-w-0">

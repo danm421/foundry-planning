@@ -1,18 +1,26 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { randomBytes, randomUUID } from "node:crypto";
-import { inArray, eq } from "drizzle-orm";
+import { inArray, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   workspaceConnections,
   workspaceFirmApprovals,
-  workspaceMemberAccess,
   workspaceOauthStates,
 } from "@/db/schema";
-import type { MicrosoftTokenSet } from "./types";
+import type { ProviderTokenSet } from "./types";
 import { createWorkspaceOauthState, consumeWorkspaceOauthState } from "./oauth-states";
-import { getFirmApproval, upsertFirmApproval, deleteFirmProvider } from "./approvals";
-import { hasMemberAccess, setMemberAccess, enableMembers, removeWorkspaceMember } from "./access";
-import { getUserConnection, listFirmConnectionSummaries, upsertUserConnection } from "./connections";
+import { getFirmApproval, upsertFirmApproval, deleteFirmWorkspace } from "./approvals";
+import {
+  listUserConnections,
+  upsertUserConnection,
+  getConnectionById,
+  listUserConnectionSummaries,
+  listFirmConnections,
+  deleteConnection,
+  removeWorkspaceMember,
+} from "./connections";
+import { MAX_ACCOUNTS_PER_ADVISOR } from "./accounts";
+import type { WorkspaceProvider } from "./types";
 
 const firmIds: string[] = [];
 function freshFirmId(): string {
@@ -21,7 +29,7 @@ function freshFirmId(): string {
   return id;
 }
 
-const tokens: MicrosoftTokenSet = {
+const tokens: ProviderTokenSet = {
   accessToken: "plain-access-token",
   refreshToken: "plain-refresh-token",
   expiresInSec: 3600,
@@ -36,6 +44,18 @@ function connect(firmId: string, userId: string, externalUserId: string, email =
   });
 }
 
+function connectAs(firmId: string, userId: string, provider: WorkspaceProvider, externalUserId: string, t: ProviderTokenSet = tokens) {
+  return upsertUserConnection({
+    firmId, userId, provider, tenantId: provider === "google" ? "" : "tenant-1",
+    externalUserId, externalEmail: `${externalUserId}@x.com`, tokens: t,
+  });
+}
+
+/** The user's Microsoft connection, or null; these tests give each user at most one. */
+async function microsoftConnection(firmId: string, userId: string) {
+  return (await listUserConnections(firmId, userId)).find((c) => c.provider === "microsoft") ?? null;
+}
+
 beforeAll(() => {
   process.env.CREDENTIAL_ENCRYPTION_KEY = randomBytes(32).toString("base64");
 });
@@ -43,7 +63,6 @@ beforeAll(() => {
 afterAll(async () => {
   if (firmIds.length === 0) return;
   await db.delete(workspaceConnections).where(inArray(workspaceConnections.firmId, firmIds));
-  await db.delete(workspaceMemberAccess).where(inArray(workspaceMemberAccess.firmId, firmIds));
   await db.delete(workspaceFirmApprovals).where(inArray(workspaceFirmApprovals.firmId, firmIds));
   await db.delete(workspaceOauthStates).where(inArray(workspaceOauthStates.firmId, firmIds));
 });
@@ -79,9 +98,8 @@ describe("firm approval", () => {
     expect((await getFirmApproval(firmId, "microsoft"))?.tenantId).toBe("t2");
   });
 
-  // Ruling R8: an advisor's sign-in belongs to the tenant the firm approved. A
-  // re-approval from a DIFFERENT tenant must not leave old-tenant connections
-  // live; the access switches are the firm's own decision and survive.
+  // Advisors sign in from any organization, so a re-approval from a DIFFERENT
+  // tenant leaves their connections alone.
   describe("re-approval and advisor connections", () => {
     const approve = (firmId: string, tenantId: string) =>
       upsertFirmApproval({ firmId, provider: "microsoft", tenantId, approvedScopes: "s", approvedByUserId: "admin" });
@@ -89,7 +107,6 @@ describe("firm approval", () => {
     async function approvedFirmWithConnectedAdvisor(): Promise<string> {
       const firmId = freshFirmId();
       await approve(firmId, "t1");
-      await setMemberAccess({ firmId, provider: "microsoft", userId: "u1", enabled: true, updatedByUserId: "admin" });
       expect((await connect(firmId, "u1", "oid-1")).ok).toBe(true);
       return firmId;
     }
@@ -97,14 +114,13 @@ describe("firm approval", () => {
     it("the SAME tenant keeps the advisor's connection", async () => {
       const firmId = await approvedFirmWithConnectedAdvisor();
       await approve(firmId, "t1");
-      expect(await getUserConnection(firmId, "u1", "microsoft")).not.toBeNull();
+      expect(await microsoftConnection(firmId, "u1")).not.toBeNull();
     });
 
-    it("a DIFFERENT tenant drops the connection and keeps the access switch", async () => {
+    it("a DIFFERENT tenant keeps the connection", async () => {
       const firmId = await approvedFirmWithConnectedAdvisor();
       await approve(firmId, "t2");
-      expect(await getUserConnection(firmId, "u1", "microsoft")).toBeNull();
-      expect(await hasMemberAccess(firmId, "u1", "microsoft")).toBe(true);
+      expect(await microsoftConnection(firmId, "u1")).not.toBeNull();
       expect((await getFirmApproval(firmId, "microsoft"))?.tenantId).toBe("t2");
     });
 
@@ -112,22 +128,12 @@ describe("firm approval", () => {
       const firmId = await approvedFirmWithConnectedAdvisor();
       const otherFirmId = await approvedFirmWithConnectedAdvisor();
       await approve(firmId, "t2");
-      expect(await getUserConnection(otherFirmId, "u1", "microsoft")).not.toBeNull();
+      expect(await microsoftConnection(otherFirmId, "u1")).not.toBeNull();
     });
   });
 });
 
-describe("member access + connections", () => {
-  it("switching off deletes the connection", async () => {
-    const firmId = freshFirmId();
-    await setMemberAccess({ firmId, provider: "microsoft", userId: "u1", enabled: true, updatedByUserId: "admin" });
-    expect(await hasMemberAccess(firmId, "u1", "microsoft")).toBe(true);
-    expect((await connect(firmId, "u1", "oid-1")).ok).toBe(true);
-    await setMemberAccess({ firmId, provider: "microsoft", userId: "u1", enabled: false, updatedByUserId: "admin" });
-    expect(await getUserConnection(firmId, "u1", "microsoft")).toBeNull();
-    expect(await hasMemberAccess(firmId, "u1", "microsoft")).toBe(false);
-  });
-
+describe("connections", () => {
   it("same account for a second user in a firm is account_in_use", async () => {
     const firmId = freshFirmId();
     expect((await connect(firmId, "u1", "oid-1")).ok).toBe(true);
@@ -155,45 +161,161 @@ describe("member access + connections", () => {
     const [raw] = await db.select({ a: workspaceConnections.accessTokenEnc }).from(workspaceConnections)
       .where(eq(workspaceConnections.firmId, firmId));
     expect(raw.a).not.toBe("plain-access-token");
-    expect((await getUserConnection(firmId, "u1", "microsoft"))?.accessToken).toBe("plain-access-token");
+    expect((await microsoftConnection(firmId, "u1"))?.accessToken).toBe("plain-access-token");
   });
 
-  it("summaries carry no tokens", async () => {
+  it("removeWorkspaceMember clears every provider for that user only", async () => {
     const firmId = freshFirmId();
-    await connect(firmId, "u1", "oid-1");
-    const list = await listFirmConnectionSummaries(firmId, "microsoft");
-    expect(list).toHaveLength(1);
-    expect(list[0]).not.toHaveProperty("accessToken");
-    expect(list[0]).toEqual({ userId: "u1", externalEmail: "a@x.com", status: "connected" });
-  });
+    const otherFirmId = freshFirmId();
+    await connectAs(firmId, "u1", "microsoft", "oid-1");
+    await connectAs(firmId, "u1", "google", "sub-1");
+    await connectAs(firmId, "u2", "microsoft", "oid-2");
+    await connectAs(firmId, "u2", "google", "sub-2");
+    await connectAs(otherFirmId, "u1", "google", "sub-1");
 
-  it("enableMembers returns the count", async () => {
-    const firmId = freshFirmId();
-    expect(await enableMembers({ firmId, provider: "microsoft", userIds: ["a", "b", "c"], updatedByUserId: "admin" })).toBe(3);
-  });
-
-  it("removeWorkspaceMember leaves a colleague untouched", async () => {
-    const firmId = freshFirmId();
-    for (const [u, oid] of [["u1", "o1"], ["u2", "o2"]]) {
-      await setMemberAccess({ firmId, provider: "microsoft", userId: u, enabled: true, updatedByUserId: "admin" });
-      await connect(firmId, u, oid);
-    }
     await removeWorkspaceMember(firmId, "u1");
-    expect(await hasMemberAccess(firmId, "u1", "microsoft")).toBe(false);
-    expect(await getUserConnection(firmId, "u1", "microsoft")).toBeNull();
-    expect(await hasMemberAccess(firmId, "u2", "microsoft")).toBe(true);
-    expect(await getUserConnection(firmId, "u2", "microsoft")).not.toBeNull();
+
+    expect(await listUserConnections(firmId, "u1")).toHaveLength(0);
+    expect((await listUserConnections(firmId, "u2")).map((c) => c.provider).sort()).toEqual(["google", "microsoft"]);
+    expect(await listUserConnections(otherFirmId, "u1")).toHaveLength(1);
   });
 
-  it("deleteFirmProvider leaves no workspace rows", async () => {
+  it("deleteFirmWorkspace clears both providers' rows for that firm only", async () => {
+    async function seed(firmId: string) {
+      await upsertFirmApproval({ firmId, provider: "microsoft", tenantId: "t", approvedScopes: "s", approvedByUserId: "admin" });
+      await connectAs(firmId, "u1", "microsoft", `oid-${firmId}`);
+      await connectAs(firmId, "u1", "google", `sub-${firmId}`);
+      await connectAs(firmId, "u2", "google", `sub2-${firmId}`);
+      for (const provider of ["microsoft", "google"] as const) {
+        await createWorkspaceOauthState({ firmId, provider, kind: "user_connect", userId: "u1", codeVerifier: null, ttlMs: 60_000 });
+      }
+    }
     const firmId = freshFirmId();
-    await upsertFirmApproval({ firmId, provider: "microsoft", tenantId: "t", approvedScopes: "s", approvedByUserId: "admin" });
-    await setMemberAccess({ firmId, provider: "microsoft", userId: "u1", enabled: true, updatedByUserId: "admin" });
-    await connect(firmId, "u1", "o1");
-    await createWorkspaceOauthState({ firmId, provider: "microsoft", kind: "user_connect", userId: "u1", codeVerifier: null, ttlMs: 60_000 });
-    await deleteFirmProvider(firmId, "microsoft");
-    for (const t of [workspaceFirmApprovals, workspaceMemberAccess, workspaceConnections, workspaceOauthStates]) {
+    const otherFirmId = freshFirmId();
+    await seed(firmId);
+    await seed(otherFirmId);
+    const ids = (await listFirmConnections(firmId)).map((c) => ({ id: c.id, provider: c.provider, userId: c.userId }));
+
+    const removed = await deleteFirmWorkspace(firmId);
+
+    expect(removed).toHaveLength(3);
+    expect(removed).toEqual(expect.arrayContaining(ids));
+
+    const tables = [workspaceFirmApprovals, workspaceConnections, workspaceOauthStates];
+    for (const t of tables) {
       expect(await db.select().from(t).where(eq(t.firmId, firmId))).toHaveLength(0);
     }
+    const [approvals, connections, states] = await Promise.all(
+      tables.map((t) => db.select().from(t).where(eq(t.firmId, otherFirmId))),
+    );
+    expect([approvals.length, connections.length, states.length]).toEqual([1, 3, 2]);
+  });
+
+  describe("several accounts per advisor", () => {
+    it("one user connects Microsoft and Google; summaries come back oldest first", async () => {
+      const firmId = freshFirmId();
+      await connectAs(firmId, "u1", "microsoft", "oid-1");
+      await connectAs(firmId, "u1", "google", "sub-1");
+      const list = await listUserConnectionSummaries(firmId, "u1");
+      expect(list.map((a) => [a.provider, a.email])).toEqual([
+        ["microsoft", "oid-1@x.com"],
+        ["google", "sub-1@x.com"],
+      ]);
+      expect(list[0]).not.toHaveProperty("accessToken");
+      expect(typeof list[0].connectedAt).toBe("string");
+    });
+
+    it("the same user connects Google twice as two rows", async () => {
+      const firmId = freshFirmId();
+      await connectAs(firmId, "u1", "google", "sub-1");
+      await connectAs(firmId, "u1", "google", "sub-2");
+      expect(await listUserConnectionSummaries(firmId, "u1")).toHaveLength(2);
+    });
+
+    it("reconnect keeps the row, its id and connectedAt, and stores the new tokens", async () => {
+      const firmId = freshFirmId();
+      const first = await connectAs(firmId, "u1", "google", "sub-1");
+      await connectAs(firmId, "u1", "google", "sub-2");
+      const [before] = await db.select().from(workspaceConnections).where(eq(workspaceConnections.id, (first as { id: string }).id));
+      const again = await connectAs(firmId, "u1", "google", "sub-1", { ...tokens, accessToken: "fresh-access" });
+      expect(again).toEqual({ ok: true, id: (first as { id: string }).id });
+      expect(await listUserConnectionSummaries(firmId, "u1")).toHaveLength(2);
+      const [after] = await db.select().from(workspaceConnections).where(eq(workspaceConnections.id, before.id));
+      expect(after.connectedAt.getTime()).toBe(before.connectedAt.getTime());
+      expect((await getConnectionById(before.id))?.accessToken).toBe("fresh-access");
+    });
+
+    it("someone else's account is account_in_use and leaves it untouched", async () => {
+      const firmId = freshFirmId();
+      const mine = await connectAs(firmId, "uA", "google", "sub-1");
+      expect(await connectAs(firmId, "uB", "google", "sub-1", { ...tokens, accessToken: "intruder" })).toEqual({
+        ok: false,
+        reason: "account_in_use",
+      });
+      const conn = await getConnectionById((mine as { id: string }).id);
+      expect(conn?.userId).toBe("uA");
+      expect(conn?.accessToken).toBe("plain-access-token");
+      expect(await listUserConnectionSummaries(firmId, "uB")).toHaveLength(0);
+    });
+
+    it("caps an advisor at the maximum, but a reconnect at the cap still works", async () => {
+      const firmId = freshFirmId();
+      for (let i = 0; i < MAX_ACCOUNTS_PER_ADVISOR; i++) {
+        expect((await connectAs(firmId, "u1", "google", `sub-${i}`)).ok).toBe(true);
+      }
+      expect(await connectAs(firmId, "u1", "google", "sub-extra")).toEqual({ ok: false, reason: "too_many_accounts" });
+      expect(await listUserConnectionSummaries(firmId, "u1")).toHaveLength(MAX_ACCOUNTS_PER_ADVISOR);
+      expect((await connectAs(firmId, "u1", "google", "sub-2")).ok).toBe(true);
+      expect(await listUserConnectionSummaries(firmId, "u1")).toHaveLength(MAX_ACCOUNTS_PER_ADVISOR);
+    });
+
+    it("simultaneous connects one short of the cap let exactly one through", async () => {
+      const firmId = freshFirmId();
+      for (let i = 0; i < MAX_ACCOUNTS_PER_ADVISOR - 1; i++) {
+        expect((await connectAs(firmId, "u1", "google", `sub-${i}`)).ok).toBe(true);
+      }
+      // Open the pool's connections first so the three transactions overlap.
+      await Promise.all([1, 2, 3].map(() => db.execute(sql`select pg_sleep(0.1)`)));
+      const results = await Promise.all(
+        ["a", "b", "c"].map((s) => connectAs(firmId, "u1", "google", `sub-race-${s}`)),
+      );
+      expect(results.filter((r) => r.ok)).toHaveLength(1);
+      expect(await listUserConnectionSummaries(firmId, "u1")).toHaveLength(MAX_ACCOUNTS_PER_ADVISOR);
+    });
+
+    it("a tenant change on re-approval keeps the firm's connections", async () => {
+      const firmId = freshFirmId();
+      await connect(firmId, "u1", "oid-1");
+      await connectAs(firmId, "u2", "google", "sub-1");
+      const approval = { firmId, provider: "microsoft" as const, approvedScopes: "s", approvedByUserId: "admin" };
+      await upsertFirmApproval({ ...approval, tenantId: "t1" });
+      await upsertFirmApproval({ ...approval, tenantId: "t2" });
+      expect(await listFirmConnections(firmId)).toHaveLength(2);
+    });
+
+    it("deleteConnection honours the owner restriction", async () => {
+      const firmId = freshFirmId();
+      const row = (await connectAs(firmId, "u1", "google", "sub-1")) as { id: string };
+      expect(await deleteConnection(firmId, row.id, { userId: "other" })).toBe(false);
+      expect(await getConnectionById(row.id)).not.toBeNull();
+      // (M7) An empty owner id restricts to nobody; it never drops the restriction.
+      expect(await deleteConnection(firmId, row.id, { userId: "" })).toBe(false);
+      expect(await getConnectionById(row.id)).not.toBeNull();
+      expect(await deleteConnection(firmId, row.id, { userId: "u1" })).toBe(true);
+      expect(await getConnectionById(row.id)).toBeNull();
+    });
+
+    it("listFirmConnections spans providers and users and carries no tokens", async () => {
+      const firmId = freshFirmId();
+      await connectAs(firmId, "u1", "microsoft", "oid-1");
+      await connectAs(firmId, "u2", "google", "sub-1");
+      const list = await listFirmConnections(firmId);
+      expect(list.map((a) => [a.userId, a.provider]).sort()).toEqual([["u1", "microsoft"], ["u2", "google"]]);
+      for (const a of list) {
+        expect(a).not.toHaveProperty("accessToken");
+        expect(a).not.toHaveProperty("accessTokenEnc");
+        expect(a).not.toHaveProperty("refreshToken");
+      }
+    });
   });
 });

@@ -1,8 +1,8 @@
 // src/lib/workspace/microsoft/graph.test.ts
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { WorkspaceConnection } from "../connections";
-import type { MicrosoftTokenSet } from "../types";
-import { GraphRequestError, GraphThrottledError, WorkspaceReconnectRequiredError } from "../errors";
+import type { ProviderTokenSet } from "../types";
+import { ProviderRequestError, ProviderThrottledError, WorkspaceReconnectRequiredError } from "../errors";
 import { graphFetch, graphJson, graphPages, type GraphContext } from "./graph";
 import { MicrosoftAuthError, refreshTokens } from "./oauth";
 import { markNeedsReconnect, storeRefreshedTokens } from "../connections";
@@ -33,11 +33,12 @@ function connection(overrides: Partial<WorkspaceConnection> = {}): WorkspaceConn
     scope: "Calendars.ReadWrite",
     status: "connected",
     lastError: null,
+    connectedAt: new Date("2026-01-01T00:00:00Z"),
     ...overrides,
   };
 }
 
-const REFRESHED: MicrosoftTokenSet = {
+const REFRESHED: ProviderTokenSet = {
   accessToken: "AT2",
   refreshToken: "RT2",
   expiresInSec: 3599,
@@ -92,6 +93,36 @@ describe("graphFetch", () => {
     expect(refreshTokens).not.toHaveBeenCalled();
   });
 
+  it("passes the context's signal to fetch, so a missed deadline cancels the request", async () => {
+    const { fetchImpl, call } = stubFetch(respond(200, { value: [] }));
+    const { ctx } = context(connection(), fetchImpl);
+    const signal = new AbortController().signal;
+
+    await graphFetch({ ...ctx, signal }, "/me/calendarView");
+
+    expect(call(0).init.signal).toBe(signal);
+  });
+
+  it.each(["/me/events/..", "/me/events/.", "/me/todo/lists/%2E%2E/tasks"])(
+    "refuses %s (the URL would climb to a parent path) as not found, before any request",
+    async (path) => {
+      const { fetchImpl, mock } = stubFetch();
+      const { ctx } = context(connection(), fetchImpl);
+
+      await expect(graphFetch(ctx, path)).rejects.toMatchObject({ provider: "microsoft", status: 404 });
+      expect(mock).not.toHaveBeenCalled();
+    },
+  );
+
+  it("lets dots inside an id or the query through", async () => {
+    const { fetchImpl, call } = stubFetch(respond(200, {}));
+    const { ctx } = context(connection(), fetchImpl);
+
+    await graphFetch(ctx, "/me/events/a..b?$filter=x/../y");
+
+    expect(call(0).url).toBe("https://graph.microsoft.com/v1.0/me/events/a..b?$filter=x/../y");
+  });
+
   it("sends no Prefer header without a time zone, and keeps the caller's method, body and headers", async () => {
     const { fetchImpl, call } = stubFetch(respond(201, { id: "e1" }));
     const { ctx } = context(connection(), fetchImpl);
@@ -132,21 +163,21 @@ describe("graphFetch", () => {
 
     const err = await graphFetch(ctx, "/me").catch((e: unknown) => e);
 
-    expect(err).toBeInstanceOf(GraphRequestError);
-    expect((err as GraphRequestError).status).toBe(401);
+    expect(err).toBeInstanceOf(ProviderRequestError);
+    expect((err as ProviderRequestError).status).toBe(401);
     expect(refreshTokens).toHaveBeenCalledTimes(1);
     expect(mock).toHaveBeenCalledTimes(2);
   });
 
-  it("(Review Focus 2) throttling: a 429 three times rejects GraphThrottledError after 3 calls", async () => {
+  it("(Review Focus 2) throttling: a 429 three times rejects ProviderThrottledError after 3 calls", async () => {
     const throttled = () => respond(429, { error: { code: "TooManyRequests" } }, { "Retry-After": "0", "request-id": "req-429" });
     const { fetchImpl, mock } = stubFetch(throttled(), throttled(), throttled());
     const { ctx, sleep } = context(connection(), fetchImpl);
 
     const err = await graphFetch(ctx, "/me/calendarView").catch((e: unknown) => e);
 
-    expect(err).toBeInstanceOf(GraphThrottledError);
-    expect((err as GraphThrottledError).requestId).toBe("req-429");
+    expect(err).toBeInstanceOf(ProviderThrottledError);
+    expect((err as ProviderThrottledError).requestId).toBe("req-429");
     expect(mock).toHaveBeenCalledTimes(3);
     expect(sleep).toHaveBeenCalledTimes(2);
     expect(sleep).toHaveBeenNthCalledWith(1, 0);
@@ -177,7 +208,7 @@ describe("graphFetch", () => {
     expect(sleep).toHaveBeenCalledWith(expectedMs);
   });
 
-  it("any other error rejects GraphRequestError with Graph's code, and never logs the body", async () => {
+  it("any other error rejects ProviderRequestError with Graph's code, and never logs the body", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     const { fetchImpl, mock } = stubFetch(
       respond(404, { error: { code: "ErrorItemNotFound", message: "secret" } }, { "request-id": "req-404" }),
@@ -186,21 +217,21 @@ describe("graphFetch", () => {
 
     const err = await graphFetch(ctx, "/me/events/abc").catch((e: unknown) => e);
 
-    expect(err).toBeInstanceOf(GraphRequestError);
-    expect(err).toMatchObject({ status: 404, graphCode: "ErrorItemNotFound", requestId: "req-404" });
+    expect(err).toBeInstanceOf(ProviderRequestError);
+    expect(err).toMatchObject({ status: 404, code: "ErrorItemNotFound", requestId: "req-404" });
     expect((err as Error).message).not.toContain("secret");
     expect(mock).toHaveBeenCalledTimes(1);
     const logged = consoleError.mock.calls.flat().map((arg) => String(arg));
     expect(logged.some((s) => s.includes("secret"))).toBe(false);
   });
 
-  it("a non-JSON error body yields graphCode null", async () => {
+  it("a non-JSON error body yields code null", async () => {
     const { fetchImpl } = stubFetch(respond(400, "<html>Bad Request</html>"));
     const { ctx } = context(connection(), fetchImpl);
 
     const err = await graphFetch(ctx, "/me").catch((e: unknown) => e);
 
-    expect(err).toMatchObject({ status: 400, graphCode: null, requestId: null });
+    expect(err).toMatchObject({ status: 400, code: null, requestId: null });
   });
 
   it("an access token expiring within 60 s is refreshed and stored before the first call", async () => {

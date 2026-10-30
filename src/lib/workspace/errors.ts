@@ -1,19 +1,37 @@
 // src/lib/workspace/errors.ts
-import type { CalendarPaneState } from "./types";
+import type { WorkspaceProvider } from "./types";
 
 /**
- * The advisor can't use Workspace yet: the firm hasn't approved the provider,
- * their switch is off, or they haven't signed in. `state` is the Calendar
- * pane's state, which the route returns as its 409 body.
+ * The advisor has no connected account yet. `state` is the Calendar pane's
+ * state, which the route returns as its 409 body.
  */
 export class WorkspaceNotConnectedError extends Error {
-  constructor(public readonly state: Exclude<CalendarPaneState, "ready" | "needs_reconnect">) {
+  constructor(public readonly state: "connect") {
     super(`Workspace is not connected: ${state}`);
     this.name = "WorkspaceNotConnectedError";
   }
 }
 
-/** The advisor's Microsoft sign-in was revoked or expired; they must sign in again. */
+/**
+ * An ops "sign in as" session (a Clerk `actor` claim). Workspace never shows
+ * or changes an advisor's provider data for Foundry staff.
+ */
+export class WorkspaceImpersonationError extends Error {
+  constructor() {
+    super("Workspace is unavailable while signed in as someone else");
+    this.name = "WorkspaceImpersonationError";
+  }
+}
+
+/** No connection by that id belongs to the signed-in advisor (or none exists). */
+export class WorkspaceConnectionNotFoundError extends Error {
+  constructor() {
+    super("Workspace connection not found");
+    this.name = "WorkspaceConnectionNotFoundError";
+  }
+}
+
+/** The account's sign-in was revoked or expired; the advisor must sign in again. */
 export class WorkspaceReconnectRequiredError extends Error {
   constructor() {
     super("Workspace connection needs to be reconnected");
@@ -21,29 +39,37 @@ export class WorkspaceReconnectRequiredError extends Error {
   }
 }
 
+const PROVIDER_NAME: Record<WorkspaceProvider, string> = { microsoft: "Microsoft", google: "Google" };
+
 /**
- * Microsoft Graph kept answering 429/503/504 after our retries. "Microsoft is
- * busy", never "nothing there". `requestId` is Graph's `request-id` header.
+ * The provider kept answering "busy" after our retries: Microsoft's
+ * 429/503/504; Google's 429/500/502/503/504 or a rate-limit or quota 403 (each client
+ * keeps its own set). "The provider is busy", never "nothing there".
+ * `requestId` is the provider's request-id header (Google sends none).
  */
-export class GraphThrottledError extends Error {
-  constructor(public readonly requestId: string | null) {
-    super("Microsoft Graph is throttling or unavailable");
-    this.name = "GraphThrottledError";
+export class ProviderThrottledError extends Error {
+  constructor(
+    public readonly provider: WorkspaceProvider,
+    public readonly requestId: string | null,
+  ) {
+    super(`${PROVIDER_NAME[provider]} is throttling or unavailable`);
+    this.name = "ProviderThrottledError";
   }
 }
 
 /**
- * Any other non-2xx from Graph. `graphCode` is Graph's `error.code`; the
- * response body (whose `error.message` can quote mailbox content) is never
- * kept. `requestId` is Graph's `request-id` header, for Microsoft support.
+ * Any other non-2xx from the provider. `code` is the provider's error code; the
+ * response body (whose message can quote mailbox content) is never kept.
+ * `requestId` is the provider's request-id header, for their support.
  */
-export class GraphRequestError extends Error {
+export class ProviderRequestError extends Error {
   constructor(
+    public readonly provider: WorkspaceProvider,
     public readonly status: number,
-    public readonly graphCode: string | null,
+    public readonly code: string | null,
     public readonly requestId: string | null,
   ) {
-    super(`Microsoft Graph request failed (HTTP ${status})${graphCode ? `: ${graphCode}` : ""}`);
-    this.name = "GraphRequestError";
+    super(`${PROVIDER_NAME[provider]} request failed (HTTP ${status})${code ? `: ${code}` : ""}`);
+    this.name = "ProviderRequestError";
   }
 }

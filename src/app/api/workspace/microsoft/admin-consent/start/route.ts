@@ -4,7 +4,9 @@ import { requireActiveSubscription, requireOrgAdminOrOwner } from "@/lib/authz";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { checkIntegrationOauthLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { parseBody } from "@/lib/schemas/common";
+import { WorkspaceImpersonationError } from "@/lib/workspace/errors";
 import { isWorkspaceEnabled } from "@/lib/workspace/flag";
+import { isImpersonating } from "@/lib/workspace/impersonation";
 import { microsoftAppConfig } from "@/lib/workspace/microsoft/config";
 import { buildAdminConsentUrl } from "@/lib/workspace/microsoft/oauth";
 import { createWorkspaceOauthState } from "@/lib/workspace/oauth-states";
@@ -25,6 +27,8 @@ export async function POST(req: Request): Promise<Response> {
   if (!isWorkspaceEnabled()) return new Response("Not found", { status: 404 });
   try {
     await requireOrgAdminOrOwner();
+    // A "sign in as" session approves nothing: refused before the rate limit or any state.
+    if (await isImpersonating()) throw new WorkspaceImpersonationError();
     await requireActiveSubscription();
     const { orgId: firmId, userId } = await requireOrgAndUser();
 
