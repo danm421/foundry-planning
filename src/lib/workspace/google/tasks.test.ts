@@ -1,48 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
-import type { WorkspaceConnection } from "../connections";
-import type { GoogleContext } from "./api";
 import { createTodo, listOpenTodos, updateTodo } from "./tasks";
+import { json, setup } from "./test-fixtures";
 
 vi.mock("../connections", () => ({
   storeRefreshedTokens: vi.fn(),
   markNeedsReconnect: vi.fn(),
 }));
-
-const conn: WorkspaceConnection = {
-  id: "conn-1",
-  firmId: "firm-1",
-  userId: "user-1",
-  provider: "google",
-  tenantId: "",
-  externalUserId: "sub-1",
-  externalEmail: "advisor@gmail.test",
-  accessToken: "AT",
-  refreshToken: "RT",
-  tokenExpiresAt: new Date("2099-01-01T00:00:00Z"),
-  scope: "calendar.events tasks",
-  status: "connected",
-  lastError: null,
-  connectedAt: new Date("2026-01-01T00:00:00Z"),
-};
-
-function json(body?: unknown, status = 200): Response {
-  return new Response(body === undefined ? null : JSON.stringify(body), { status });
-}
-
-function setup(...responses: Response[]) {
-  const fetchImpl = vi.fn();
-  for (const r of responses) fetchImpl.mockResolvedValueOnce(r);
-  const ctx: GoogleContext = { conn, fetchImpl: fetchImpl as unknown as typeof fetch, sleep: async () => {} };
-  const call = (i: number) => {
-    const [url, init] = fetchImpl.mock.calls[i] as [string, RequestInit];
-    return {
-      url: new URL(url),
-      method: init.method ?? "GET",
-      body: init.body ? JSON.parse(init.body as string) : undefined,
-    };
-  };
-  return { ctx, call };
-}
 
 describe("listOpenTodos", () => {
   it("reads every list without completed or hidden tasks and maps them", async () => {
