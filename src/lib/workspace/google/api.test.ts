@@ -107,6 +107,8 @@ describe("googleFetch", () => {
     ["plain http", "http://www.googleapis.com/calendar/v3/calendars/primary/events"],
     ["another Google API", "https://www.googleapis.com/gmail/v1/users/me/messages"],
     ["another Tasks version", "https://tasks.googleapis.com/tasks/v2/users/@me/lists"],
+    ["a dot-segment path escaping the Calendar base", "https://www.googleapis.com/calendar/v3/../../gmail/v1/users/me/messages"],
+    ["an encoded dot-segment path", "https://www.googleapis.com/calendar/v3/%2e%2e/%2e%2e/gmail/v1/users/me/messages"],
     ["a relative path", "/calendar/v3/calendars/primary/events"],
   ])("refuses %s before refreshing or sending anything", async (_label, url) => {
     const { fetchImpl, mock } = stubFetch(respond(200, {}));

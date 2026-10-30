@@ -44,7 +44,8 @@ export async function googleFetch(
   url: string,
   init: RequestInit = {},
 ): Promise<Response> {
-  if (!ALLOWED_URL_PREFIXES.some((prefix) => url.startsWith(prefix))) {
+  const href = normalizedHref(url);
+  if (href === null || !ALLOWED_URL_PREFIXES.some((prefix) => href.startsWith(prefix))) {
     throw new Error("Refusing to send a Google token outside the Calendar and Tasks APIs");
   }
   const fetchImpl = ctx.fetchImpl ?? fetch;
@@ -57,7 +58,7 @@ export async function googleFetch(
     const headers = new Headers(init.headers);
     headers.set("authorization", `Bearer ${token}`);
 
-    const res = await fetchImpl(url, { ...init, headers });
+    const res = await fetchImpl(href, { ...init, headers });
     if (res.ok) return res;
 
     if (res.status === 401 && !refreshed) {
@@ -78,6 +79,15 @@ export async function googleFetch(
       continue;
     }
     throw new ProviderRequestError("google", res.status, reason, null);
+  }
+}
+
+/** The URL as the network will resolve it (dot-segments collapsed), or null when it isn't an absolute URL. */
+function normalizedHref(url: string): string | null {
+  try {
+    return new URL(url).href;
+  } catch {
+    return null;
   }
 }
 

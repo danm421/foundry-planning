@@ -1,6 +1,7 @@
 // src/lib/workspace/provider-adapter.ts
 import type { WorkspaceConnection } from "./connections";
 import type { WallClock, WorkspaceEvent, WorkspaceProvider, WorkspaceTodo } from "./types";
+import { googleAdapter } from "./google/adapter";
 import { microsoftAdapter } from "./microsoft/adapter";
 
 export type TodoPatch = { title?: string; dueDate?: string | null; notes?: string; completed?: boolean };
@@ -35,8 +36,7 @@ export interface WorkspaceProviderAdapter {
 }
 
 export function adapterFor(provider: WorkspaceProvider): WorkspaceProviderAdapter {
-  if (provider === "microsoft") return microsoftAdapter;
-  throw new Error("Google adapter not built yet");
+  return provider === "microsoft" ? microsoftAdapter : googleAdapter;
 }
 
 /** Only an organizer can change a live event. */
