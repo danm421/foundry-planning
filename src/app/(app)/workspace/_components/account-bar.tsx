@@ -46,8 +46,9 @@ export function AccountBar({
   googleClientId: string | null;
 }): ReactElement {
   const sole = accounts.length === 1 ? accounts[0] : null;
+  // `relative`: below md the Add account panel hangs from this bar (see AddAccountMenu).
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="relative flex flex-wrap items-center gap-2">
       {sole ? (
         <p className="text-[12px] text-ink-3">
           Connected as <span className="text-ink-2">{sole.email}</span> ·{" "}
@@ -169,8 +170,11 @@ function AddAccountMenu({
         {label}
       </a>
     );
+  // Below md, a panel anchored under the trigger can run off a phone screen, so
+  // it hangs from the bar's left edge, at most the bar's width. From md up the
+  // to-do column to the right leaves room for it under the trigger.
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="md:relative">
       <button
         type="button"
         aria-haspopup="menu"
@@ -181,7 +185,7 @@ function AddAccountMenu({
         + Add account
       </button>
       {open ? (
-        <div role="menu" className={`${PANEL} w-[min(340px,calc(100vw-2rem))]`}>
+        <div role="menu" className={`${PANEL} w-[min(340px,100%)] md:w-[340px]`}>
           {googleEnabled ? item("Google", GOOGLE_CONNECT_URL) : null}
           {item("Microsoft 365", MICROSOFT_CONNECT_URL)}
           {atCap ? (
