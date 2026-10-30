@@ -296,10 +296,13 @@ describe("buildMonthlyCashFlowPageData — Distributions on a real engine projec
     expect(d.summary!.year).toBe(screen.year);
   });
 
-  it("reports (does not assert away) years with a residue of $1/month or more", () => {
+  it("years with a residue of $1/month or more are printed as they are, never zeroed", () => {
     const residue = d.rows.filter((r) => Math.abs(r.fromAccounts.unexplained) >= 1);
-    // Recorded for the task report: see its "real projection" section.
-    console.info(`residue years: ${residue.map((r) => `${r.year}:${r.fromAccounts.unexplained.toFixed(2)}`).join(", ") || "none"}`);
-    expect(residue.length).toBeGreaterThanOrEqual(0);
+    // The fixture's accounts run dry in 2047 (R3): 2047-2055 carry a large
+    // negative residue, and from 2048 the total from accounts is $0.
+    expect(residue.map((r) => r.year), "residue years").toEqual([2047, 2048, 2049, 2050, 2051, 2052, 2053, 2054, 2055]);
+    for (const r of residue) {
+      expect(r.fromAccounts.unexplained, `${r.year} residue`).toBeLessThan(0);
+    }
   });
 });

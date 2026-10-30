@@ -36,5 +36,7 @@ export function estimateMonthlyCashFlowPageCount(
 ): number {
   if (options?.mode !== "distributions") return 1;
   const rows = data?.distribution?.rows.length ?? 0;
-  return 1 + Math.max(1, Math.ceil(rows / DISTRIBUTIONS_ROWS_PER_PAGE));
+  // A range with no years renders the single "No projection years" sheet.
+  if (rows === 0) return 1;
+  return 1 + Math.ceil(rows / DISTRIBUTIONS_ROWS_PER_PAGE);
 }

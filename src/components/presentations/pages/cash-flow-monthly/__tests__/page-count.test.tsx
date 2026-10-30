@@ -49,6 +49,13 @@ describe("Distributions page count", () => {
     expect(r.estimate).toBe(2);
   });
 
+  it("is exactly 1 sheet when the range holds no years, and the estimate agrees", async () => {
+    const r = await render({ startYear: 1990, endYear: 1990 });
+    expect(r.rows).toBe(0);
+    expect(r.pages).toBe(1);
+    expect(r.estimate).toBe(1);
+  });
+
   it("a long plan wraps the table onto a third sheet, and the estimate says so", async () => {
     const atLimit = await render("full", DISTRIBUTIONS_ROWS_PER_PAGE);
     expect(atLimit.pages).toBe(2);
