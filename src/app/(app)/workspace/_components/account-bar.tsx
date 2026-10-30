@@ -103,7 +103,7 @@ function AccountChip({
         aria-expanded={open}
         title={account.email}
         onClick={() => setOpen((v) => !v)}
-        className={`inline-flex h-7 items-center gap-1.5 rounded-full border border-hair-2 bg-card px-2.5 text-[12px] hover:border-ink-4 ${FOCUS} ${isHidden ? "text-ink-4 line-through" : "text-ink-2"}`}
+        className={`chip chip-sentence cursor-pointer hover:border-ink-4 ${FOCUS} ${isHidden ? "line-through opacity-60" : ""}`}
       >
         {account.status === "needs_reconnect" ? (
           <span aria-hidden className="size-1.5 rounded-full bg-warn" />

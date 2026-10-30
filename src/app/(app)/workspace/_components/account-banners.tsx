@@ -5,7 +5,7 @@ import type { AccountError, AccountSummary } from "@/lib/workspace/types";
 
 const LINE = "flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-2 text-sm text-ink-2";
 const ACTION =
-  "text-[12px] text-ink underline underline-offset-2 hover:text-accent-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+  "text-[12px] text-ink underline underline-offset-2 hover:text-ink-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
 const PROVIDER_NAME = { google: "Google", microsoft: "Microsoft" } as const;
 

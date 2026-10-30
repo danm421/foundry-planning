@@ -210,7 +210,7 @@ export function WorkspacePage({
     }
   }, []);
   function toggleHidden(connectionId: string) {
-    const next = new Set(hidden);
+    const next = new Set(shownHidden);
     if (!next.delete(connectionId)) next.add(connectionId);
     setHidden(next);
     try {
@@ -266,7 +266,10 @@ export function WorkspacePage({
   const shownWeek = onScreen && "events" in onScreen ? onScreen : null;
   const days = showWeekends ? 7 : 5;
   const labels = accounts.length >= 2 ? accountLabels(accounts) : null;
-  const visibleEvents = shownWeek ? shownWeek.events.filter((e) => !hidden.has(e.connectionId)) : [];
+  // Hiding exists only on the chips (2+ accounts): a sole account is never hidden, whatever storage still holds.
+  const shownHidden: ReadonlySet<string> =
+    accounts.length >= 2 ? new Set(accounts.filter((a) => hidden.has(a.id)).map((a) => a.id)) : new Set();
+  const visibleEvents = shownWeek ? shownWeek.events.filter((e) => !shownHidden.has(e.connectionId)) : [];
   // The zone line follows the week on screen; a missing, invalid or fallback zone reads as the fixed UTC line.
   const zoneLine = shownWeek
     ? shownWeek.timeZoneFallback || !isValidIanaZone(shownWeek.timeZone)
@@ -465,7 +468,7 @@ export function WorkspacePage({
             <AccountBar
               accounts={accounts}
               labels={labels}
-              hidden={hidden}
+              hidden={shownHidden}
               onToggleHidden={toggleHidden}
               onDisconnect={setDisconnectTarget}
               googleEnabled={googleEnabled}
@@ -477,7 +480,7 @@ export function WorkspacePage({
             <AccountBanners
               accounts={accounts}
               results={shownWeek.accounts}
-              hidden={hidden}
+              hidden={shownHidden}
               onRetry={() => setRefresh((n) => n + 1)}
             />
           ) : null}

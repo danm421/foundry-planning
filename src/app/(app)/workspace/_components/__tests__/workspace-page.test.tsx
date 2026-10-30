@@ -546,6 +546,18 @@ describe("WorkspacePage — accounts", () => {
     expect(screen.queryByText("Couldn't load dana@gmail.com's meetings.")).toBeNull();
   });
 
+  it("a sole account stored as hidden still shows its meetings and its banner", async () => {
+    localStorage.setItem("workspace.hiddenAccounts", JSON.stringify([MS_ID]));
+    readQueue.push(
+      Promise.resolve(
+        respond(200, { ...WEEK, accounts: [{ connectionId: MS_ID, error: "needs_reconnect" }] }),
+      ),
+    );
+    renderPage();
+    expect(await screen.findByText("Annual review")).toBeInTheDocument();
+    expect(screen.getByText("dana@hartwell.com needs to reconnect.")).toBeInTheDocument();
+  });
+
   it("labels each block with its account from two accounts on, and not for one", async () => {
     readQueue.push(Promise.resolve(mixed(null)));
     const view = renderPage("ready", [ACCOUNT, GOOGLE]);
@@ -887,7 +899,7 @@ describe("WorkspacePage — moving a meeting", () => {
     expect(await screen.findByText("dana@hartwell.com needs to reconnect.")).toBeInTheDocument();
     expect(screen.getByText("Gym")).toBeInTheDocument();
     expect(grid()).not.toBeNull();
-    expect(screen.queryByText("Your Microsoft sign-in expired.")).toBeNull();
+    expect(screen.queryByText("Your sign-in expired.")).toBeNull();
   });
 
   it("an unchanged save sends nothing", async () => {
