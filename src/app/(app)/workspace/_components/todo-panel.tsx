@@ -9,6 +9,7 @@ import { accountLabels } from "@/lib/workspace/accounts";
 import type { AccountError, AccountSummary, WorkspaceProvider, WorkspaceTodo } from "@/lib/workspace/types";
 import { localToday, monthDay } from "@/lib/workspace/week";
 import { AddTodoRow, type HouseholdOption, type TodoDraft } from "./add-todo-row";
+import { reconnectUrl } from "./calendar-pane-state";
 import { TodoEditorDialog, type TodoPatch } from "./todo-editor-dialog";
 
 /** One connected account's half of `GET /api/workspace/todos`: its open to-dos, or why they're missing. */
@@ -262,10 +263,7 @@ export function TodoPanel({
           {notices.map(({ account, error }) => (
             <p key={account.id} className={NOTICE}>
               {error === "needs_reconnect" ? (
-                <a
-                  href={`/api/workspace/${account.provider}/connect?hint=${encodeURIComponent(account.email)}`}
-                  className="underline underline-offset-2 hover:text-ink"
-                >
+                <a href={reconnectUrl(account)} className="underline underline-offset-2 hover:text-ink">
                   Reconnect {account.email} to see its to-dos.
                 </a>
               ) : error === "throttled" ? (

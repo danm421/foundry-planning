@@ -4,7 +4,7 @@ import { useState, type ReactElement } from "react";
 import { useDismissableMenu } from "@/lib/use-dismissable-menu";
 import { MAX_ACCOUNTS_PER_ADVISOR } from "@/lib/workspace/accounts";
 import type { AccountSummary } from "@/lib/workspace/types";
-import { GOOGLE_CONNECT_URL, MICROSOFT_CONNECT_URL } from "./calendar-pane-state";
+import { GOOGLE_CONNECT_URL, MICROSOFT_CONNECT_URL, reconnectUrl } from "./calendar-pane-state";
 
 const FOCUS = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 const ITEM =
@@ -14,9 +14,6 @@ const PANEL =
 const SMALL_BUTTON =
   "shrink-0 rounded-[var(--radius-sm)] border border-hair-2 px-2 py-0.5 text-[12px] text-ink-2 hover:border-ink-4 hover:text-ink " +
   FOCUS;
-
-const connectUrl = (a: AccountSummary) =>
-  `${a.provider === "google" ? GOOGLE_CONNECT_URL : MICROSOFT_CONNECT_URL}?hint=${encodeURIComponent(a.email)}`;
 
 /**
  * The connected addresses above the week. One address keeps the plain
@@ -126,7 +123,7 @@ function AccountChip({
             {isHidden ? "Show" : "Hide"}
           </button>
           {account.status === "needs_reconnect" ? (
-            <a role="menuitem" href={connectUrl(account)} className={ITEM}>
+            <a role="menuitem" href={reconnectUrl(account)} className={ITEM}>
               Reconnect
             </a>
           ) : null}

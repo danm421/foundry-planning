@@ -1,5 +1,5 @@
 import type { ReactElement, ReactNode } from "react";
-import type { CalendarPaneState as PaneState } from "@/lib/workspace/types";
+import type { CalendarPaneState as PaneState, WorkspaceProvider } from "@/lib/workspace/types";
 
 /**
  * Every calendar pane that isn't the week itself. `needs_reconnect` is a
@@ -11,6 +11,11 @@ export type PaneView = Exclude<PaneState, "ready"> | "needs_reconnect" | "unavai
 // Plain anchors, never fetch(): the routes answer with a redirect to the provider.
 export const MICROSOFT_CONNECT_URL = "/api/workspace/microsoft/connect";
 export const GOOGLE_CONNECT_URL = "/api/workspace/google/connect";
+const CONNECT_URL: Record<WorkspaceProvider, string> = { microsoft: MICROSOFT_CONNECT_URL, google: GOOGLE_CONNECT_URL };
+
+/** An account's Reconnect link: its provider's connect route, the address pre-filled. */
+export const reconnectUrl = (account: { provider: WorkspaceProvider; email: string }) =>
+  `${CONNECT_URL[account.provider]}?hint=${encodeURIComponent(account.email)}`;
 
 export function CalendarPaneState({
   state,

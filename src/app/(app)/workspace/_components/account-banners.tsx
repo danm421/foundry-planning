@@ -2,6 +2,7 @@
 
 import type { ReactElement } from "react";
 import type { AccountError, AccountSummary } from "@/lib/workspace/types";
+import { reconnectUrl } from "./calendar-pane-state";
 
 const LINE = "flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-2 text-sm text-ink-2";
 const ACTION =
@@ -39,10 +40,7 @@ export function AccountBanners({
                 : `Couldn't load ${account.email}'s meetings.`}
           </span>
           {error === "needs_reconnect" ? (
-            <a
-              href={`/api/workspace/${account.provider}/connect?hint=${encodeURIComponent(account.email)}`}
-              className={ACTION}
-            >
+            <a href={reconnectUrl(account)} className={ACTION}>
               Reconnect
             </a>
           ) : (

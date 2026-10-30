@@ -291,17 +291,19 @@ export function WorkspacePage({
   function updateEvents(change: (events: WeekEvent[]) => WeekEvent[]) {
     setResult((r) => (r && "events" in r ? { ...r, events: change(r.events) } : r));
   }
-  /** A write's 409 named a pane: the calendar shows it in place of the week. */
-  function showPane(pane: PaneView) {
+  /**
+   * A write's 409 or 403 named a pane. `needs_reconnect` names one account, not
+   * the whole pane: re-read, so that account's banner shows and the others stay.
+   * Any other pane shows in place of the week.
+   */
+  function writeBlocked(pane: PaneView) {
     setEditor(null);
+    if (pane === "needs_reconnect") {
+      setRefresh((n) => n + 1);
+      router.refresh(); // the server's account statuses: the chip's Reconnect, and the picker stops offering it
+      return;
+    }
     setResult((r) => (r ? { blocked: pane, key: r.key, weekStart: r.weekStart, today: r.today } : r));
-  }
-
-  /** A write's 409 needs_reconnect names one account, not the whole pane: re-read, so that account's banner shows and the others stay. */
-  function reconnectNeeded() {
-    setEditor(null);
-    setRefresh((n) => n + 1);
-    router.refresh(); // the server's account statuses: the chip's Reconnect, and the picker stops offering it
   }
 
   // The account whose Disconnect is awaiting its confirm.
@@ -337,13 +339,10 @@ export function WorkspacePage({
     const r = await write(eventUrl(before), "PATCH", { start, end, timeZone: weekZone });
     if (movesInFlight.current.get(key)?.seq !== seq) return;
     movesInFlight.current.delete(key);
-    if (!r.ok && r.pane === "needs_reconnect") {
-      setTimes({ start: before.start, end: before.end });
-      reconnectNeeded();
-      return;
-    }
     if (!r.ok && r.pane) {
-      showPane(r.pane);
+      // Back where it was; any pane but needs_reconnect replaces the week anyway.
+      setTimes({ start: before.start, end: before.end });
+      writeBlocked(r.pane);
       return;
     }
     if (r.ok) {
@@ -377,8 +376,7 @@ export function WorkspacePage({
     });
     if (!r.ok) {
       if (!r.pane) throw new Error("create failed"); // the dialog says so and stays open
-      if (r.pane === "needs_reconnect") reconnectNeeded();
-      else showPane(r.pane);
+      writeBlocked(r.pane);
       return;
     }
     setEditor(null);
@@ -391,8 +389,7 @@ export function WorkspacePage({
     const r = await write(`${eventUrl(event)}/cancel`, "POST");
     if (!r.ok) {
       if (!r.pane) throw new Error("cancel failed");
-      if (r.pane === "needs_reconnect") reconnectNeeded();
-      else showPane(r.pane);
+      writeBlocked(r.pane);
       return;
     }
     setEditor(null);
