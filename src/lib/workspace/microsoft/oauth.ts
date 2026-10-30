@@ -10,6 +10,12 @@ import {
 const LOGIN_HOST = "https://login.microsoftonline.com";
 
 /**
+ * Microsoft's multi-organization authority: any work or school account, never
+ * a personal one. The advisor's organization comes back in the id_token.
+ */
+const ORGANIZATIONS = "organizations";
+
+/**
  * A token-endpoint or id_token failure. `code` is Microsoft's `error` field
  * (`invalid_grant`, `interaction_required`, …) or one of ours
  * (`missing_refresh_token`, `token_request_failed`, `invalid_token_response`,
@@ -30,36 +36,45 @@ function redirectUri(path: string): string {
   return new URL(path, microsoftAppConfig().appUrl).toString();
 }
 
-/** Tenant ids come back from Microsoft's admin-consent callback; encode before they hit a path. */
+/** A tenant id (or the `organizations` alias); encoded before it hits a path. */
 function tenantUrl(tenantId: string, endpoint: "authorize" | "token"): string {
   return `${LOGIN_HOST}/${encodeURIComponent(tenantId)}/oauth2/v2.0/${endpoint}`;
 }
 
 /**
- * Where a firm's Microsoft admin consents for the whole tenant. The
- * multi-tenant `organizations` endpoint, because the firm's tenant isn't
- * known until Microsoft hands it back on the callback.
+ * The link an advisor sends their IT admin: Microsoft's own admin-consent page
+ * for Foundry, on the `organizations` endpoint so it works for any
+ * organization. No state, so it never expires and names no firm; the callback
+ * records nothing for it.
  */
-export function buildAdminConsentUrl(opts: { state: string }): string {
-  const url = new URL(`${LOGIN_HOST}/organizations/v2.0/adminconsent`);
+export function buildItApprovalUrl(): string {
+  const url = new URL(`${LOGIN_HOST}/${ORGANIZATIONS}/v2.0/adminconsent`);
   url.searchParams.set("client_id", microsoftAppConfig().clientId);
   url.searchParams.set("scope", graphScopeParam());
   url.searchParams.set("redirect_uri", redirectUri(ADMIN_CONSENT_REDIRECT_PATH));
+  return url.toString();
+}
+
+/**
+ * The same admin-consent page started from a firm's settings: the single-use
+ * state ties the approval to the firm and admin who asked for it.
+ */
+export function buildAdminConsentUrl(opts: { state: string }): string {
+  const url = new URL(buildItApprovalUrl());
   url.searchParams.set("state", opts.state);
   return url.toString();
 }
 
 /**
- * An advisor's own sign-in. Using the firm's tenant endpoint (not
- * `organizations`) makes Microsoft itself refuse personal and other-tenant
- * accounts before Foundry ever sees a code.
+ * An advisor's own sign-in, at any organization. `loginHint` pre-fills the
+ * address on a reconnect; the account picker still lets them choose another.
  */
 export function buildAuthorizeUrl(opts: {
-  tenantId: string;
   state: string;
   challenge: string;
+  loginHint?: string;
 }): string {
-  const url = new URL(tenantUrl(opts.tenantId, "authorize"));
+  const url = new URL(tenantUrl(ORGANIZATIONS, "authorize"));
   url.searchParams.set("client_id", microsoftAppConfig().clientId);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("response_mode", "query");
@@ -69,19 +84,21 @@ export function buildAuthorizeUrl(opts: {
   url.searchParams.set("code_challenge", opts.challenge);
   url.searchParams.set("code_challenge_method", "S256");
   url.searchParams.set("prompt", "select_account");
+  if (opts.loginHint) url.searchParams.set("login_hint", opts.loginHint);
   return url.toString();
 }
 
 /**
- * First sign-in. Without a refresh token the connection would die with its
- * first access token, so a response missing one is refused here.
+ * First sign-in, on the same `organizations` authority that issued the code.
+ * Without a refresh token the connection would die with its first access
+ * token, so a response missing one is refused here.
  */
 export async function exchangeCode(
-  opts: { tenantId: string; code: string; codeVerifier: string },
+  opts: { code: string; codeVerifier: string },
   fetchImpl: typeof fetch = fetch,
 ): Promise<ProviderTokenSet> {
   const tokens = await tokenRequest(
-    opts.tenantId,
+    ORGANIZATIONS,
     {
       grant_type: "authorization_code",
       code: opts.code,
@@ -95,9 +112,10 @@ export async function exchangeCode(
 }
 
 /**
- * Microsoft normally rotates the refresh token, but a refresh response may
- * omit one (RFC 6749 §5.1); the token we sent stays valid then, so it is
- * carried forward rather than refused.
+ * On the connection's own tenant (from its id_token). Microsoft normally
+ * rotates the refresh token, but a refresh response may omit one (RFC 6749
+ * §5.1); the token we sent stays valid then, so it is carried forward rather
+ * than refused.
  */
 export async function refreshTokens(
   opts: { tenantId: string; refreshToken: string },

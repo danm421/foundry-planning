@@ -6,7 +6,6 @@ const mocks = vi.hoisted(() => ({
   checkIntegrationOauthLimit: vi.fn(),
   createWorkspaceOauthState: vi.fn(),
   getFirmApproval: vi.fn(),
-  hasMemberAccess: vi.fn(),
 }));
 
 vi.mock("@clerk/nextjs/server", () => ({ auth: mocks.auth }));
@@ -17,16 +16,15 @@ vi.mock("@/lib/rate-limit", async (importOriginal) => ({
 vi.mock("@/lib/workspace/oauth-states", () => ({
   createWorkspaceOauthState: mocks.createWorkspaceOauthState,
 }));
+// Phase 1 gated connect on the firm's approval; it no longer does.
 vi.mock("@/lib/workspace/approvals", () => ({ getFirmApproval: mocks.getFirmApproval }));
-vi.mock("@/lib/workspace/access", () => ({ hasMemberAccess: mocks.hasMemberAccess }));
 
 import { GET } from "./route";
 
-const TENANT = "8f2c6b1e-3d4a-4f5b-9c7d-0e1f2a3b4c5d";
 const TEN_MINUTES = 10 * 60 * 1000;
 
-function connect(): Request {
-  return new Request("https://app.test/api/workspace/microsoft/connect");
+function connect(query = ""): Request {
+  return new Request(`https://app.test/api/workspace/microsoft/connect${query}`);
 }
 
 /** Path + query of a same-site redirect, so assertions don't depend on the host. */
@@ -44,8 +42,7 @@ beforeEach(() => {
   vi.stubEnv("MICROSOFT_CLIENT_SECRET", "secret-xyz");
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.test");
   mocks.auth.mockResolvedValue({ userId: "user_ada", orgId: "org_1", orgRole: "org:member" });
-  mocks.getFirmApproval.mockResolvedValue({ tenantId: TENANT, approvedScopes: "", approvedAt: new Date() });
-  mocks.hasMemberAccess.mockResolvedValue(true);
+  mocks.getFirmApproval.mockResolvedValue(null);
   mocks.checkIntegrationOauthLimit.mockResolvedValue({ allowed: true, remaining: 4, reset: 0 });
   mocks.createWorkspaceOauthState.mockResolvedValue("state-abc");
 });
@@ -60,7 +57,7 @@ describe("GET /api/workspace/microsoft/connect", () => {
     vi.stubEnv("WORKSPACE_ENABLED", "false");
     const res = await GET(connect());
     expect(res.status).toBe(404);
-    expect(mocks.getFirmApproval).not.toHaveBeenCalled();
+    expect(mocks.auth).not.toHaveBeenCalled();
     expect(mocks.createWorkspaceOauthState).not.toHaveBeenCalled();
   });
 
@@ -71,25 +68,23 @@ describe("GET /api/workspace/microsoft/connect", () => {
     expect(mocks.createWorkspaceOauthState).not.toHaveBeenCalled();
   });
 
-  it("firm hasn't approved Microsoft 365 → /workspace?error=firm_not_approved, no state", async () => {
-    mocks.getFirmApproval.mockResolvedValue(null);
+  it("an ops 'sign in as' session → /workspace?error=impersonating, no rate-limit hit, no state", async () => {
+    mocks.auth.mockResolvedValue({ userId: "user_ada", orgId: "org_1", actor: { sub: "user_ops" } });
     const res = await GET(connect());
     expect(res.status).toBe(307);
-    expect(target(res)).toBe("/workspace?error=firm_not_approved");
-    expect(mocks.getFirmApproval).toHaveBeenCalledWith("org_1", "microsoft");
+    expect(target(res)).toBe("/workspace?error=impersonating");
+    expect(mocks.checkIntegrationOauthLimit).not.toHaveBeenCalled();
     expect(mocks.createWorkspaceOauthState).not.toHaveBeenCalled();
   });
 
-  it("the advisor's switch is off → /workspace?error=member_off, no state", async () => {
-    mocks.hasMemberAccess.mockResolvedValue(false);
+  it("with no firm approval row it still redirects to Microsoft: no approval or member check", async () => {
     const res = await GET(connect());
     expect(res.status).toBe(307);
-    expect(target(res)).toBe("/workspace?error=member_off");
-    expect(mocks.hasMemberAccess).toHaveBeenCalledWith("org_1", "user_ada", "microsoft");
-    expect(mocks.createWorkspaceOauthState).not.toHaveBeenCalled();
+    expect(new URL(res.headers.get("location")!).origin).toBe("https://login.microsoftonline.com");
+    expect(mocks.getFirmApproval).not.toHaveBeenCalled();
   });
 
-  it("switched on: a 10-minute user_connect state with the PKCE verifier, then Microsoft's sign-in on the firm's tenant", async () => {
+  it("a 10-minute user_connect state with the PKCE verifier, then Microsoft's multi-organization sign-in", async () => {
     const res = await GET(connect());
     expect(res.status).toBe(307);
 
@@ -107,14 +102,27 @@ describe("GET /api/workspace/microsoft/connect", () => {
 
     const url = new URL(res.headers.get("location")!);
     expect(url.origin).toBe("https://login.microsoftonline.com");
-    expect(url.pathname).toBe(`/${TENANT}/oauth2/v2.0/authorize`);
+    expect(url.pathname).toBe("/organizations/oauth2/v2.0/authorize");
+    expect(url.searchParams.get("prompt")).toBe("select_account");
     expect(url.searchParams.get("state")).toBe("state-abc");
     expect(url.searchParams.get("redirect_uri")).toBe("https://app.test/api/workspace/microsoft/callback");
+    expect(url.searchParams.has("login_hint")).toBe(false);
     // The challenge Microsoft sees is the S256 of the verifier the state keeps.
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");
     expect(url.searchParams.get("code_challenge")).toBe(
       createHash("sha256").update(stateInput.codeVerifier).digest("base64url"),
     );
+  });
+
+  it("a reconnect's ?hint=<email> goes to Microsoft as login_hint", async () => {
+    const res = await GET(connect("?hint=ada%40firm.example"));
+    expect(new URL(res.headers.get("location")!).searchParams.get("login_hint")).toBe("ada@firm.example");
+  });
+
+  it("a hint that isn't an email address is dropped", async () => {
+    const res = await GET(connect("?hint=not-an-email"));
+    expect(res.status).toBe(307);
+    expect(new URL(res.headers.get("location")!).searchParams.has("login_hint")).toBe(false);
   });
 
   // (M3) A browser follows the Connect link here: failures land back on

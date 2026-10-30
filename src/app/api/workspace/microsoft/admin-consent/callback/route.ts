@@ -22,17 +22,31 @@ const SETTINGS_QUERY: Record<Result, string> = {
  */
 const TENANT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** Microsoft says the admin approved (no `error`, `admin_consent=True`). */
+function consented(params: URLSearchParams): boolean {
+  return !params.get("error") && params.get("admin_consent")?.toLowerCase() === "true";
+}
+
 /**
- * Where Microsoft returns the firm's admin after admin consent. PUBLIC: the
- * person approving may be the firm's IT admin with no Foundry account, so the
- * single-use state is the only credential, and the firm and acting admin come
- * from it, never from a session.
+ * Where Microsoft returns an admin after admin consent. PUBLIC: the person
+ * approving may be an IT admin with no Foundry account.
+ *
+ * - No `state` at all: the IT approval link an advisor sent
+ *   (`buildItApprovalUrl`). It names no firm, so the result page shows and
+ *   nothing is recorded.
+ * - A `state`: an approval started from a firm's settings. The single-use
+ *   state is the only credential, and the firm and acting admin come from it,
+ *   never from a session.
  */
 export async function GET(req: Request): Promise<Response> {
   if (!isWorkspaceEnabled()) return new Response("Not found", { status: 404 });
   try {
     const params = new URL(req.url).searchParams;
     const stateParam = params.get("state");
+    if (stateParam === null) {
+      const approved = consented(params) && TENANT_ID.test(params.get("tenant") ?? "");
+      return redirectTo(req, `/microsoft-approval?result=${approved ? "approved" : "declined"}`);
+    }
     const state = stateParam ? await consumeWorkspaceOauthState(stateParam) : null;
     if (!state || state.kind !== "admin_consent" || state.provider !== "microsoft") {
       // No valid state names no firm, so there is no settings page to return to.
@@ -56,7 +70,7 @@ async function settleConsent(
   state: { firmId: string; userId: string },
   params: URLSearchParams,
 ): Promise<Result> {
-  if (params.get("error") || params.get("admin_consent")?.toLowerCase() !== "true") return "declined";
+  if (!consented(params)) return "declined";
   const tenant = params.get("tenant") ?? "";
   if (!TENANT_ID.test(tenant)) return "expired";
   // Lower-cased to the form id_tokens carry in `tid`, so a case-only

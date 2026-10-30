@@ -5,7 +5,6 @@ const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
   consumeWorkspaceOauthState: vi.fn(),
   getFirmApproval: vi.fn(),
-  hasMemberAccess: vi.fn(),
   exchangeCode: vi.fn(),
   upsertUserConnection: vi.fn(),
   recordAudit: vi.fn(),
@@ -16,8 +15,8 @@ vi.mock("@/lib/audit", () => ({ recordAudit: mocks.recordAudit }));
 vi.mock("@/lib/workspace/oauth-states", () => ({
   consumeWorkspaceOauthState: mocks.consumeWorkspaceOauthState,
 }));
+// Phase 1 gated the callback on the firm's approval; it no longer does.
 vi.mock("@/lib/workspace/approvals", () => ({ getFirmApproval: mocks.getFirmApproval }));
-vi.mock("@/lib/workspace/access", () => ({ hasMemberAccess: mocks.hasMemberAccess }));
 vi.mock("@/lib/workspace/connections", () => ({ upsertUserConnection: mocks.upsertUserConnection }));
 // The real readIdTokenClaims and MicrosoftAuthError: only the network call is faked.
 vi.mock("@/lib/workspace/microsoft/oauth", async (importOriginal) => ({
@@ -29,6 +28,7 @@ import { GET } from "./route";
 import { MicrosoftAuthError } from "@/lib/workspace/microsoft/oauth";
 
 const TENANT = "8f2c6b1e-3d4a-4f5b-9c7d-0e1f2a3b4c5d";
+const OTHER_TENANT = "11111111-2222-4333-8444-555555555555";
 const OID = "oid-5b1f9d2e";
 const EMAIL = "ada@firm.example";
 const CODE = "auth-code-0AQABAAIAAAD";
@@ -94,8 +94,7 @@ beforeEach(() => {
   vi.stubEnv("WORKSPACE_ENABLED", "true");
   mocks.auth.mockResolvedValue({ userId: "user_ada", orgId: "org_1" });
   mocks.consumeWorkspaceOauthState.mockResolvedValue(userConnectState);
-  mocks.getFirmApproval.mockResolvedValue({ tenantId: TENANT, approvedScopes: "", approvedAt: new Date() });
-  mocks.hasMemberAccess.mockResolvedValue(true);
+  mocks.getFirmApproval.mockResolvedValue(null);
   mocks.exchangeCode.mockResolvedValue(TOKENS);
   mocks.upsertUserConnection.mockResolvedValue({ ok: true, id: "conn_1" });
   mocks.recordAudit.mockResolvedValue(undefined);
@@ -114,13 +113,15 @@ describe("GET /api/workspace/microsoft/callback", () => {
     expect(mocks.consumeWorkspaceOauthState).not.toHaveBeenCalled();
   });
 
-  it("happy path: exchanges on the firm's tenant, stores the id_token's oid + email, audits, → connected=1", async () => {
+  it("happy path: exchanges at Microsoft, stores the id_token's tenant + oid + email, audits, → connected=microsoft", async () => {
     const res = await GET(callback(signedIn));
     expect(res.status).toBe(307);
-    expect(target(res)).toBe("/workspace?connected=1");
+    expect(target(res)).toBe("/workspace?connected=microsoft");
 
     expect(mocks.consumeWorkspaceOauthState).toHaveBeenCalledWith(STATE);
-    expect(mocks.exchangeCode).toHaveBeenCalledWith({ tenantId: TENANT, code: CODE, codeVerifier: VERIFIER });
+    expect(mocks.exchangeCode).toHaveBeenCalledWith({ code: CODE, codeVerifier: VERIFIER });
+    // No firm approval is needed (the firm has none here).
+    expect(mocks.getFirmApproval).not.toHaveBeenCalled();
     expect(mocks.upsertUserConnection).toHaveBeenCalledWith({
       firmId: "org_1",
       userId: "user_ada",
@@ -142,34 +143,34 @@ describe("GET /api/workspace/microsoft/callback", () => {
     );
   });
 
-  it("wrong tenant: an id_token tid that isn't the firm's → wrong_tenant, nothing stored", async () => {
+  it("another organization's sign-in is stored with that tenant, lower-cased", async () => {
     mocks.exchangeCode.mockResolvedValue({
       ...TOKENS,
-      idToken: idToken({ tid: "11111111-2222-4333-8444-555555555555", oid: OID, preferred_username: EMAIL }),
+      idToken: idToken({ tid: OTHER_TENANT.toUpperCase(), oid: OID, preferred_username: EMAIL }),
     });
     const res = await GET(callback(signedIn));
+    expect(target(res)).toBe("/workspace?connected=microsoft");
+    expect(mocks.upsertUserConnection).toHaveBeenCalledWith(expect.objectContaining({ tenantId: OTHER_TENANT }));
+  });
+
+  it.each([
+    ["account_in_use", "/workspace?error=account_in_use&provider=microsoft"],
+    ["too_many_accounts", "/workspace?error=too_many_accounts&provider=microsoft"],
+  ])("the store refuses with %s → that code and the provider, no audit", async (reason, expected) => {
+    mocks.upsertUserConnection.mockResolvedValue({ ok: false, reason });
+    const res = await GET(callback(signedIn));
     expect(res.status).toBe(307);
-    expect(target(res)).toBe("/workspace?error=wrong_tenant");
+    expect(target(res)).toBe(expected);
+    expect(mocks.recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("an ops 'sign in as' session → impersonating, no exchange, nothing stored", async () => {
+    mocks.auth.mockResolvedValue({ userId: "user_ada", orgId: "org_1", actor: { sub: "user_ops" } });
+    const res = await GET(callback(signedIn));
+    expect(res.status).toBe(307);
+    expect(target(res)).toBe("/workspace?error=impersonating");
+    expect(mocks.exchangeCode).not.toHaveBeenCalled();
     expect(mocks.upsertUserConnection).not.toHaveBeenCalled();
-    expect(mocks.recordAudit).not.toHaveBeenCalled();
-  });
-
-  it("the tenant compare ignores case (approval stored lower-case, tid upper-case)", async () => {
-    mocks.exchangeCode.mockResolvedValue({
-      ...TOKENS,
-      idToken: idToken({ tid: TENANT.toUpperCase(), oid: OID, preferred_username: EMAIL }),
-    });
-    const res = await GET(callback(signedIn));
-    expect(target(res)).toBe("/workspace?connected=1");
-    expect(mocks.upsertUserConnection).toHaveBeenCalledWith(expect.objectContaining({ tenantId: TENANT }));
-  });
-
-  it("account in use: the store refuses → /workspace?error=account_in_use, no audit", async () => {
-    mocks.upsertUserConnection.mockResolvedValue({ ok: false, reason: "account_in_use" });
-    const res = await GET(callback(signedIn));
-    expect(res.status).toBe(307);
-    expect(target(res)).toBe("/workspace?error=account_in_use");
-    expect(mocks.recordAudit).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -184,29 +185,33 @@ describe("GET /api/workspace/microsoft/callback", () => {
     expect(mocks.upsertUserConnection).not.toHaveBeenCalled();
   });
 
-  it("switched off between connect and callback → member_off, no exchange", async () => {
-    mocks.hasMemberAccess.mockResolvedValue(false);
-    const res = await GET(callback(signedIn));
+  it.each([
+    [
+      "the organization needs an admin (AADSTS65001)",
+      { error: "access_denied", error_description: "AADSTS65001: The user or administrator has not consented" },
+      "needs_admin_approval",
+    ],
+    [
+      "an admin-only permission (AADSTS90094)",
+      { error: "invalid_request", error_description: "AADSTS90094: The grant requires admin permission." },
+      "needs_admin_approval",
+    ],
+    ["consent_required", { error: "consent_required" }, "needs_admin_approval"],
+    [
+      "the advisor cancelled (AADSTS65004)",
+      { error: "access_denied", error_description: "AADSTS65004: User declined to consent" },
+      "connect_declined",
+    ],
+    ["any other error", { error: "server_error", error_description: "AADSTS50000: oops" }, "connect_failed"],
+  ])("Microsoft answers with %s → its banner code, no exchange, the description never logged", async (_label, params, code) => {
+    const spies = spyOnConsole();
+    const res = await GET(callback({ ...params, state: STATE }));
     expect(res.status).toBe(307);
-    expect(target(res)).toBe("/workspace?error=member_off");
-    expect(mocks.hasMemberAccess).toHaveBeenCalledWith("org_1", "user_ada", "microsoft");
-    expect(mocks.exchangeCode).not.toHaveBeenCalled();
-  });
-
-  it("firm approval removed between connect and callback → firm_not_approved, no exchange", async () => {
-    mocks.getFirmApproval.mockResolvedValue(null);
-    const res = await GET(callback(signedIn));
-    expect(target(res)).toBe("/workspace?error=firm_not_approved");
-    expect(mocks.exchangeCode).not.toHaveBeenCalled();
-  });
-
-  it("Microsoft returns an error (advisor cancelled) → connect_declined, no exchange", async () => {
-    const res = await GET(callback({ error: "access_denied", error_description: "AADSTS65004", state: STATE }));
-    expect(res.status).toBe(307);
-    expect(target(res)).toBe("/workspace?error=connect_declined");
+    expect(target(res)).toBe(`/workspace?error=${code}`);
     expect(mocks.exchangeCode).not.toHaveBeenCalled();
     // The state is still burnt.
     expect(mocks.consumeWorkspaceOauthState).toHaveBeenCalledWith(STATE);
+    expect(everythingLogged(spies)).not.toContain("AADSTS");
   });
 
   it("no code → connect_failed, no exchange", async () => {
@@ -226,6 +231,7 @@ describe("GET /api/workspace/microsoft/callback", () => {
     ["unknown or expired", null],
     ["an admin-consent state", { ...userConnectState, kind: "admin_consent", codeVerifier: null }],
     ["a user_connect state with no verifier", { ...userConnectState, codeVerifier: null }],
+    ["a Google sign-in state", { ...userConnectState, provider: "google" }],
   ])("%s state → connect_failed, no exchange", async (_label, state) => {
     mocks.consumeWorkspaceOauthState.mockResolvedValue(state);
     const res = await GET(callback(signedIn));

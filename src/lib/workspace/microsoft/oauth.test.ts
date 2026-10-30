@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   buildAdminConsentUrl,
   buildAuthorizeUrl,
+  buildItApprovalUrl,
   exchangeCode,
   refreshTokens,
   readIdTokenClaims,
@@ -74,31 +75,48 @@ describe("microsoft oauth helpers", () => {
     expect(url.searchParams.get("scope")).not.toContain("Mail.Read");
   });
 
-  it("authorize URL targets the firm's tenant with PKCE and an account picker", () => {
-    const url = new URL(buildAuthorizeUrl({ tenantId: "t-123", state: "s2", challenge: "c" }));
+  it("the IT approval link is the same organizations admin-consent page with no state", () => {
+    const url = new URL(buildItApprovalUrl());
     expect(url.host).toBe("login.microsoftonline.com");
-    expect(url.pathname).toBe("/t-123/oauth2/v2.0/authorize");
+    expect(url.pathname).toBe("/organizations/v2.0/adminconsent");
+    expect(url.searchParams.get("client_id")).toBe("cid");
+    expect(url.searchParams.get("redirect_uri")).toBe(
+      "https://app.test/api/workspace/microsoft/admin-consent/callback",
+    );
+    expect(url.searchParams.get("scope")).toBe(
+      new URL(buildAdminConsentUrl({ state: "s1" })).searchParams.get("scope"),
+    );
+    expect(url.searchParams.has("state")).toBe(false);
+  });
+
+  it("authorize URL targets Microsoft's multi-organization endpoint with PKCE, an account picker and the hint", () => {
+    const url = new URL(buildAuthorizeUrl({ state: "s2", challenge: "c", loginHint: "dana@firm.com" }));
+    expect(url.host).toBe("login.microsoftonline.com");
+    expect(url.pathname).toBe("/organizations/oauth2/v2.0/authorize");
     expect(url.searchParams.get("response_type")).toBe("code");
     expect(url.searchParams.get("response_mode")).toBe("query");
     expect(url.searchParams.get("code_challenge")).toBe("c");
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");
     expect(url.searchParams.get("prompt")).toBe("select_account");
+    expect(url.searchParams.get("login_hint")).toBe("dana@firm.com");
     expect(url.searchParams.get("state")).toBe("s2");
     expect(url.searchParams.get("redirect_uri")).toBe(
       "https://app.test/api/workspace/microsoft/callback",
     );
   });
 
-  it("exchangeCode posts the code grant to the tenant's token endpoint and maps the token set", async () => {
+  it("authorize URL without a hint sends no login_hint", () => {
+    const url = new URL(buildAuthorizeUrl({ state: "s2", challenge: "c" }));
+    expect(url.searchParams.has("login_hint")).toBe(false);
+  });
+
+  it("exchangeCode posts the code grant to the organizations token endpoint and maps the token set", async () => {
     const { fetchImpl, sent } = mockFetch(jsonResponse(200, TOKEN_BODY));
-    const tokens = await exchangeCode(
-      { tenantId: "t-123", code: "auth-code", codeVerifier: "verifier" },
-      fetchImpl,
-    );
+    const tokens = await exchangeCode({ code: "auth-code", codeVerifier: "verifier" }, fetchImpl);
 
     const { url, init, body } = sent();
     expect(url.host).toBe("login.microsoftonline.com");
-    expect(url.pathname).toBe("/t-123/oauth2/v2.0/token");
+    expect(url.pathname).toBe("/organizations/oauth2/v2.0/token");
     expect(init.method).toBe("POST");
     expect(new Headers(init.headers).get("content-type")).toBe(
       "application/x-www-form-urlencoded",
@@ -126,10 +144,9 @@ describe("microsoft oauth helpers", () => {
         error_description: "AADSTS70008: The refresh token has expired … secret detail",
       }),
     );
-    const err = await exchangeCode(
-      { tenantId: "t-123", code: "auth-code", codeVerifier: "verifier" },
-      fetchImpl,
-    ).catch((e: unknown) => e);
+    const err = await exchangeCode({ code: "auth-code", codeVerifier: "verifier" }, fetchImpl).catch(
+      (e: unknown) => e,
+    );
 
     expect(err).toBeInstanceOf(MicrosoftAuthError);
     expect((err as MicrosoftAuthError).code).toBe("invalid_grant");
@@ -150,10 +167,9 @@ describe("microsoft oauth helpers", () => {
 
   it("a sign-in that returns no refresh token rejects with missing_refresh_token", async () => {
     const { fetchImpl } = mockFetch(jsonResponse(200, TOKEN_BODY_NO_REFRESH));
-    const err = await exchangeCode(
-      { tenantId: "t-123", code: "auth-code", codeVerifier: "verifier" },
-      fetchImpl,
-    ).catch((e: unknown) => e);
+    const err = await exchangeCode({ code: "auth-code", codeVerifier: "verifier" }, fetchImpl).catch(
+      (e: unknown) => e,
+    );
 
     expect(err).toBeInstanceOf(MicrosoftAuthError);
     expect((err as MicrosoftAuthError).code).toBe("missing_refresh_token");
