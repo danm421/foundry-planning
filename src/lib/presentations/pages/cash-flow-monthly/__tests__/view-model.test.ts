@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildMonthlyCashFlowPageData } from "../view-model";
 import type { MonthlyCashFlowPageOptions } from "../types";
+import { buildDistributionsChartData } from "@/components/charts/solver-monthly-distributions-chart";
 import { INFLATION, PLAN_START_YEAR, makeMonthlyClientData, makeMonthlyYear } from "./fixtures";
 
 // 2040 is comfortable, 2041 is the first shortfall year (income below fixed
@@ -35,7 +36,7 @@ function build(overrides: Partial<MonthlyCashFlowPageOptions> = {}) {
   return buildMonthlyCashFlowPageData({
     years: years(),
     clientData: makeMonthlyClientData(),
-    options: { view: "plan", basis: "today", range: "full", year: null, ...overrides },
+    options: { view: "plan", basis: "today", range: "full", year: null, mode: "cashflow", ...overrides },
     scenarioLabel: "Base Case",
     clientName: "Cooper",
     spouseName: "Susan",
@@ -202,11 +203,52 @@ describe("buildMonthlyCashFlowPageData — month by month", () => {
           : y,
       ),
       clientData: makeMonthlyClientData(),
-      options: { view: "months", basis: "today", range: "full", year: 2041 },
+      options: { view: "months", basis: "today", range: "full", year: 2041, mode: "cashflow" },
       scenarioLabel: "Base Case",
       clientName: "Cooper",
       spouseName: "Susan",
     });
     expect(withSurplus.notes.some((n) => /surplus/i.test(n))).toBe(true);
+  });
+});
+
+describe("buildMonthlyCashFlowPageData — Distributions", () => {
+  it("captions the same year as the Cash flow branch", () => {
+    const d = build({ mode: "distributions" }).distribution!;
+    expect(d.summary!.year).toBe(build().summary!.year);
+    expect(d.summary!.year).toBe(2041);
+    expect(build({ mode: "distributions", year: 2040 }).distribution!.summary!.year).toBe(2040);
+  });
+
+  it("captions the shortfall year even when the range starts after it", () => {
+    const d = build({ mode: "distributions", range: { startYear: 2042, endYear: 2042 } }).distribution!;
+    expect(d.rows.map((r) => r.year)).toEqual([2042]);
+    expect(d.summary!.year).toBe(2041);
+  });
+
+  it("respects the year range", () => {
+    const d = build({ mode: "distributions", range: { startYear: 2040, endYear: 2041 } }).distribution!;
+    expect(d.rows.map((r) => r.year)).toEqual([2040, 2041]);
+  });
+
+  it("leaves Cash flow pages without a distribution block", () => {
+    expect(build().distribution).toBeUndefined();
+  });
+
+  it("chart series labels match the screen chart's dataset labels", () => {
+    const data = build({ mode: "distributions" });
+    const spec = data.chartSpec!;
+    const screen = buildDistributionsChartData(data.distribution!.rows, "light").datasets.map((ds) => ds.label);
+    expect([...spec.stacks.map((s) => s.label), ...spec.lines.map((l) => l.label)]).toEqual(screen);
+  });
+
+  it("prints the taxes-and-goals note, and the depleted note when a printed year is depleted", () => {
+    const all = build({ mode: "distributions" }).notes;
+    expect(all).toContain(
+      "Taxes and goals paid from set-aside accounts are shown separately and are not part of the monthly spending need.",
+    );
+    expect(all.some((n) => /exhausted/i.test(n))).toBe(true);
+    const early = build({ mode: "distributions", range: { startYear: 2040, endYear: 2041 } }).notes;
+    expect(early.some((n) => /exhausted/i.test(n))).toBe(false);
   });
 });

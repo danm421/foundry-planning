@@ -18,6 +18,7 @@ const MONTHS: MonthlyCashFlowPageOptions = {
   basis: "today",
   range: "full",
   year: null,
+  mode: "cashflow",
 };
 
 describe("MonthlyCashFlowOptionsControl", () => {
@@ -64,5 +65,18 @@ describe("MonthlyCashFlowOptionsControl", () => {
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ range: { startYear: 2041, endYear: 2050 } }),
     );
+  });
+
+  it("switches the report to Distributions", () => {
+    const { getByLabelText, onChange } = setup();
+    fireEvent.change(getByLabelText("Report"), { target: { value: "distributions" } });
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ mode: "distributions" }));
+  });
+
+  it("hides the view select in Distributions, which is one card and one table", () => {
+    const { queryByLabelText, getByLabelText } = setup({ ...MONTHS, mode: "distributions" });
+    expect(queryByLabelText("Show")).toBeNull();
+    expect(getByLabelText("Report")).toBeTruthy();
+    expect(getByLabelText("Year")).toBeTruthy();
   });
 });

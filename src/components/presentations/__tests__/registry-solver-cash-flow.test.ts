@@ -26,6 +26,7 @@ describe("the Solver's Cash Flow reports as deck pages", () => {
       basis: "today",
       range: "full",
       year: null,
+      mode: "cashflow",
     });
   });
 
@@ -39,19 +40,20 @@ describe("the Solver's Cash Flow reports as deck pages", () => {
       basis: "nominal" as const,
       range: { startYear: 2041, endYear: 2050 },
       year: 2044,
+      mode: "distributions" as const,
     };
     expect(page.optionsSchema.parse(JSON.parse(JSON.stringify(saved)))).toEqual(saved);
   });
 
   it("names the view, the year rule and the basis in the launcher summary", () => {
     const page = PRESENTATION_PAGES.cashFlowMonthly;
-    expect(page.summarizeOptions({ view: "plan", basis: "today", range: "full", year: null }))
+    expect(page.summarizeOptions({ view: "plan", basis: "today", range: "full", year: null, mode: "cashflow" }))
       .toBe("Across the plan · Full range · Today's dollars");
     // The year is resolved against the projection at build time, which the
     // launcher has not run — so it names the rule rather than guessing a year.
-    expect(page.summarizeOptions({ view: "months", basis: "nominal", range: "full", year: null }))
+    expect(page.summarizeOptions({ view: "months", basis: "nominal", range: "full", year: null, mode: "cashflow" }))
       .toBe("Month by month · first shortfall year · Future dollars");
-    expect(page.summarizeOptions({ view: "months", basis: "today", range: "full", year: 2044 }))
+    expect(page.summarizeOptions({ view: "months", basis: "today", range: "full", year: 2044, mode: "cashflow" }))
       .toBe("Month by month · 2044 · Today's dollars");
   });
 });

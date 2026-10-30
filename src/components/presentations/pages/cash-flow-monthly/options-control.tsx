@@ -16,21 +16,39 @@ const field =
 
 export function MonthlyCashFlowOptionsControl({ value, onChange }: Props) {
   const people = useAgePeople();
+  const distributions = value.mode === "distributions";
   return (
     <OptionsRow>
-      <OptionsGroup label="Show">
+      <OptionsGroup label="Report">
         <select
-          aria-label="Show"
+          aria-label="Report"
           className={field}
-          value={value.view}
+          value={value.mode}
           onChange={(e) =>
-            onChange({ ...value, view: e.target.value as MonthlyCashFlowPageOptions["view"] })
+            onChange({ ...value, mode: e.target.value as MonthlyCashFlowPageOptions["mode"] })
           }
         >
-          <option value="plan">Across the plan</option>
-          <option value="months">Month by month</option>
+          <option value="cashflow">Cash flow</option>
+          <option value="distributions">Distributions</option>
         </select>
       </OptionsGroup>
+
+      {/* Distributions is one card plus one table, so it has no view to pick. */}
+      {!distributions && (
+        <OptionsGroup label="Show">
+          <select
+            aria-label="Show"
+            className={field}
+            value={value.view}
+            onChange={(e) =>
+              onChange({ ...value, view: e.target.value as MonthlyCashFlowPageOptions["view"] })
+            }
+          >
+            <option value="plan">Across the plan</option>
+            <option value="months">Month by month</option>
+          </select>
+        </OptionsGroup>
+      )}
 
       <OptionsGroup label="Dollars">
         <select
@@ -46,9 +64,9 @@ export function MonthlyCashFlowOptionsControl({ value, onChange }: Props) {
         </select>
       </OptionsGroup>
 
-      {/* The two views take different scoping controls, and showing both at once
+      {/* Cash flow's two views take different scoping controls, and showing both
           would offer a range the month table ignores. */}
-      {value.view === "months" ? (
+      {distributions || value.view === "months" ? (
         <OptionsGroup label="Year">
           <div className="flex items-center gap-2">
             {/* Empty means "let the plan decide" — the same rule the solver
@@ -63,9 +81,11 @@ export function MonthlyCashFlowOptionsControl({ value, onChange }: Props) {
             />
           </div>
         </OptionsGroup>
-      ) : (
+      ) : null}
+      {/* Distributions prints a year card AND a range of years in its table. */}
+      {distributions || value.view === "plan" ? (
         <YearRangeControl value={value.range} onChange={(range) => onChange({ ...value, range })} />
-      )}
+      ) : null}
     </OptionsRow>
   );
 }

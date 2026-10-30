@@ -7,10 +7,14 @@ export const monthlyCashFlowOptionsSchema = z.object({
   basis: z.union([z.literal("today"), z.literal("nominal")]),
   range: rangeSchema,
   year: z.number().int().nullable(),
-}) satisfies z.ZodType<MonthlyCashFlowPageOptions>;
+  // Saved decks and firm templates predate the Distributions view; they carry
+  // no mode and must keep printing the Cash flow report.
+  mode: z.enum(["cashflow", "distributions"]).default("cashflow"),
+}) satisfies z.ZodType<MonthlyCashFlowPageOptions, unknown>;
 
 export function summarizeMonthlyCashFlowOptions(o: MonthlyCashFlowPageOptions): string {
   const basis = o.basis === "today" ? "Today's dollars" : "Future dollars";
+  if (o.mode === "distributions") return `Distributions · ${o.year ?? "first shortfall year"} · ${basis}`;
   if (o.view === "months") {
     // A null year is resolved at build time against the projection, which the
     // launcher has not run — so it names the rule rather than guessing a year.
@@ -19,6 +23,11 @@ export function summarizeMonthlyCashFlowOptions(o: MonthlyCashFlowPageOptions): 
   return `Across the plan · ${summarizeRange(o.range)} · ${basis}`;
 }
 
-export function estimateMonthlyCashFlowPageCount(): number {
-  return 1;
+/** The Distributions card, chart and a full-range table do not share one
+ *  sheet; the table wraps to a second. Verified by rendering (task 6 report). */
+export function estimateMonthlyCashFlowPageCount(
+  _data?: unknown,
+  options?: Pick<MonthlyCashFlowPageOptions, "mode">,
+): number {
+  return options?.mode === "distributions" ? 2 : 1;
 }

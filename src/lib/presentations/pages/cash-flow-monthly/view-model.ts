@@ -15,7 +15,12 @@ import {
 } from "@/lib/solver/monthly-cash-flow";
 import { buildMonthlyAllocation } from "@/lib/solver/monthly-allocation";
 import { exactCurrency } from "../../format";
-import { dataLight } from "@/brand";
+import {
+  buildMonthlyDistributionRows,
+  rankDistributionAccounts,
+  type DistributionRow,
+} from "@/lib/solver/monthly-distributions";
+import { colorsLight, dataLight } from "@/brand";
 import { PRESENTATION_THEME } from "../../theme";
 import type { ChartSpec } from "../../charts/types";
 import { filterYearsToRange, type RangeOption } from "../../shared/year-filter";
@@ -38,6 +43,13 @@ const CASH_ON_HAND_NOTE =
 
 const DEPLETED_NOTE =
   "A year marked † is one where the accounts are exhausted. The plan keeps spending against an overdrawn account, so that year's figure is money that does not exist.";
+
+const DISTRIBUTIONS_NOTE =
+  "Taxes and goals paid from set-aside accounts are shown separately and are not part of the monthly spending need.";
+
+/** Account stacks take these in rank order, as the screen chart does, so the
+ *  largest account is the same colour on both. */
+const ACCOUNT_COLORS = [dataLight.blue, dataLight.yellow, dataLight.sky, dataLight.green];
 
 /** The glyph the table prints beside a depleted year. Shape and label, not
  *  colour alone — the flag has to survive a greyscale print. */
@@ -79,6 +91,10 @@ export function buildMonthlyCashFlowPageData(
     summary,
     footnote: DISCLAIMER,
   };
+
+  if (options.mode === "distributions") {
+    return { ...base, ...buildDistributionsBranch(input, selected?.year) };
+  }
 
   if (options.view === "months") {
     const year = selected ? years.find((y) => y.year === selected.year) : undefined;
@@ -156,6 +172,92 @@ export function buildMonthlyCashFlowPageData(
     monthRows: [],
     notes,
   };
+}
+
+function buildDistributionsBranch(
+  input: BuildMonthlyCashFlowInput,
+  captionYear: number | undefined,
+): Pick<MonthlyCashFlowPageData, "distribution" | "chartSpec" | "planRows" | "monthRows" | "notes"> {
+  const { years, clientData, options } = input;
+  // Built over the FULL projection; only the printed rows are range-filtered.
+  // The caption year is the Cash flow rule's (`selectMonthlyRow`), so screen and
+  // print name the same year.
+  const allRows = buildMonthlyDistributionRows(years, clientData, options.basis);
+  const summary = allRows.find((r) => r.year === captionYear) ?? allRows[0] ?? null;
+
+  const visible = new Set(filterYearsToRange(years, options.range as RangeOption).map((y) => y.year));
+  const rows = allRows.filter((r) => visible.has(r.year));
+  // One ranking for the table and the chart, so both roll the same accounts
+  // into "Other accounts".
+  const columns = rankDistributionAccounts(rows);
+  const showOther =
+    new Set(rows.flatMap((r) => r.fromAccounts.accounts.map((a) => a.accountId))).size >
+    columns.length;
+
+  const notes: string[] = [];
+  if (rows.some((r) => r.depleted)) notes.push(DEPLETED_NOTE);
+  notes.push(DISTRIBUTIONS_NOTE);
+
+  return {
+    distribution: { summary, rows, columns, showOther },
+    chartSpec: rows.length > 0 ? distributionsChartSpec(rows, columns, showOther) : undefined,
+    planRows: [],
+    monthRows: [],
+    notes,
+  };
+}
+
+/** Other accounts' share of a row: whatever the ranked columns don't take. */
+export function otherAccountsAmount(
+  r: DistributionRow,
+  columns: { accountId: string }[],
+): number {
+  const ranked = new Set(columns.map((c) => c.accountId));
+  return r.fromAccounts.accounts.reduce((s, a) => (ranked.has(a.accountId) ? s : s + a.amount), 0);
+}
+
+/** Same series, order and colours as the screen chart. "Other accounts" is the
+ *  neutral slate (never a semantic hue); the Spending need line is solid here,
+ *  named in the legend, because the print chart draws no dashes. */
+function distributionsChartSpec(
+  rows: DistributionRow[],
+  columns: { accountId: string; name: string }[],
+  showOther: boolean,
+): ChartSpec {
+  const stacks: DrillStackSeries[] = [
+    stack("Income", rows.map((r) => r.income.total), dataLight.grey),
+    ...columns.map((c, i) =>
+      stack(
+        c.name,
+        rows.map((r) => r.fromAccounts.accounts.find((a) => a.accountId === c.accountId)?.amount ?? 0),
+        ACCOUNT_COLORS[i],
+      ),
+    ),
+    ...(showOther
+      ? [
+          stack(
+            "Other accounts",
+            rows.map((r) => Math.max(0, otherAccountsAmount(r, columns))),
+            colorsLight.ink2,
+          ),
+        ]
+      : []),
+  ];
+  // Ids come from the label, which can collide when two accounts share a name.
+  stacks.forEach((s, i) => (s.seriesId = `${s.seriesId}-${i}`));
+  return buildDrillChartSpec({
+    years: rows.map((r) => r.year),
+    stacks,
+    lines: [
+      {
+        seriesId: "spending-need",
+        label: "Spending need",
+        color: PRESENTATION_THEME.chartLine,
+        values: rows.map((r) => r.need.total),
+      },
+    ],
+    markers: [],
+  });
 }
 
 function toSummary(r: MonthlyCashFlowRow): MonthlySummary {

@@ -16,6 +16,7 @@ import type {
 import { PageFrame } from "../../shared/page-frame";
 import { SectionHead } from "../../shared/section-head";
 import { CashflowChartPdf } from "../cash-flow/chart-pdf";
+import { DistributionsCard, DistributionsTable } from "./distributions-pdf";
 
 const s = StyleSheet.create({
   card: {
@@ -124,7 +125,10 @@ export function MonthlyCashFlowPagePdf({
   totalPages: number;
   accent: SectionAccent;
 }) {
-  const empty = data.planRows.length === 0 && data.monthRows.length === 0;
+  const dist = data.distribution;
+  const empty = dist
+    ? dist.rows.length === 0
+    : data.planRows.length === 0 && data.monthRows.length === 0;
 
   return (
     <PageFrame
@@ -139,9 +143,15 @@ export function MonthlyCashFlowPagePdf({
         <Text style={s.empty}>No projection years to show.</Text>
       ) : (
         <>
-          {data.summary && <SummaryCard summary={data.summary} />}
+          {dist ? (
+            dist.summary && <DistributionsCard row={dist.summary} />
+          ) : (
+            data.summary && <SummaryCard summary={data.summary} />
+          )}
           {data.chartSpec && <CashflowChartPdf spec={data.chartSpec} />}
-          {data.view === "plan" ? (
+          {dist ? (
+            <DistributionsTable distribution={dist} accent={accent} />
+          ) : data.view === "plan" ? (
             <PlanTable rows={data.planRows} accent={accent} />
           ) : (
             <MonthTable rows={data.monthRows} accent={accent} />

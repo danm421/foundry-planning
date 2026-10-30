@@ -2,6 +2,7 @@
 // of the Solver's Cash Flow → Monthly report.
 
 import type { DollarBasis } from "@/lib/solver/monthly-cash-flow";
+import type { DistributionRow, MonthlyMode } from "@/lib/solver/monthly-distributions";
 import type { RangeOption } from "../../shared/year-filter";
 import type { ChartSpec } from "../../charts/types";
 
@@ -16,6 +17,10 @@ export interface MonthlyCashFlowPageOptions {
   /** The year the month table details. `null` follows the screen's own rule:
    *  the first shortfall year, which is the conversation this report exists for. */
   year: number | null;
+  /** Which report the sheet prints. Descriptors saved before the Distributions
+   *  view existed carry no mode and parse to "cashflow". In "distributions" the
+   *  `view` is ignored: that report is one card plus one table. */
+  mode: MonthlyMode;
 }
 
 export const MONTHLY_CASH_FLOW_OPTIONS_DEFAULT: MonthlyCashFlowPageOptions = {
@@ -23,6 +28,7 @@ export const MONTHLY_CASH_FLOW_OPTIONS_DEFAULT: MonthlyCashFlowPageOptions = {
   basis: "today",
   range: "full",
   year: null,
+  mode: "cashflow",
 };
 
 /** The hero card: the one number an advisor reads out loud, and the arithmetic
@@ -84,6 +90,18 @@ export interface MonthlyCashFlowPageData {
   view: "plan" | "months";
   summary: MonthlySummary | null;
   chartSpec?: ChartSpec;
+  /** Present only when `options.mode` is "distributions". */
+  distribution?: {
+    /** The captioned year's row; null when the projection has no years. */
+    summary: DistributionRow | null;
+    /** One row per printed year (the range applies). */
+    rows: DistributionRow[];
+    /** The accounts with their own table column / chart stack. Everything else
+     *  rolls into "Other accounts", in the table and the chart alike. */
+    columns: { accountId: string; name: string }[];
+    /** True when more accounts exist than `columns` — "Other accounts" shows. */
+    showOther: boolean;
+  };
   /** Populated in "plan" view only. */
   planRows: MonthlyPlanRow[];
   /** Populated in "months" view only. */
