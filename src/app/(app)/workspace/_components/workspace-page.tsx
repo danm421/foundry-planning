@@ -55,8 +55,10 @@ const TIME_ZONE_FALLBACK = "Times in UTC — none of your accounts reports a tim
 const BLOCKING_PANES = new Set<PaneView>(["connect", "needs_reconnect", "impersonating"]);
 
 const MOVE_FAILED = "Couldn't move the meeting — it's back where it was.";
-const TEAMS_FAILED =
-  "Meeting saved without a Teams link — your Microsoft account can't create Teams meetings.";
+const VIDEO_FAILED = {
+  microsoft: "Meeting saved without a Teams link — your Microsoft account can't create Teams meetings.",
+  google: "Meeting saved without a Google Meet link — Google couldn't create one for this account.",
+} as const;
 
 /** One account's half of a read week: null when it loaded. */
 type AccountResult = { connectionId: string; error: AccountError | null };
@@ -280,6 +282,11 @@ export function WorkspacePage({
   const weekZone = current && "events" in current ? current.timeZone : null;
 
   const [editor, setEditor] = useState<Editor | null>(null);
+  // A new meeting can go on any connected account that isn't hidden.
+  const pickLabels = labels ?? accountLabels(accounts);
+  const pickable = accounts
+    .filter((a) => a.status === "connected" && !shownHidden.has(a.id))
+    .map((a) => ({ id: a.id, provider: a.provider, label: pickLabels.get(a.id) ?? a.email }));
 
   function updateEvents(change: (events: WeekEvent[]) => WeekEvent[]) {
     setResult((r) => (r && "events" in r ? { ...r, events: change(r.events) } : r));
@@ -294,6 +301,7 @@ export function WorkspacePage({
   function reconnectNeeded() {
     setEditor(null);
     setRefresh((n) => n + 1);
+    router.refresh(); // the server's account statuses: the chip's Reconnect, and the picker stops offering it
   }
 
   // The account whose Disconnect is awaiting its confirm.
@@ -357,15 +365,14 @@ export function WorkspacePage({
   }
 
   async function createMeeting(d: EventDraft): Promise<void> {
-    // Until the account picker, a new meeting goes to the first connected account.
-    const target = accounts.find((a) => a.status === "connected");
+    const target = accounts.find((a) => a.id === d.connectionId);
     if (!target || !weekZone) throw new Error("create failed"); // the dialog says so and stays open
     const r = await write(`/api/workspace/accounts/${target.id}/events`, "POST", {
       subject: d.subject,
       start: d.start,
       end: d.end,
       attendees: d.attendees,
-      video: d.teams,
+      video: d.video,
       timeZone: weekZone,
     });
     if (!r.ok) {
@@ -375,8 +382,8 @@ export function WorkspacePage({
       return;
     }
     setEditor(null);
-    const teamsFailed = (r.body as { videoFailed?: unknown } | null)?.videoFailed === true;
-    if (teamsFailed) showToast({ message: TEAMS_FAILED });
+    const videoFailed = (r.body as { videoFailed?: unknown } | null)?.videoFailed === true;
+    if (videoFailed) showToast({ message: VIDEO_FAILED[target.provider] });
     setRefresh((n) => n + 1); // the server knows `editable` and the household
   }
 
@@ -541,6 +548,7 @@ export function WorkspacePage({
       {editor?.mode === "create" ? (
         <EventEditorDialog
           mode="create"
+          accounts={pickable}
           initial={{
             subject: "",
             start: editor.start,
@@ -554,6 +562,7 @@ export function WorkspacePage({
       ) : editor?.mode === "edit" ? (
         <EventEditorDialog
           mode="edit"
+          provider={editor.event.provider}
           initial={{
             subject: editor.event.subject,
             start: editor.event.start,

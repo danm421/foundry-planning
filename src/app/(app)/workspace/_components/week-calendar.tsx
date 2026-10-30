@@ -52,7 +52,10 @@ const DAY_HEADER = {
 } as const;
 /** Boxes shorter than this (under ~40 minutes) show only their subject. */
 const COMPACT_PX = 30;
-const LOCKED_TITLE = "You didn't organize this meeting — open it in Outlook to change it.";
+const LOCKED_TITLE = {
+  microsoft: "You didn't organize this meeting — open it in Outlook to change it.",
+  google: "You didn't organize this meeting — open it in Google Calendar to change it.",
+} as const;
 
 function hourLabel(h: number): string {
   return `${h % 12 || 12}${h < 12 ? "a" : "p"}`;
@@ -151,7 +154,7 @@ export function WeekCalendar({
                 {allDay.map((e) => (
                   <div
                     key={e.key}
-                    title={e.editable ? undefined : LOCKED_TITLE}
+                    title={e.editable ? undefined : LOCKED_TITLE[e.provider]}
                     className={`flex min-w-0 items-center gap-1 rounded-[var(--radius-sm)] border-l-[3px] px-1.5 py-0.5 text-[11px] leading-[1.3] ${tone(e)}`}
                   >
                     <EventTitle event={e} />
@@ -259,7 +262,7 @@ function TimeLine({
   );
 }
 
-/** Someone else's meeting: read-only, with the lock and a link to Outlook. */
+/** Someone else's meeting: read-only, with the lock and a link to its calendar. */
 function LockedEvent({
   placed,
   label,
@@ -270,7 +273,7 @@ function LockedEvent({
   const e = placed.event;
   const box = boxLayout(placed);
   return (
-    <div title={LOCKED_TITLE} className={`${box.className} ${tone(e)}`} style={box.style}>
+    <div title={LOCKED_TITLE[e.provider]} className={`${box.className} ${tone(e)}`} style={box.style}>
       <div className="flex min-w-0 items-center gap-1">
         <EventTitle event={e} />
       </div>

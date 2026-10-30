@@ -959,6 +959,59 @@ describe("WorkspacePage — creating a meeting", () => {
     ).toBeInTheDocument();
   });
 
+  describe("on a Google account", () => {
+    const G = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+    const google: AccountSummary = { ...ACCOUNT, id: G, provider: "google", email: "dana@gmail.com" };
+    const twoWeek = () =>
+      respond(200, {
+        ...WEEK,
+        accounts: [
+          { connectionId: MS_ID, error: null },
+          { connectionId: G, error: null },
+        ],
+      });
+
+    async function createOnGoogle() {
+      readQueue.push(Promise.resolve(twoWeek()));
+      const user = userEvent.setup();
+      renderPage("ready", [ACCOUNT, google]);
+      await screen.findByText("Annual review");
+      await user.click(screen.getByRole("button", { name: "+ New event" }));
+      const dialog = screen.getByRole("dialog", { name: "New event" });
+      await user.type(within(dialog).getByLabelText("Subject"), "Intro call");
+      await user.selectOptions(within(dialog).getByLabelText("Calendar"), G);
+      await user.click(within(dialog).getByLabelText("Add a Google Meet link"));
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+    }
+
+    it("posts to that account and shows the Google toast when Meet fails", async () => {
+      writeMock.mockResolvedValueOnce(respond(201, { event: { id: "new" }, videoFailed: true }));
+      await createOnGoogle();
+      expect(writeMock.mock.calls[0][0]).toBe(`/api/workspace/accounts/${G}/events`);
+      expect(
+        await screen.findByText(
+          "Meeting saved without a Google Meet link — Google couldn't create one for this account.",
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it("never offers an account that needs to reconnect or is hidden", async () => {
+      localStorage.setItem("workspace.hiddenAccounts", JSON.stringify([G]));
+      const user = userEvent.setup();
+      renderPage("ready", [ACCOUNT, google]);
+      await screen.findByText("Annual review");
+      await user.click(screen.getByRole("button", { name: "+ New event" }));
+      expect(screen.queryByLabelText("Calendar")).toBeNull();
+      expect(screen.getByLabelText("Add a Teams link")).toBeInTheDocument();
+    });
+
+    it("a 409 needs_reconnect on create refreshes the page's account statuses", async () => {
+      writeMock.mockResolvedValueOnce(respond(409, { error: "needs_reconnect" }));
+      await createOnGoogle();
+      await waitFor(() => expect(refreshMock).toHaveBeenCalled());
+    });
+  });
+
   it("a failed create keeps the dialog open with the reason", async () => {
     writeMock.mockResolvedValueOnce(respond(503, { error: "throttled" }));
     await createCall();

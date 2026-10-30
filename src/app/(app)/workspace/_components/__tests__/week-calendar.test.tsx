@@ -105,6 +105,38 @@ describe("WeekCalendar", () => {
     );
   });
 
+  it("a locked Google meeting names Google Calendar", () => {
+    render(
+      <WeekCalendar
+        {...noop}
+        weekStart="2026-10-26"
+        days={5}
+        today="2026-10-28"
+        events={[
+          row({
+            id: "training",
+            provider: "google",
+            webLink: "https://www.google.com/calendar/event?eid=abc",
+            subject: "Compliance training",
+            start: "2026-10-30T09:00",
+            end: "2026-10-30T10:30",
+            isOrganizer: false,
+            editable: false,
+          }),
+        ]}
+      />,
+    );
+    const lock = screen.getByRole("img", { name: "Organized by someone else" });
+    expect(lock.closest("[title]")).toHaveAttribute(
+      "title",
+      "You didn't organize this meeting — open it in Google Calendar to change it.",
+    );
+    expect(screen.getByRole("link", { name: "Compliance training" })).toHaveAttribute(
+      "href",
+      "https://www.google.com/calendar/event?eid=abc",
+    );
+  });
+
   it("a meeting the advisor organized has no lock", () => {
     render(
       <WeekCalendar
