@@ -75,6 +75,7 @@ import type {
 } from "@/engine/types";
 import { fanOutGiftSeries } from "@/engine/series-fanout";
 import { fanOutQcd } from "@/engine/qcd";
+import { parseWithdrawalPolicy } from "@/engine/withdrawal-policy";
 import { qcdSpecFromDraft } from "@/lib/gifts/qcd-spec";
 import {
   giftRowToDraft,
@@ -1300,6 +1301,7 @@ const loadClientDataCached = cache(
       surplusSpendPct: settings.surplusSpendPct != null ? parseFloat(settings.surplusSpendPct) : 0,
       surplusSaveAccountId: settings.surplusSaveAccountId ?? null,
       surplusSpendAllUntilRetirement: settings.surplusSpendAllUntilRetirement ?? false,
+      withdrawalPolicy: parseWithdrawalPolicy(settings.withdrawalPolicy),
       // Raw growth & inflation settings, view-only: everything above and every
       // row's growth rate are already resolved from them.
       inflationRateSource: settings.inflationRateSource,

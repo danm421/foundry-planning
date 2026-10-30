@@ -12,6 +12,7 @@ import { SPEC } from "../specs";
 import { DESCRIBERS, simpleDescriber, type Describer } from "../registry";
 import { stressTestSchema } from "@/lib/schemas/stress-test";
 import { stressTestDetail } from "@/lib/stress-tests/describe";
+import { describeStoredWithdrawalPolicy } from "@/engine/withdrawal-policy";
 
 const ASSUMPTION_LINE: Record<string, (to: unknown) => string> = {
   retirementAge: (to) => `Client retires at ${to}`,
@@ -38,11 +39,13 @@ const ratePct = (v: unknown): string => {
 };
 
 /** Growth & Inflation keys read by name, rates as percents, enum choices as
- *  words and a portfolio by its name — never a raw key, fraction or uuid. */
+ *  words, a portfolio by its name and the withdrawal policy as a sentence —
+ *  never a raw key, fraction, uuid or object. */
 const planSettings: Describer = (c, ctx) =>
   editRow(c, { ...SPEC.plan_settings }, nameFor(c, ctx.targetNames) ?? "Plan assumption", {
-    label: (f) => GROWTH_FIELD_LABELS[f] ?? fieldLabel(f),
+    label: (f) => (f === "withdrawalPolicy" ? "Withdrawal strategy" : (GROWTH_FIELD_LABELS[f] ?? fieldLabel(f))),
     value: (f, v) => {
+      if (f === "withdrawalPolicy") return describeStoredWithdrawalPolicy(v);
       if (isGrowthModelPortfolioKey(f)) {
         return v == null ? "None" : (ctx.resolve.modelPortfolio(String(v))?.name ?? "A model portfolio");
       }

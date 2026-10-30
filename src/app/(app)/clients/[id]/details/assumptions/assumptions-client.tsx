@@ -28,7 +28,7 @@ import { type RiskLevel } from "@/lib/risk-levels";
 import type { FilingStatus } from "@/lib/tax/types";
 import type { TaxAdjustmentRow } from "@/components/forms/add-tax-adjustment-form";
 import { focusRowId, type EditorFocus } from "@/lib/scenario/change-editor-target";
-import type { AssumptionsSettings } from "@/lib/plan-settings/assumptions-settings";
+import type { AssumptionsSettings, WithdrawalPolicyAccount } from "@/lib/plan-settings/assumptions-settings";
 
 export interface DeductionsTabData {
   derivedRows: DerivedRow[];
@@ -73,6 +73,9 @@ export interface AssumptionsClientProps {
   settings: AssumptionsSettings;
   accounts: WithdrawalAccount[];
   withdrawalStrategies: WithdrawalStrategy[];
+  /** Every account with the group it is drawn in (or why it never is), for
+   *  the withdrawal-policy editor. */
+  withdrawalAccounts: WithdrawalPolicyAccount[];
   milestones?: ClientMilestones;
   modelPortfolios?: ModelPortfolioOption[];
   clientFirstName?: string;

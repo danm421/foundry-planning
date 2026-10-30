@@ -9,6 +9,7 @@ import {
   planSettingsEngineToFormProps,
   planSettingsEngineToView,
   savingsRuleEngineToView,
+  withdrawalPolicyAccounts,
 } from "../view-adapters";
 import type {
   Account as EngineAccount,
@@ -573,6 +574,38 @@ describe("view-adapters", () => {
         medicarePremiumInflationRate: "0.04",
         medicarePremiumInflationEnabled: false,
       });
+    });
+
+    it("carries the scenario's withdrawal policy, and none as null", () => {
+      const policy = {
+        method: "proportional" as const,
+        groupOrder: ["cash" as const, "taxable" as const, "tax_deferred" as const, "roth" as const, "annuity" as const],
+        excludedAccountIds: ["acct-1"],
+      };
+      expect(planSettingsEngineToFormProps({ ...base, withdrawalPolicy: policy }, {}).withdrawalPolicy).toEqual(policy);
+      expect(planSettingsEngineToFormProps(base, {}).withdrawalPolicy).toBeNull();
+    });
+  });
+
+  describe("withdrawalPolicyAccounts", () => {
+    const acct = (overrides: Partial<EngineAccount>): EngineAccount => ({
+      id: "a", name: "a", category: "cash", subType: "savings", titlingType: "jtwros",
+      value: 0, basis: 0, growthRate: 0, rmdEnabled: false, owners: [],
+      ...overrides,
+    });
+
+    it("lists every account largest first with its group, or why it is never drawn", () => {
+      expect(
+        withdrawalPolicyAccounts([
+          acct({ id: "ira", name: "IRA", category: "retirement", subType: "traditional_ira", value: 100 }),
+          acct({ id: "chk", name: "Checking", category: "cash", value: 900, isDefaultChecking: true }),
+          acct({ id: "brk", name: "Brokerage", category: "taxable", subType: "brokerage", value: 500 }),
+        ]),
+      ).toEqual([
+        { id: "chk", name: "Checking", value: 900, group: null, notDrawnReason: "Household checking — withdrawals refill it" },
+        { id: "brk", name: "Brokerage", value: 500, group: "taxable", notDrawnReason: null },
+        { id: "ira", name: "IRA", value: 100, group: "tax_deferred", notDrawnReason: null },
+      ]);
     });
   });
 });

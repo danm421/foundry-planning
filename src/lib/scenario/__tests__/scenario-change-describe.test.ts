@@ -313,6 +313,15 @@ describe("describeEditFields — the Changes panel's edit line", () => {
     ).toBe("Inflation rate: 2.5% → 3% · Model portfolio — taxable changed");
   });
 
+  it("reads a withdrawal-policy edit as the method in words", () => {
+    const groupOrder = ["cash", "taxable", "tax_deferred", "roth", "annuity"];
+    expect(
+      describeEditFields("plan_settings", {
+        withdrawalPolicy: { from: null, to: { method: "proportional", groupOrder, excludedAccountIds: [] } },
+      }),
+    ).toBe("Withdrawal strategy: Default → Proportional to each account's balance");
+  });
+
   it("describes a life-policy edit by its headline terms", () => {
     const base = { policyType: "term", faceValue: 500000, premiumAmount: 900 };
     expect(describeEditFields("account", { lifeInsurance: { from: base, to: { ...base, faceValue: 600000 } } })).toBe(

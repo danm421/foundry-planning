@@ -525,6 +525,20 @@ describe("loadClientData", () => {
     expect(data.planSettings.inflationRate).toBeCloseTo(0.025, 10);
   });
 
+  it("reads the stored withdrawal policy repaired, and a missing one as null", async () => {
+    seedValidFixture();
+    expect((await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID)).planSettings.withdrawalPolicy).toBeNull();
+
+    dbState.planSettings = [
+      { ...planSettingsRow, withdrawalPolicy: { method: "proportional", groupOrder: ["roth", "bogus"], excludedAccountIds: [7] } },
+    ] as unknown as typeof planSettingsRow[];
+    expect((await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID)).planSettings.withdrawalPolicy).toEqual({
+      method: "proportional",
+      groupOrder: ["roth", "cash", "taxable", "tax_deferred", "annuity"],
+      excludedAccountIds: [],
+    });
+  });
+
   it("carries each deduction's id and display keys, so a scenario edit finds its base row", async () => {
     seedValidFixture();
     dbState.clientDeductions = [

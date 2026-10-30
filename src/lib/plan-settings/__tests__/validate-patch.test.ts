@@ -134,6 +134,34 @@ describe("validatePlanSettingsPatch", () => {
     });
   });
 
+  describe("withdrawalPolicy", () => {
+    it("accepts a valid policy, and null (back to the default)", () => {
+      expect(validatePlanSettingsPatch({ withdrawalPolicy: null })).toBeNull();
+      expect(
+        validatePlanSettingsPatch({
+          withdrawalPolicy: {
+            method: "split",
+            groupOrder: ["taxable", "tax_deferred", "cash", "roth", "annuity"],
+            splitPct: { taxable: 0.6, tax_deferred: 0.4 },
+            excludedAccountIds: ["acct-1"],
+          },
+        }),
+      ).toBeNull();
+    });
+
+    it("refuses a split that doesn't total 100%, with the engine's message", () => {
+      expect(
+        validatePlanSettingsPatch({
+          withdrawalPolicy: { method: "split", groupOrder: [], splitPct: { taxable: 0.5 }, excludedAccountIds: [] },
+        }),
+      ).toBe("The split must total 100%.");
+    });
+
+    it("refuses a value that isn't a policy", () => {
+      expect(validatePlanSettingsPatch({ withdrawalPolicy: "order" })).toBe("Choose a withdrawal method.");
+    });
+  });
+
   // The validator mirrors the schema enums (it ships in the client bundle and
   // cannot import the schema); this pins the two copies together.
   it("lists exactly the schema's growth and inflation source values", () => {

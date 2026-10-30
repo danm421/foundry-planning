@@ -74,6 +74,23 @@ describe("plan_settings describer — growth & inflation", () => {
     expect(row.after).toBe("7%");
   });
 
+  it("a withdrawal-policy change reads as the method in words", () => {
+    const row = edit({
+      withdrawalPolicy: {
+        from: null,
+        to: {
+          method: "split",
+          groupOrder: ["taxable", "tax_deferred", "cash", "roth", "annuity"],
+          splitPct: { taxable: 0.6, tax_deferred: 0.4 },
+          excludedAccountIds: ["a1"],
+        },
+      },
+    });
+    expect(row.what).toBe("Withdrawal strategy");
+    expect(row.before).toBe("Default");
+    expect(row.after).toBe("Split: 60% Taxable, 40% Tax-deferred · 1 account never sold");
+  });
+
   it("a source change prints words, not enum tokens", () => {
     const row = edit({ growthSourceCash: { from: "custom", to: "inflation" } });
     expect(row.what).toBe("Growth source — cash");

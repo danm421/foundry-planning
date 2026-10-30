@@ -22,7 +22,8 @@ import { amortizeLiability } from "@/engine/liabilities";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import type { ScenarioChange } from "@/engine/scenario/types";
 import { storedInflationRate } from "@/lib/scenario/growth-settings-override";
-import { planSettingsEngineToFormProps } from "@/lib/scenario/view-adapters";
+import { planSettingsEngineToFormProps, withdrawalPolicyAccounts } from "@/lib/scenario/view-adapters";
+import { parseWithdrawalPolicy } from "@/engine/withdrawal-policy";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 import { getLatestTaxReturn } from "@/lib/tax-returns/store";
 import { parseRowFacts } from "@/lib/tax-returns/db";
@@ -387,6 +388,7 @@ export async function loadAssumptionsViewProps(
         surplusSpendPct: String(settings.surplusSpendPct ?? "0"),
         surplusSaveAccountId: settings.surplusSaveAccountId,
         surplusSpendAllUntilRetirement: settings.surplusSpendAllUntilRetirement ?? false,
+        withdrawalPolicy: parseWithdrawalPolicy(settings.withdrawalPolicy),
         coveredByWorkplacePlan: clientRow.coveredByWorkplacePlan,
         spouseCoveredByWorkplacePlan: clientRow.spouseCoveredByWorkplacePlan,
       },
@@ -403,6 +405,7 @@ export async function loadAssumptionsViewProps(
         ownerEntityId: controllingEntity(a) ?? null,
       })),
       withdrawalStrategies: withdrawalRows,
+      withdrawalAccounts: withdrawalPolicyAccounts(accountRows),
       milestones,
       clientFirstName: effectiveTree.client.firstName,
       spouseFirstName: effectiveTree.client.spouseName?.split(" ")[0],

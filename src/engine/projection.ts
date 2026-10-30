@@ -104,6 +104,7 @@ import { executeWithdrawals, planSupplementalWithdrawal, categorizeDraw, supplem
 import {
   DEFAULT_WITHDRAWAL_GROUP_ORDER,
   resolveWithdrawalPolicy,
+  householdDrawGroup,
   withdrawalGroupOf,
   type WithdrawalGroup,
   type WithdrawalPolicy,
@@ -322,9 +323,8 @@ function retirementBucket(
 // not a source. Entity-owned accounts are excluded because they sit under
 // step 12c's per-entity gap-fill, not the household pool.
 function defaultWithdrawalPriorityFor(acct: Account, ranks: Map<WithdrawalGroup, number>): number | null {
-  if (controllingEntity(acct) != null) return null;
-  if (acct.isDefaultChecking) return null;
-  return categoryWithdrawalPriority(acct, ranks);
+  const { group } = householdDrawGroup(acct);
+  return group == null ? null : (ranks.get(group) ?? null);
 }
 
 // Mirror of `buildDefaultWithdrawalStrategy` scoped to a single entity. Used by

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { accounts, expenses, incomes } from "@/db/schema";
+import { accounts, expenses, incomes, planSettings } from "@/db/schema";
 import { coerceForTable } from "../promote-coerce";
 
 describe("coerceForTable", () => {
@@ -14,6 +14,11 @@ describe("coerceForTable", () => {
     expect(out.value).toBe("1000");
     expect(out.growthRate).toBe("0.06");
     expect("bogusKey" in out).toBe(false);
+  });
+
+  it("carries the withdrawal policy (jsonb) onto plan_settings as the object itself", () => {
+    const policy = { method: "proportional", groupOrder: ["cash", "taxable", "tax_deferred", "roth", "annuity"], excludedAccountIds: ["a1"] };
+    expect(coerceForTable(planSettings, { withdrawalPolicy: policy }).withdrawalPolicy).toEqual(policy);
   });
 
   it("passes null through and leaves integer/enum/text columns untouched", () => {

@@ -10,6 +10,8 @@ import { eq, and } from "drizzle-orm";
 import { recordAudit } from "@/lib/audit";
 import { handleOf, inTransaction, type WriteOptions } from "@/lib/db-tx";
 import { validatePlanSettingsPatch } from "@/lib/plan-settings/validate-patch";
+import { assertAccountsInClient } from "@/lib/db-scoping";
+import { parseWithdrawalPolicy } from "@/engine/withdrawal-policy";
 import { baseCaseScenarioId } from "./base-case";
 import { writeError, type EntityWriteResult } from "./entity-write-result";
 
@@ -91,6 +93,14 @@ export async function updatePlanSettingsForClient(args: {
   const invalid = validatePlanSettingsPatch(body);
   if (invalid) return writeError(400, invalid);
 
+  // Stored repaired (the validator has passed it), so the row only ever holds
+  // the policy's own keys.
+  const withdrawalPolicy = "withdrawalPolicy" in body ? parseWithdrawalPolicy(body.withdrawalPolicy) : undefined;
+  if (withdrawalPolicy) {
+    const owned = await assertAccountsInClient(clientId, withdrawalPolicy.excludedAccountIds, handleOf(args));
+    if (!owned.ok) return writeError(400, owned.reason);
+  }
+
   // coveredByWorkplacePlan / spouseCoveredByWorkplacePlan live on `clients`
   // (household-level, not scenario-level), not on `planSettings` — a second
   // update against the right table, in the same transaction as the
@@ -165,6 +175,7 @@ export async function updatePlanSettingsForClient(args: {
         inflationRateSource: inflationRateSource === "custom" || inflationRateSource === "asset_class"
           ? inflationRateSource
           : undefined,
+        withdrawalPolicy,
         updatedAt: new Date(),
       })
       .where(and(eq(planSettings.clientId, clientId), eq(planSettings.scenarioId, scenarioId)))

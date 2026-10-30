@@ -230,12 +230,14 @@ function payloadFields(payload: unknown): string[] | null {
   return Object.keys(payload as Record<string, unknown>);
 }
 
-// The settings `SurplusCashFlowForm` saves; they live on the Assumptions page's
-// "Savings & Withdrawals" tab, whose focus id is "withdrawal".
+// The settings `SurplusCashFlowForm` and the withdrawal-policy editor save;
+// they live on the Assumptions page's "Savings & Withdrawals" tab, whose focus
+// id is "withdrawal".
 const SURPLUS_FIELDS = new Set([
   "surplusSpendPct",
   "surplusSaveAccountId",
   "surplusSpendAllUntilRetirement",
+  "withdrawalPolicy",
 ]);
 const GROWTH_FIELDS: ReadonlySet<string> = new Set(GROWTH_SETTINGS_KEYS);
 

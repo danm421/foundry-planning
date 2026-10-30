@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   DEFAULT_WITHDRAWAL_GROUP_ORDER,
   describeWithdrawalPolicy,
+  householdDrawGroup,
   parseWithdrawalPolicy,
   resolveWithdrawalPolicy,
   withdrawalGroupOf,
@@ -33,6 +34,25 @@ describe("withdrawalGroupOf", () => {
     for (const category of ["real_estate", "business", "life_insurance", "notes_receivable", "stock_options"]) {
       expect(withdrawalGroupOf(acct({ category: category as Account["category"] }))).toBeNull();
     }
+  });
+});
+
+describe("householdDrawGroup", () => {
+  it("gives a household account its group", () => {
+    expect(householdDrawGroup(acct({ category: "taxable", subType: "brokerage" }))).toEqual({ group: "taxable", reason: null });
+  });
+
+  it("says why an account is never drawn for a shortfall", () => {
+    const trustOwned = acct({ category: "taxable", owners: [{ kind: "entity", entityId: "t1", percent: 1 }] as Account["owners"] });
+    expect(householdDrawGroup(trustOwned)).toEqual({ group: null, reason: "Owned by a trust or business" });
+    expect(householdDrawGroup(acct({ category: "cash", isDefaultChecking: true }))).toEqual({
+      group: null,
+      reason: "Household checking — withdrawals refill it",
+    });
+    expect(
+      householdDrawGroup(acct({ category: "annuity", annuity: { incomeMode: "annuitized" } as Account["annuity"] })),
+    ).toEqual({ group: null, reason: "Annuitized — already paying income" });
+    expect(householdDrawGroup(acct({ category: "real_estate" }))).toEqual({ group: null, reason: "Not a liquid account" });
   });
 });
 

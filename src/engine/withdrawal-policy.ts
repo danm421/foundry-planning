@@ -3,6 +3,7 @@
 // Assumptions screen, the plan-settings validator, the deck's Assumptions page
 // and the projection all read the one definition here.
 import type { Account } from "./types";
+import { controllingEntity } from "./ownership";
 
 /** The groups a shortfall is drawn from, in the engine's long-standing default
  *  order (Cash → Taxable → Tax-deferred → Roth → Annuities). */
@@ -55,6 +56,22 @@ export function withdrawalGroupOf(acct: Pick<Account, "category" | "subType" | "
     return acct.annuity?.incomeMode === "annuitized" ? null : "annuity";
   }
   return null;
+}
+
+/** The group the household draws an account in for a shortfall, or why it
+ *  never does — one rule for the projection's default strategy and the
+ *  Assumptions screen's preview. An entity's own gap-fill is separate. */
+export function householdDrawGroup(
+  acct: Pick<Account, "category" | "subType" | "annuity" | "owners" | "isDefaultChecking">,
+): { group: WithdrawalGroup; reason: null } | { group: null; reason: string } {
+  if (controllingEntity(acct) != null) return { group: null, reason: "Owned by a trust or business" };
+  if (acct.isDefaultChecking) return { group: null, reason: "Household checking — withdrawals refill it" };
+  const group = withdrawalGroupOf(acct);
+  if (group != null) return { group, reason: null };
+  return {
+    group: null,
+    reason: acct.category === "annuity" ? "Annuitized — already paying income" : "Not a liquid account",
+  };
 }
 
 const isGroup = (v: unknown): v is WithdrawalGroup =>
@@ -166,4 +183,11 @@ export function describeWithdrawalPolicy(policy: WithdrawalPolicy): string {
   }
   const n = policy.excludedAccountIds.length;
   return n > 0 ? `${text} · ${n} account${n === 1 ? "" : "s"} never sold` : text;
+}
+
+/** A stored (unchecked) value in one line, for scenario change rows; nothing
+ *  saved reads "Default". */
+export function describeStoredWithdrawalPolicy(raw: unknown): string {
+  const policy = parseWithdrawalPolicy(raw);
+  return policy ? describeWithdrawalPolicy(policy) : "Default";
 }

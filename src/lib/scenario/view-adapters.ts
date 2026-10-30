@@ -29,7 +29,8 @@ import type {
 } from "@/engine/types";
 import { controllingEntity, type AccountOwner } from "@/engine/ownership";
 import { DEFAULT_MARGIN_CALL_PCT } from "@/engine/margin";
-import type { AssumptionsSettings } from "@/lib/plan-settings/assumptions-settings";
+import type { AssumptionsSettings, WithdrawalPolicyAccount } from "@/lib/plan-settings/assumptions-settings";
+import { householdDrawGroup } from "@/engine/withdrawal-policy";
 
 // ── Income ────────────────────────────────────────────────────────────────────
 
@@ -517,7 +518,19 @@ export function planSettingsEngineToFormProps(
     surplusSpendPct: String(s.surplusSpendPct ?? 0),
     surplusSaveAccountId: s.surplusSaveAccountId ?? null,
     surplusSpendAllUntilRetirement: s.surplusSpendAllUntilRetirement ?? false,
+    withdrawalPolicy: s.withdrawalPolicy ?? null,
     coveredByWorkplacePlan: client.coveredByWorkplacePlan ?? "auto",
     spouseCoveredByWorkplacePlan: client.spouseCoveredByWorkplacePlan ?? "auto",
   };
+}
+
+/** The (effective) accounts as the withdrawal-policy editor lists them,
+ *  largest first — the order the plan draws within a group. */
+export function withdrawalPolicyAccounts(accounts: EngineAccount[]): WithdrawalPolicyAccount[] {
+  return accounts
+    .map((a) => {
+      const { group, reason } = householdDrawGroup(a);
+      return { id: a.id, name: a.name, value: a.value, group, notDrawnReason: reason };
+    })
+    .sort((a, b) => b.value - a.value);
 }
