@@ -64,7 +64,7 @@ export interface MonthlyAvailableSplit {
  * and silently reports "nothing saved" for every plan with a save destination.
  * `surplus_retained` is a single positive leg on checking (:7234).
  */
-function surplusUnspentAnnual(y: ProjectionYear): number {
+export function surplusUnspentAnnual(y: ProjectionYear): number {
   let total = 0;
   for (const ledger of Object.values(y.accountLedgers)) {
     for (const entry of ledger.entries) {
@@ -193,7 +193,7 @@ const DEPLETION_TOLERANCE_FRACTION = 0.001;
  * moment someone rewords it — and the checking-overdraft path writes no entry
  * at all, so a label match would miss it entirely.
  */
-function isDepleted(y: ProjectionYear, householdLiquidIds: Set<string>): boolean {
+export function isDepleted(y: ProjectionYear, householdLiquidIds: Set<string>): boolean {
   let net = 0;
   for (const id of householdLiquidIds) net += y.accountLedgers[id]?.endingValue ?? 0;
   // `totalExpenses` is the engine's own outflow side of
