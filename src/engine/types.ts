@@ -2125,6 +2125,22 @@ export interface ProjectionYear {
     borrowedByAccount?: Record<string, number>;
   };
 
+  /** Reporting-only figures for the Solver's Distributions view (spec
+   *  2026-10-30). Engine math never reads them. Always set by the engine;
+   *  optional only so hand-built ProjectionYear fixtures still compile. */
+  distributionDetail?: {
+    /** The RMD cash counted inside `totalIncome`: householdRmdIncome +
+     *  householdRmdTaxFreeCashIn. Less than Σ ledger `rmdAmount` when an IRA
+     *  carries after-tax basis. */
+    rmdInTotalIncome: number;
+    /** Household goal draws from set-aside accounts, per account — already
+     *  inside `withdrawals.byAccount` (it is seeded from the same map). */
+    goalDrawsByAccount: Record<string, number>;
+    /** What a "spend whatever's left" living row took on top of its base —
+     *  already inside `expenses.living` and that row's `expenses.bySource`. */
+    absorbedSurplus: number;
+  };
+
   /** Liquidations triggered by entity gap-fill — when an entity's own
    * checking goes negative we drain the entity's other liquid assets to
    * refill it. Tracked separately from `withdrawals` because the household

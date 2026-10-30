@@ -9039,6 +9039,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     const totalIncome =
       displayIncome.total + householdRmdIncome + householdRmdTaxFreeCashIn + householdNoteCashIn
       + householdEquityCashIn + householdTrustCashIn; // householdTrustCashIn: audit F8
+    // Reporting only (distributionDetail): the RMD cash just counted above.
+    // Kept off the sum so totalIncome's evaluation order is untouched.
+    const rmdInTotalIncome = householdRmdIncome + householdRmdTaxFreeCashIn;
+    // Reporting only (distributionDetail): set by the absorb branch below.
+    let absorbedSurplus = 0;
 
     // ── 14. Surplus allocation (H5) ──
     // Size the discretionary/saved split from the resolved Net Cash Flow, taken
@@ -9104,6 +9109,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           expenses.bySource[absorbingRow.id] =
             (expenses.bySource[absorbingRow.id] ?? 0) + surplusForSplit;
           expenses.total += surplusForSplit;
+          absorbedSurplus = surplusForSplit;
         } else {
           const spendPct = effectiveSurplusSpendPct(data.planSettings, data.client, year);
           const spendAmount = surplusForSplit * spendPct;
@@ -9500,6 +9506,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       ...(thresholdFacts ? { thresholdFacts } : {}),
       ...(contributionAdjustments ? { contributionAdjustments } : {}),
       withdrawals,
+      distributionDetail: {
+        rmdInTotalIncome,
+        goalDrawsByAccount: { ...goalHouseholdDrawByAccount },
+        absorbedSurplus,
+      },
       entityWithdrawals,
       expenses,
       ...(goalYears.length > 0 ? { goals: goalYears } : {}),
