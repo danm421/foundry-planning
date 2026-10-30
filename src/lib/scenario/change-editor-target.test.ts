@@ -236,6 +236,12 @@ describe("resolveChangeEditor", () => {
       expect(settingsEdit({ surplusSpendPct: { from: 0, to: 0.5 } })).toEqual(assumptions("withdrawal"));
     });
 
+    it("the withdrawal policy -> the Assumptions Savings & Withdrawals tab", () => {
+      expect(settingsEdit({ withdrawalPolicy: { from: null, to: { method: "proportional" } } })).toEqual(
+        assumptions("withdrawal"),
+      );
+    });
+
     it("a growth field -> the Assumptions Growth & Inflation tab", () => {
       expect(settingsEdit({ defaultGrowthCash: { from: 0.01, to: 0.02 } })).toEqual(
         assumptions("growth-inflation"),

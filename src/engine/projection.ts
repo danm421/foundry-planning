@@ -100,7 +100,15 @@ import {
   type CapAdjustment,
 } from "./contribution-limits";
 import { computeRoth529Rollover } from "./education/roth-rollover";
-import { executeWithdrawals, planSupplementalWithdrawal, categorizeDraw, supplementalDrawSources, type SupplementalDraw } from "./withdrawal";
+import { executeWithdrawals, planSupplementalWithdrawal, categorizeDraw, supplementalDrawSources, type SupplementalDraw, type WithdrawalAllocation } from "./withdrawal";
+import {
+  DEFAULT_WITHDRAWAL_GROUP_ORDER,
+  resolveWithdrawalPolicy,
+  householdDrawGroup,
+  withdrawalGroupOf,
+  type WithdrawalGroup,
+  type WithdrawalPolicy,
+} from "./withdrawal-policy";
 import { computeGoalDraw, goalDrawAccountIds, isFundedGoal, is529Account } from "./goals/goal-funding";
 import { calculateRMD } from "./rmd";
 import { allocateQcds, qcdAnnualLimit, qcdEligibleFromYear, type QcdAccountState } from "./qcd";
@@ -263,30 +271,26 @@ function legacyTaxType(incomeType: string): IncomeTaxType {
   }
 }
 
+/** Each group's priorityOrder (1-based) in a group order. */
+function groupRanks(order: readonly WithdrawalGroup[]): Map<WithdrawalGroup, number> {
+  return new Map(order.map((g, i) => [g, i + 1]));
+}
+const DEFAULT_GROUP_RANKS = groupRanks(DEFAULT_WITHDRAWAL_GROUP_ORDER);
+
 // Tax-efficiency ranking by category alone — Cash → Taxable → Tax-Deferred →
-// Roth → Annuity. Returns null for categories that can't be cleanly liquidated
-// at year boundaries (real estate, business, life insurance, stock_options).
-// Shared by household and entity-scoped withdrawal strategies; callers layer on
-// their own ownership / default-checking exclusions before consulting it.
-function categoryWithdrawalPriority(acct: Account): number | null {
-  if (acct.category === "cash") return 1;
-  if (acct.category === "taxable") return 2;
-  if (acct.category === "retirement") {
-    if (acct.subType === "roth_ira") return 4;
-    // traditional_ira, 401k, 403b, 529, deferred, other → tax-deferred bucket
-    return 3;
-  }
-  // Annuities rank LAST among spendable sources (below Roth at 4). Surrender
-  // charges, rider damage, and the ordinary-income character of the gain all
-  // make this the worst account to tap — but it IS tappable, which it was not
-  // before. An annuitized contract has no cash value left to draw.
-  if (acct.category === "annuity") {
-    if (acct.annuity?.incomeMode === "annuitized") return null;
-    return 5;
-  }
-  if (acct.category === "notes_receivable") return null; // notes amortize themselves
-  if (acct.category === "stock_options") return null; // illiquid grants — not a drawdown source
-  return null;
+// Roth → Annuity (`withdrawalGroupOf` holds the category rules). Annuities rank
+// LAST: surrender charges, rider damage and the ordinary-income character of
+// the gain make them the worst account to tap. Returns null for categories that
+// can't be cleanly liquidated at year boundaries (real estate, business, life
+// insurance, notes, stock options, an annuitized contract). Shared by household
+// and entity-scoped withdrawal strategies; callers layer on their own
+// ownership / default-checking exclusions before consulting it.
+function categoryWithdrawalPriority(
+  acct: Account,
+  ranks: Map<WithdrawalGroup, number> = DEFAULT_GROUP_RANKS,
+): number | null {
+  const group = withdrawalGroupOf(acct);
+  return group == null ? null : (ranks.get(group) ?? null);
 }
 
 /**
@@ -318,10 +322,9 @@ function retirementBucket(
 // strategy. Household checking is excluded because it's the target account,
 // not a source. Entity-owned accounts are excluded because they sit under
 // step 12c's per-entity gap-fill, not the household pool.
-function defaultWithdrawalPriorityFor(acct: Account): number | null {
-  if (controllingEntity(acct) != null) return null;
-  if (acct.isDefaultChecking) return null;
-  return categoryWithdrawalPriority(acct);
+function defaultWithdrawalPriorityFor(acct: Account, ranks: Map<WithdrawalGroup, number>): number | null {
+  const { group } = householdDrawGroup(acct);
+  return group == null ? null : (ranks.get(group) ?? null);
 }
 
 // Mirror of `buildDefaultWithdrawalStrategy` scoped to a single entity. Used by
@@ -357,11 +360,17 @@ function buildEntityWithdrawalStrategy(
 
 export function buildDefaultWithdrawalStrategy(
   accounts: Account[],
-  planSettings: PlanSettings
+  planSettings: PlanSettings,
+  /** The household's policy: its group order ranks the groups and its
+   *  excluded accounts are left out. Omitted ⇒ the default order. */
+  policy?: WithdrawalPolicy,
 ): WithdrawalPriority[] {
   const strategy: WithdrawalPriority[] = [];
+  const ranks = policy ? groupRanks(policy.groupOrder) : DEFAULT_GROUP_RANKS;
+  const excluded = new Set(policy?.excludedAccountIds ?? []);
   for (const acct of accounts) {
-    const priority = defaultWithdrawalPriorityFor(acct);
+    if (excluded.has(acct.id)) continue;
+    const priority = defaultWithdrawalPriorityFor(acct, ranks);
     if (priority == null) continue;
     strategy.push({
       accountId: acct.id,
@@ -398,8 +407,10 @@ export function buildDefaultWithdrawalStrategy(
  *
  *  Placement: the taxable tier — strictly after every existing cash / taxable
  *  account, strictly before retirement — so a real brokerage is still spent
- *  first. Mutates `strategy` in place; skips ids already present (idempotent
- *  across re-entry).
+ *  first. A strategy built from a group order passes `taxablePriority` (the
+ *  Taxable group's rank) and the account lands just after that group instead.
+ *  Mutates `strategy` in place; skips ids already present (idempotent across
+ *  re-entry).
  *
  *  Correctness depends on the caller handing over a `taxable`-category account.
  *  For life insurance that invariant is enforced in `life-insurance-payout.ts`
@@ -411,6 +422,7 @@ export function appendLoopMintedAccountsToWithdrawalStrategy(
   accounts: ReadonlyArray<Pick<Account, "id" | "category">>,
   availableFromYear: number,
   planEndYear: number,
+  taxablePriority?: number,
 ): void {
   if (newAccountIds.length === 0) return;
   const accountById = new Map(accounts.map((a) => [a.id, a]));
@@ -425,7 +437,7 @@ export function appendLoopMintedAccountsToWithdrawalStrategy(
   }
   // +0.5 → sorts strictly after existing liquid accounts, strictly before
   // retirement (priorityOrder 3 in the default strategy).
-  const newPriority = maxLiquidPriority + 0.5;
+  const newPriority = (taxablePriority ?? maxLiquidPriority) + 0.5;
   for (const accountId of newAccountIds) {
     if (strategy.some((s) => s.accountId === accountId)) continue;
     strategy.push({
@@ -724,10 +736,30 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // own. Death events append life-insurance proceeds accounts to it mid-run
   // (see appendLoopMintedAccountsToWithdrawalStrategy); we must not mutate the caller's
   // `data.withdrawalStrategy`.
+  //
+  // The household's withdrawal policy (spec 2026-10-29) decides which: the
+  // account-by-account rows ("custom"), or a strategy built from its group
+  // order and exclusions — drawn in order, split, or proportionally. Nothing
+  // saved resolves to exactly the behavior above.
+  const withdrawalPolicy = resolveWithdrawalPolicy(
+    planSettings.withdrawalPolicy,
+    data.withdrawalStrategy.length > 0,
+  );
   const effectiveWithdrawalStrategy: WithdrawalPriority[] =
-    data.withdrawalStrategy.length > 0
+    withdrawalPolicy.method === "custom"
       ? [...data.withdrawalStrategy]
-      : buildDefaultWithdrawalStrategy(data.accounts, planSettings);
+      : buildDefaultWithdrawalStrategy(data.accounts, planSettings, withdrawalPolicy);
+  const withdrawalAllocation: WithdrawalAllocation | undefined =
+    withdrawalPolicy.method === "split"
+      ? { method: "split", splitPct: withdrawalPolicy.splitPct ?? {}, groupOrder: withdrawalPolicy.groupOrder }
+      : withdrawalPolicy.method === "proportional"
+        ? { method: "proportional" }
+        : undefined;
+  // Where a loop-minted (taxable) account joins a group-ordered strategy.
+  const mintedTaxablePriority =
+    withdrawalPolicy.method === "custom"
+      ? undefined
+      : withdrawalPolicy.groupOrder.indexOf("taxable") + 1;
 
   // Default checking accounts — household and one per entity. When present, all
   // household cash flows through the household checking; entity cash through the
@@ -1837,6 +1869,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             workingAccounts,
             year,
             planSettings.planEndYear,
+            mintedTaxablePriority,
           );
         }
 
@@ -7714,6 +7747,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           isSpouseAccount,
           year,
           marginBorrowSources,
+          allocation: withdrawalAllocation,
         });
 
         // Step (a): NOW size each deferred conversion against the
@@ -7908,6 +7942,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             ages: { client: ages.client, spouse: ages.spouse ?? null },
             isSpouseAccount,
             year,
+            allocation: withdrawalAllocation,
           });
 
           // Recompute the year's tax with the draw's recognized income layered
@@ -9695,6 +9730,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         workingAccounts,
         year,
         planSettings.planEndYear,
+        mintedTaxablePriority,
       );
 
       // Attach to the just-built ProjectionYear

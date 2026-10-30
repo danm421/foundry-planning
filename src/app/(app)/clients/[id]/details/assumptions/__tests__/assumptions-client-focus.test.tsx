@@ -70,11 +70,13 @@ const PROPS: AssumptionsClientProps = {
     surplusSpendPct: "0",
     surplusSaveAccountId: null,
     surplusSpendAllUntilRetirement: false,
+    withdrawalPolicy: null,
     coveredByWorkplacePlan: "auto",
     spouseCoveredByWorkplacePlan: "auto",
   },
   accounts: [{ id: "acct-1", name: "Fidelity Brokerage", category: "taxable", subType: "brokerage" }],
   withdrawalStrategies: [{ id: "ws-1", accountId: "acct-1", priorityOrder: 1, startYear: 2030, endYear: 2060 }],
+  withdrawalAccounts: [{ id: "acct-1", name: "Fidelity Brokerage", value: 100000, group: "taxable", notDrawnReason: null }],
   resolvedInflationRate: 0.025,
   assetClassInflationRate: 0.025,
   hasInflationAssetClass: false,
@@ -330,6 +332,10 @@ describe("AssumptionsClient focus mode — Savings & Withdrawals tab", () => {
     expect(within(dialog).getByText("Savings & Withdrawals — Plan B")).toBeTruthy();
     expect(within(dialog).getByText("Withdrawal Strategy")).toBeTruthy();
     expect(within(dialog).getByText("Surplus Cash Flow")).toBeTruthy();
+    // Nothing saved and the client has rows: the account-by-account method,
+    // with the method switch above its list.
+    expect(within(dialog).getByRole("button", { name: "Account by account" }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(dialog).getByText("Accounts, in order")).toBeTruthy();
     expect(onFocusClose).not.toHaveBeenCalled();
   });
 

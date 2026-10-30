@@ -1,6 +1,8 @@
 // The `settings` prop the Assumptions editors render from (form strings, not
 // engine numbers). Shared by the Details loader, the component and the
 // scenario adapter in lib/scenario/view-adapters.
+import type { WithdrawalGroup, WithdrawalPolicy } from "@/engine/withdrawal-policy";
+
 export interface AssumptionsSettings {
   flatFederalRate: string;
   flatStateRate: string;
@@ -44,6 +46,18 @@ export interface AssumptionsSettings {
   surplusSpendPct: string;
   surplusSaveAccountId: string | null;
   surplusSpendAllUntilRetirement: boolean;
+  /** As stored; null = never set (the screen shows what it resolves to). */
+  withdrawalPolicy: WithdrawalPolicy | null;
   coveredByWorkplacePlan: "auto" | "yes" | "no";
   spouseCoveredByWorkplacePlan: "auto" | "yes" | "no";
+}
+
+/** One account as the withdrawal-policy editor lists it. */
+export interface WithdrawalPolicyAccount {
+  id: string;
+  name: string;
+  value: number;
+  /** null = never drawn for a shortfall; `notDrawnReason` says why. */
+  group: WithdrawalGroup | null;
+  notDrawnReason: string | null;
 }

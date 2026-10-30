@@ -26,6 +26,7 @@ import { relations, sql, type InferSelectModel, type InferInsertModel } from "dr
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { BracketTier, SaversCreditTier } from "@/lib/tax/types";
 import type { IrmaaTier, LivingExpenseItem } from "@/engine/types";
+import type { WithdrawalPolicy } from "@/engine/withdrawal-policy";
 import type { TrustSubType } from "@/lib/entities/trust";
 import type { IntakePayload } from "@/lib/intake/schema";
 import type { ExtractedAccount } from "@/lib/extraction/types";
@@ -1497,6 +1498,12 @@ export const planSettings = pgTable("plan_settings", {
   surplusSpendAllUntilRetirement: boolean("surplus_spend_all_until_retirement")
     .notNull()
     .default(false),
+  // How a shortfall is drawn from the household's accounts (spec 2026-10-29):
+  // method, group order, split shares and never-sold accounts. Read through
+  // `parseWithdrawalPolicy`. NULL = the long-standing default (the
+  // account-by-account rows when there are any, else Cash → Taxable →
+  // Tax-deferred → Roth → Annuities).
+  withdrawalPolicy: jsonb("withdrawal_policy").$type<WithdrawalPolicy>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [

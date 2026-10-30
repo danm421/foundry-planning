@@ -5,6 +5,7 @@
 import { isUSPSStateCode } from "@/lib/usps-states";
 import { GROWTH_FIELD_LABELS } from "@/lib/scenario/growth-field-labels";
 import { currentPlanningYear } from "@/lib/plan-year";
+import { withdrawalPolicyProblem } from "@/engine/withdrawal-policy";
 
 // Mirrors `dependentOverrideEnum` in the schema; the schema module is not
 // imported because this file ships in the client bundle with the autosave hook.
@@ -130,6 +131,13 @@ export function validatePlanSettingsPatch(body: Record<string, unknown>): string
   const { inflationRateSource } = body;
   if (inflationRateSource !== undefined && !INFLATION_SOURCE_VALUES.includes(inflationRateSource)) {
     return "inflationRateSource must be one of asset_class, custom";
+  }
+
+  // Whether the excluded accounts are this client's needs the DB: the base
+  // write checks it.
+  if (body.withdrawalPolicy !== undefined) {
+    const problem = withdrawalPolicyProblem(body.withdrawalPolicy);
+    if (problem) return problem;
   }
 
   return null;

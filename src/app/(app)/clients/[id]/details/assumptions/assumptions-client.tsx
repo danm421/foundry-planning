@@ -11,6 +11,7 @@ import TaxRatesForm from "@/components/forms/tax-rates-form";
 import GrowthInflationForm from "@/components/forms/growth-inflation-form";
 import SurplusCashFlowForm from "@/components/forms/surplus-cash-flow-form";
 import WithdrawalStrategySection from "@/components/withdrawal-strategy-section";
+import WithdrawalPolicySection from "@/components/withdrawal-policy-section";
 import type { WithdrawalAccount, WithdrawalStrategy } from "@/components/withdrawal-strategy-section";
 import type { ClientMilestones } from "@/lib/milestones";
 import { DeductionsClient } from "./deductions-client";
@@ -28,7 +29,7 @@ import { type RiskLevel } from "@/lib/risk-levels";
 import type { FilingStatus } from "@/lib/tax/types";
 import type { TaxAdjustmentRow } from "@/components/forms/add-tax-adjustment-form";
 import { focusRowId, type EditorFocus } from "@/lib/scenario/change-editor-target";
-import type { AssumptionsSettings } from "@/lib/plan-settings/assumptions-settings";
+import type { AssumptionsSettings, WithdrawalPolicyAccount } from "@/lib/plan-settings/assumptions-settings";
 
 export interface DeductionsTabData {
   derivedRows: DerivedRow[];
@@ -73,6 +74,9 @@ export interface AssumptionsClientProps {
   settings: AssumptionsSettings;
   accounts: WithdrawalAccount[];
   withdrawalStrategies: WithdrawalStrategy[];
+  /** Every account with the group it is drawn in (or why it never is), for
+   *  the withdrawal-policy editor. */
+  withdrawalAccounts: WithdrawalPolicyAccount[];
   milestones?: ClientMilestones;
   modelPortfolios?: ModelPortfolioOption[];
   clientFirstName?: string;
@@ -123,6 +127,7 @@ export default function AssumptionsClient({
   settings,
   accounts,
   withdrawalStrategies,
+  withdrawalAccounts,
   milestones,
   modelPortfolios,
   clientFirstName,
@@ -235,13 +240,22 @@ export default function AssumptionsClient({
           .filter((a) => !a.ownerEntityId)
           .map((a) => ({ id: a.id, name: a.name }))}
       />
-      <WithdrawalStrategySection
+      <WithdrawalPolicySection
         clientId={clientId}
-        accounts={accounts}
-        initialStrategies={withdrawalStrategies}
-        milestones={milestones}
-        clientFirstName={clientFirstName}
-        spouseFirstName={spouseFirstName}
+        policy={settings.withdrawalPolicy}
+        hasAccountRows={withdrawalStrategies.length > 0}
+        accounts={withdrawalAccounts}
+        accountByAccount={
+          <WithdrawalStrategySection
+            clientId={clientId}
+            accounts={accounts}
+            initialStrategies={withdrawalStrategies}
+            milestones={milestones}
+            clientFirstName={clientFirstName}
+            spouseFirstName={spouseFirstName}
+            title="Accounts, in order"
+          />
+        }
       />
     </div>
   );

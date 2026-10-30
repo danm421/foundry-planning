@@ -92,9 +92,15 @@ vi.mock("@/lib/clients/authz", () => {
 
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 
+vi.mock("@/lib/db-scoping", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/db-scoping")>();
+  return { ...actual, assertAccountsInClient: vi.fn().mockResolvedValue({ ok: true }) };
+});
+
 import { PUT } from "../route";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
+import { assertAccountsInClient } from "@/lib/db-scoping";
 
 function makeRequest(body: unknown) {
   return new Request(`http://localhost/api/clients/${CLIENT_ID}/plan-settings`, {
@@ -222,5 +228,59 @@ describe("PUT /api/clients/[id]/plan-settings — surplusSpendAllUntilRetirement
 
     expect(res.status).toBe(200);
     expect(updateCalls[0].surplusSpendAllUntilRetirement).toBeUndefined();
+  });
+});
+
+describe("PUT /api/clients/[id]/plan-settings — withdrawalPolicy", () => {
+  const policy = {
+    method: "order",
+    groupOrder: ["taxable", "cash", "tax_deferred", "roth", "annuity"],
+    excludedAccountIds: ["acct-1"],
+  };
+
+  it("persists the policy after checking the excluded accounts are this client's", async () => {
+    const res = await PUT(makeRequest({ withdrawalPolicy: policy }), ctx);
+
+    expect(res.status).toBe(200);
+    expect(assertAccountsInClient).toHaveBeenCalledWith(CLIENT_ID, ["acct-1"], expect.anything());
+    expect(updateCalls[0].withdrawalPolicy).toEqual(policy);
+  });
+
+  it("stores the repaired policy, never the raw body", async () => {
+    const res = await PUT(
+      makeRequest({ withdrawalPolicy: { method: "order", groupOrder: ["roth"], excludedAccountIds: [], extra: 1 } }),
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    expect(updateCalls[0].withdrawalPolicy).toEqual({
+      method: "order",
+      groupOrder: ["roth", "cash", "taxable", "tax_deferred", "annuity"],
+      excludedAccountIds: [],
+    });
+  });
+
+  it("refuses an excluded account that isn't this client's (400, no DB write)", async () => {
+    vi.mocked(assertAccountsInClient).mockResolvedValueOnce({ ok: false, reason: "Account acct-9 not owned by this client" });
+    const res = await PUT(makeRequest({ withdrawalPolicy: { ...policy, excludedAccountIds: ["acct-9"] } }), ctx);
+
+    expect(res.status).toBe(400);
+    expect(updateCalls).toHaveLength(0);
+  });
+
+  it("refuses an invalid policy (400, no DB write)", async () => {
+    const res = await PUT(makeRequest({ withdrawalPolicy: { method: "split", splitPct: { taxable: 0.3 } } }), ctx);
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("The split must total 100%.");
+    expect(updateCalls).toHaveLength(0);
+  });
+
+  it("clears it with an explicit null and leaves it untouched when absent", async () => {
+    await PUT(makeRequest({ withdrawalPolicy: null }), ctx);
+    await PUT(makeRequest({ surplusSpendPct: 0.4 }), ctx);
+
+    expect(updateCalls[0].withdrawalPolicy).toBeNull();
+    expect(updateCalls[1].withdrawalPolicy).toBeUndefined();
   });
 });

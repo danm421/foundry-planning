@@ -1,5 +1,5 @@
 {
-  "id": "d6e3afd6-8870-40fa-a019-1116e925a972",
+  "id": "b263a233-4055-4c1e-b714-862be3868ee0",
   "prevId": "9e52ab14-dbd1-4dca-b2ee-aedc094ac95a",
   "version": "7",
   "dialect": "postgresql",
@@ -16058,6 +16058,12 @@
           "notNull": true,
           "default": false
         },
+        "withdrawal_policy": {
+          "name": "withdrawal_policy",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -23860,8 +23866,8 @@
         }
       },
       "indexes": {
-        "ws_conn_user_idx": {
-          "name": "ws_conn_user_idx",
+        "ws_conn_user_uq": {
+          "name": "ws_conn_user_uq",
           "columns": [
             {
               "expression": "firm_id",
@@ -23874,9 +23880,15 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
+            },
+            {
+              "expression": "provider",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
             }
           ],
-          "isUnique": false,
+          "isUnique": true,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -25483,8 +25495,7 @@
       "name": "workspace_provider",
       "schema": "public",
       "values": [
-        "microsoft",
-        "google"
+        "microsoft"
       ]
     },
     "public.year_ref": {

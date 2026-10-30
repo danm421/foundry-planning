@@ -9,6 +9,7 @@ import {
   growthEnumLabel,
   isGrowthModelPortfolioKey,
 } from "./growth-field-labels";
+import { describeStoredWithdrawalPolicy } from "@/engine/withdrawal-policy";
 
 export type ChangeUnit =
   | { kind: "single"; change: ScenarioChange & { enabled: boolean } }
@@ -99,6 +100,9 @@ export function describeEditFields(targetKind: string, payload: unknown): string
       if (!fromTo || typeof fromTo !== "object") return "";
       const { from, to } = fromTo as { from?: unknown; to?: unknown };
       if (f === "lifeInsurance") return describeLifeInsuranceDiff(from, to);
+      if (f === "withdrawalPolicy") {
+        return `Withdrawal strategy: ${describeStoredWithdrawalPolicy(from)} → ${describeStoredWithdrawalPolicy(to)}`;
+      }
       const label = (targetKind === "plan_settings" && GROWTH_FIELD_LABELS[f]) || fieldLabel(f);
       const a = panelValue(targetKind, f, from);
       const b = panelValue(targetKind, f, to);

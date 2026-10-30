@@ -36,6 +36,23 @@ describe("formPatchToScenarioFields", () => {
   });
 });
 
+describe("formPatchToScenarioFields — withdrawalPolicy", () => {
+  // A scenario edit lands on the engine as stored, past the loader's repair —
+  // so it is stored repaired, like the base write.
+  it("stores the repaired policy, and null as null", () => {
+    const current = { priorTaxableGifts: { client: 0, spouse: 0 } };
+    expect(formPatchToScenarioFields({ withdrawalPolicy: { method: "order", extra: 1 } }, current).planSettings)
+      .toEqual({ withdrawalPolicy: { method: "order", groupOrder: ["cash", "taxable", "tax_deferred", "roth", "annuity"], excludedAccountIds: [] } });
+    expect(formPatchToScenarioFields({ withdrawalPolicy: null }, current).planSettings)
+      .toEqual({ withdrawalPolicy: null });
+  });
+
+  it("promotes the policy object back onto its column untouched", () => {
+    const policy = { method: "split", groupOrder: ["taxable", "tax_deferred", "cash", "roth", "annuity"], splitPct: { taxable: 0.5, tax_deferred: 0.5 }, excludedAccountIds: [] };
+    expect(planSettingsEngineToColumns({ withdrawalPolicy: policy })).toEqual({ withdrawalPolicy: policy });
+  });
+});
+
 describe("planSettingsEngineToColumns", () => {
   it("maps engine keys back to columns for promotion", () => {
     expect(planSettingsEngineToColumns({ outOfHouseholdRate: 0.37,

@@ -7,6 +7,7 @@
 // land those engine keys back on DB columns. This module is the one map
 // between the three.
 import { toNumberIfNumericString } from "@/engine/scenario/applyChanges";
+import { parseWithdrawalPolicy } from "@/engine/withdrawal-policy";
 
 /** Plan-settings form/route keys (DB column names) whose engine key differs. */
 export const PLAN_SETTINGS_ENGINE_KEY: Record<string, string> = {
@@ -69,6 +70,10 @@ export function formPatchToScenarioFields(
       // A cleared side is 0, as `loadClientData` reads a null column.
       priorTaxableGifts ??= { ...current.priorTaxableGifts };
       priorTaxableGifts[PRIOR_GIFT_SIDE[key]] = Number(value ?? 0);
+    } else if (key === "withdrawalPolicy") {
+      // Repaired as the base write stores it: the engine reads a scenario
+      // edit as-is, past the loader's repair.
+      planSettings.withdrawalPolicy = parseWithdrawalPolicy(value);
     } else {
       const engineKey = Object.hasOwn(PLAN_SETTINGS_ENGINE_KEY, key)
         ? PLAN_SETTINGS_ENGINE_KEY[key]

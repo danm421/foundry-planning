@@ -45,13 +45,24 @@ export interface CmaRow {
   volatility: string;     // formatted %
 }
 
+/** How the plan covers a shortfall, as the page prints it. */
+export interface WithdrawalStrategySummary {
+  /** "In order", "Split by percentage", "Proportional to each account's balance" or "Account by account". */
+  method: string;
+  /** The draw order: groups (with a split's share) or, account by account, the
+   *  accounts. Empty for proportional. */
+  steps: { label: string; share?: string }[];
+  /** Accounts never sold to cover a shortfall. */
+  neverSold: string[];
+}
+
 export interface AssumptionsPageData {
   title: string;
   subtitle: string; // scenarioLabel
   /** Horizon, income tax, estate tax, inflation — each omitted when it has no rows. */
   overviewSections: AssumptionsSection[];
   categoryGrowth: CategoryGrowthRow[]; // [] when the bundle is unavailable
-  withdrawalOrder: string[];           // account names in priority order
+  withdrawal: WithdrawalStrategySummary; // printed for every plan
   stressTests: AssumptionRow[];        // [] when none active
   accounts: AccountGrowthRow[] | null; // null when includeAccountTable is off
   referencedPortfolios: ReferencedPortfolio[] | null; // null when appendix off/unavailable

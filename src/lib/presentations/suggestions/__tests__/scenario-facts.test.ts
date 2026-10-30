@@ -172,6 +172,15 @@ describe("sortChanges", () => {
     expect(c.investments?.count).toBe(1);
   });
 
+  it("files a withdrawal-strategy edit with the withdrawal-order changes", () => {
+    const c = sortChanges(
+      [row({ targetKind: "plan_settings", payload: { withdrawalPolicy: { from: null, to: { method: "proportional" } } } })],
+      tree,
+      tree,
+    );
+    expect(c.withdrawalOrder?.count).toBe(1);
+  });
+
   it("files schedule overrides, bequests and policies under their change types", () => {
     const add = (targetKind: ChangeRow["targetKind"]) => row({ opType: "add", targetKind, payload: {} });
     const c = sortChanges(

@@ -3,6 +3,7 @@ import { computeTradIraPool, iraPoolKey, isTraditionalIra, proRataBasisReturn, t
 import { isInheritedIra } from "./inherited-ira";
 import type { WithdrawalPriority, Account } from "./types";
 import { type MarginBorrowSource, type MarginMap, equityPinnedByLoan } from "./margin";
+import { splitTotal, withdrawalGroupOf, type WithdrawalGroup } from "./withdrawal-policy";
 
 interface WithdrawalResult {
   byAccount: Record<string, number>;
@@ -285,6 +286,64 @@ export interface PlanSupplementalWithdrawalInput {
    *  is cash). Omitted ⇒ no borrowing — the legacy no-checking path never
    *  borrows. */
   marginBorrowSources?: MarginBorrowSource[];
+  /** How the shortfall is shared out (spec 2026-10-29). Omitted ⇒ the
+   *  strategy is walked in order, each account drained before the next. */
+  allocation?: WithdrawalAllocation;
+}
+
+/** A non-sequential withdrawal method. `split` shares the draw across groups
+ *  by `splitPct` and passes any share a group can't cover down the strategy's
+ *  order; `proportional` draws every account in proportion to what it can give.
+ *  Either way a margin borrow comes before any sale. */
+export type WithdrawalAllocation =
+  | { method: "split"; splitPct: Partial<Record<WithdrawalGroup, number>>; groupOrder: WithdrawalGroup[] }
+  | { method: "proportional" };
+
+/** Each account's share of `total` under `allocation`. `entries` arrive in the
+ *  strategy's order with what each account can give (`cap`). */
+function allocateShortfall(
+  total: number,
+  entries: Array<{ accountId: string; group: WithdrawalGroup | null; cap: number }>,
+  allocation: WithdrawalAllocation,
+): Map<string, number> {
+  const amounts = new Map<string, number>();
+  if (allocation.method === "proportional") {
+    const capTotal = entries.reduce((s, e) => s + e.cap, 0);
+    if (capTotal <= 0) return amounts;
+    const fraction = Math.min(1, total / capTotal);
+    for (const e of entries) amounts.set(e.accountId, e.cap * fraction);
+    return amounts;
+  }
+
+  const left = new Map(entries.map((e) => [e.accountId, e.cap]));
+  const take = (accountId: string, want: number): number => {
+    const t = Math.min(want, left.get(accountId) ?? 0);
+    left.set(accountId, (left.get(accountId) ?? 0) - t);
+    amounts.set(accountId, (amounts.get(accountId) ?? 0) + t);
+    return t;
+  };
+  const shareTotal = splitTotal(allocation.splitPct);
+  let unmet = 0;
+  for (const group of allocation.groupOrder) {
+    const share = allocation.splitPct[group] ?? 0;
+    if (share <= 0 || shareTotal <= 0) continue;
+    let want = (total * share) / shareTotal;
+    for (const e of entries) {
+      if (want <= 0) break;
+      if (e.group === group) want -= take(e.accountId, want);
+    }
+    unmet += want;
+  }
+  // Whatever a group couldn't give continues down the list — the other split
+  // groups first, then the 0% groups, which are used only once those run out.
+  const hasShare = (e: (typeof entries)[number]) => e.group != null && (allocation.splitPct[e.group] ?? 0) > 0;
+  for (const pass of [entries.filter(hasShare), entries.filter((e) => !hasShare(e))]) {
+    for (const e of pass) {
+      if (unmet <= 0) break;
+      unmet -= take(e.accountId, unmet);
+    }
+  }
+  return amounts;
 }
 
 export function planSupplementalWithdrawal(input: PlanSupplementalWithdrawalInput): SupplementalWithdrawalPlan {
@@ -306,7 +365,7 @@ interface LaidOutDraws {
 
 /** One walk of the year's withdrawal order; `released` frees pinned equity. */
 function layOutDraws(input: PlanSupplementalWithdrawalInput, released: Record<string, number>): LaidOutDraws {
-  const { shortfall, strategy, householdBalances, grossBalances, marginLoans, basisMap, freshBasisMap, rothValueMap, annuityBasisMap, accounts, ages, isSpouseAccount, year, marginBorrowSources } = input;
+  const { shortfall, strategy, householdBalances, grossBalances, marginLoans, basisMap, freshBasisMap, rothValueMap, annuityBasisMap, accounts, ages, isSpouseAccount, year, marginBorrowSources, allocation } = input;
 
   const empty: SupplementalWithdrawalPlan = {
     byAccount: {}, total: 0, draws: [],
@@ -370,22 +429,19 @@ function layOutDraws(input: PlanSupplementalWithdrawalInput, released: Record<st
     }
   };
 
-  for (const entry of sorted) {
-    if (remaining <= 0) break;
-
-    const account = accountById.get(entry.accountId);
-    if (!account) continue;
-    if (!borrowStepDone && account.category !== "cash") borrowStep();
-    if (remaining <= 0) break;
+  /** What this walk may sell from `account` right now, or null when nothing:
+   *  net of any borrow in this plan, never a pre-65 HSA, and only down to the
+   *  equity a margin loan pins (`released` frees that last). */
+  const sourceFor = (account: Account) => {
     // Borrowing took `borrowedHere` out of net; the securities are untouched,
     // so a sale's gain ratio still divides by the pre-borrow securities value.
-    const borrowedHere = borrowedFrom[entry.accountId] ?? 0;
-    const securities = grossBalances?.[account.id] ?? (borrowedHere > 0 ? householdBalances[entry.accountId] : undefined);
-    const available = (householdBalances[entry.accountId] ?? 0) - borrowedHere;
-    if (available <= 0) continue;
+    const borrowedHere = borrowedFrom[account.id] ?? 0;
+    const securities = grossBalances?.[account.id] ?? (borrowedHere > 0 ? householdBalances[account.id] : undefined);
+    const available = (householdBalances[account.id] ?? 0) - borrowedHere;
+    if (available <= 0) return null;
 
     const ownerAge = isSpouseAccount(account) && ages.spouse != null ? ages.spouse : ages.client;
-    if (isHsaWithdrawalLocked(account, ownerAge)) continue;   // pre-65 HSA is locked
+    if (isHsaWithdrawalLocked(account, ownerAge)) return null;   // pre-65 HSA is locked
 
     // A margined account (a borrow in this plan counts) sells only down to the
     // equity its loan pins; `released` frees that last.
@@ -395,15 +451,18 @@ function layOutDraws(input: PlanSupplementalWithdrawalInput, released: Record<st
       const free = Math.min(available, Math.max(0, (securities ?? 0) - loan - equityPinnedByLoan(account, loan)));
       if (free < available) belowCallLevel[account.id] = available - free;
       drawable = free + (released[account.id] ?? 0);
-      if (drawable <= 0) continue;
+      if (drawable <= 0) return null;
     }
+    return { available, securities, ownerAge, drawable };
+  };
+  type Source = NonNullable<ReturnType<typeof sourceFor>>;
 
-    const drawAmount = Math.min(remaining, drawable);
+  const record = (account: Account, source: Source, drawAmount: number) => {
     const tradIraPool = tradIraPoolFor(account);
     const draw = categorizeDraw({
-      account, amount: drawAmount, balance: available,
-      grossBalance: securities,
-      basisMap, rothValueMap, ownerAge,
+      account, amount: drawAmount, balance: source.available,
+      grossBalance: source.securities,
+      basisMap, rothValueMap, ownerAge: source.ownerAge,
       freshBasisRemaining: localFresh[account.id] ?? 0,
       annuityRemainingBasis: localAnnuityBasis[account.id],
       tradIraPool,
@@ -427,13 +486,46 @@ function layOutDraws(input: PlanSupplementalWithdrawalInput, released: Record<st
     }
 
     draws.push(draw);
-    byAccount[entry.accountId] = drawAmount;
+    byAccount[account.id] = drawAmount;
     totalOrdinary += draw.ordinaryIncome;
     totalCapGains += draw.capitalGains;
     totalPenalty += draw.earlyWithdrawalPenalty;
     remaining -= drawAmount;
+  };
+
+  if (allocation) {
+    // Split / proportional: borrow first, share out the rest, then draw (and
+    // tax) each account once, in the strategy's order.
+    borrowStep();
+    const sources = new Map<string, Source>();
+    const entries: Array<{ accountId: string; group: WithdrawalGroup | null; cap: number }> = [];
+    for (const entry of sorted) {
+      const account = accountById.get(entry.accountId);
+      if (!account || sources.has(account.id)) continue;
+      const source = sourceFor(account);
+      if (!source) continue;
+      sources.set(account.id, source);
+      entries.push({ accountId: account.id, group: withdrawalGroupOf(account), cap: source.drawable });
+    }
+    const amounts = allocateShortfall(Math.max(0, remaining), entries, allocation);
+    for (const { accountId } of entries) {
+      const amount = amounts.get(accountId) ?? 0;
+      if (amount > 0) record(accountById.get(accountId)!, sources.get(accountId)!, amount);
+    }
+  } else {
+    for (const entry of sorted) {
+      if (remaining <= 0) break;
+
+      const account = accountById.get(entry.accountId);
+      if (!account) continue;
+      if (!borrowStepDone && account.category !== "cash") borrowStep();
+      if (remaining <= 0) break;
+      const source = sourceFor(account);
+      if (!source) continue;
+      record(account, source, Math.min(remaining, source.drawable));
+    }
+    if (!borrowStepDone) borrowStep();
   }
-  if (!borrowStepDone) borrowStep();
 
   const total = draws.reduce((sum, d) => sum + d.amount, 0);
   const plan: SupplementalWithdrawalPlan = {

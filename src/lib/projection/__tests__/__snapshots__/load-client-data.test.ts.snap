@@ -312,6 +312,7 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
     "surplusSpendPct": 0,
     "taxEngineMode": "bracket",
     "taxInflationRate": null,
+    "withdrawalPolicy": null,
   },
   "reinvestments": [],
   "relocations": [],

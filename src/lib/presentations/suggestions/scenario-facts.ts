@@ -163,6 +163,7 @@ function classify(row: ChangeRow, base: ClientData, plan: ClientData): Hit[] {
       if (has(GROWTH_FIELDS)) hits.push({ type: "investments" });
       if (has(TAX_SETTING_FIELDS)) hits.push({ type: "taxSettings" });
       if (has(STRESS_FIELDS)) hits.push({ type: "stress" });
+      if (fields.includes("withdrawalPolicy")) hits.push({ type: "withdrawalOrder" });
       return hits;
     }
     case "income": {
