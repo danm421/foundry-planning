@@ -90,8 +90,10 @@ const ASSUMED_LIFE_EXPECTANCY = 95;
 
 const NO_DETAIL: NonNullable<ProjectionYear["distributionDetail"]> = {
   rmdInTotalIncome: 0,
+  rmdCashByAccount: {},
   goalDrawsByAccount: {},
   absorbedSurplus: 0,
+  mintedAccountNames: {},
 };
 
 /**

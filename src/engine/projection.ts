@@ -2514,6 +2514,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // taxable income only — never householdInflows / totalIncome.
     let householdQcdTaxedIncome = 0;
     let grantorRmdTaxable = 0;
+    // Reporting only (distributionDetail): each account's RMD cash credited to
+    // household checking — the per-account split of the cash behind
+    // householdRmdIncome + householdRmdTaxFreeCashIn, routed by this year's
+    // working owners (a death can re-title or split an IRA).
+    const rmdCashByAccount: Record<string, number> = {};
     const rmdBySource: Record<string, { type: string; amount: number }> = {};
 
     /** This year's required distribution from `acct`, or null when it owes
@@ -2799,6 +2804,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         }
         // Cash still lands in full — only the TAXABLE slice is income.
         creditCash(defaultChecking?.id, cashRmd, { category: "rmd", label: rmdLabel, sourceId: acct.id, basis: cashRmd });
+        rmdCashByAccount[acct.id] = (rmdCashByAccount[acct.id] ?? 0) + cashRmd;
       } else if (isFullyEntityOwned(acct)) {
         const entityOwner = acct.owners.find((o) => o.kind === "entity") as
           | { kind: "entity"; entityId: string; percent: number }
@@ -9508,8 +9514,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       withdrawals,
       distributionDetail: {
         rmdInTotalIncome,
+        rmdCashByAccount,
         goalDrawsByAccount: { ...goalHouseholdDrawByAccount },
         absorbedSurplus,
+        mintedAccountNames: Object.fromEntries(
+          workingAccounts.filter((a) => !accountById.has(a.id)).map((a) => [a.id, a.name]),
+        ),
       },
       entityWithdrawals,
       expenses,

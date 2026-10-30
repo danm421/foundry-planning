@@ -2133,12 +2133,21 @@ export interface ProjectionYear {
      *  householdRmdTaxFreeCashIn. Less than Σ ledger `rmdAmount` when an IRA
      *  carries after-tax basis. */
     rmdInTotalIncome: number;
+    /** Per account, the RMD cash credited to household checking — routed by
+     *  the year's working owners, so an IRA a death re-titled to a trust is
+     *  absent and the shares a death split off are present. An entity-owned
+     *  IRA's RMD (cash to the entity) is never here. */
+    rmdCashByAccount: Record<string, number>;
     /** Household goal draws from set-aside accounts, per account — already
      *  inside `withdrawals.byAccount` (it is seeded from the same map). */
     goalDrawsByAccount: Record<string, number>;
     /** What a "spend whatever's left" living row took on top of its base —
      *  already inside `expenses.living` and that row's `expenses.bySource`. */
     absorbedSurplus: number;
+    /** Names of the year's accounts that are not in `ClientData.accounts` —
+     *  ones the engine minted, e.g. a death splitting an account between heirs
+     *  ("John IRA — to Jane Doe"). Lets a report name every account it lists. */
+    mintedAccountNames: Record<string, string>;
   };
 
   /** Liquidations triggered by entity gap-fill — when an entity's own
