@@ -6,6 +6,7 @@ import {
   selectedDistributionIndex,
   distributionTooltipExtras,
 } from "../solver-monthly-distributions-chart";
+import { data, dataLight } from "@/brand";
 import { separation, SEPARATION_FLOOR } from "./color-separation";
 
 type Acct = { accountId: string; name: string; amount: number };
@@ -157,6 +158,18 @@ describe("buildDistributionsChartData", () => {
           ok: true,
         });
       }
+    }
+  });
+});
+
+describe("Other accounts colour", () => {
+  it.each(["dark", "light"] as const)("is a neutral, not a semantic hue, in %s", (theme) => {
+    const p = theme === "light" ? dataLight : data;
+    const other = buildDistributionsChartData(MANY, theme).datasets.find(
+      (s) => s.label === "Other accounts",
+    ) as { backgroundColor: string };
+    for (const hue of [p.red, p.orange, p.teal, p.purple, p.grey]) {
+      expect(other.backgroundColor).not.toBe(hue);
     }
   });
 });

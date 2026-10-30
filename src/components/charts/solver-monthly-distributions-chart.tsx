@@ -16,7 +16,7 @@ import {
 } from "chart.js";
 import { Chart } from "react-chartjs-2";
 import { chartChrome, useThemeName } from "@/lib/chart-colors";
-import { data as brandData, dataLight as brandDataLight } from "@/brand";
+import { colors, colorsLight, data as brandData, dataLight as brandDataLight } from "@/brand";
 import {
   rankDistributionAccounts,
   type DistributionRow,
@@ -64,14 +64,22 @@ export const DISTRIBUTIONS_LEGEND_NOTE =
 
 /**
  * Account colours, in a FIXED order: the largest account is always `blue`, the
- * next `yellow`, and so on, so a colour means the same thing across years and
- * toggles. Income is the neutral grey; "Other accounts" takes red: of the nine hues beside grey, this is the only
- * set of five that clears the separation floor in both themes (23.3 at worst, the
- * grey/green pair Cash flow also carries).
- * The closest pair is guarded in the test on `separation` (normal vision and
- * deuteranopia), in both themes.
+ * next `yellow`, `sky`, `green`, so a colour means the same thing across years
+ * and toggles. Income is the neutral grey.
+ *
+ * "Other accounts" is a routine roll-up, so it is a SECOND NEUTRAL, never a
+ * semantic hue: not red (critical elsewhere in this feature) and not orange,
+ * teal or violet (the panel's taxes, spending and goals borders). The only
+ * neutral that is visibly apart from Income's grey and clears the separation
+ * floor against every bar in both themes is a dark slate: `hair2` on dark
+ * (34.9 at worst) and `ink2` on light (25.9). The nearest alternatives fail:
+ * dark `ink2` 19.4, `ink3` 4.8; light `ink3` 18.1. Dark `ink` clears (30.3) but
+ * is near-white and would swallow the dashed need line drawn in the same ink.
  */
 const ACCOUNT_KEYS = ["blue", "yellow", "sky", "green"] as const;
+
+const otherAccountsColor = (theme: "dark" | "light") =>
+  theme === "light" ? colorsLight.ink2 : colors.hair2;
 
 const palette = (theme: "dark" | "light") => (theme === "light" ? brandDataLight : brandData);
 
@@ -130,7 +138,7 @@ export function buildDistributionsChartData(
           rows.map((r) => r.fromAccounts.accounts.find((l) => l.accountId === a.accountId)?.amount ?? 0),
         ),
       ),
-      ...(showOther ? [bar(LABEL.other, p.red, rows.map((r) => Math.max(0, otherOf(r))))] : []),
+      ...(showOther ? [bar(LABEL.other, otherAccountsColor(theme), rows.map((r) => Math.max(0, otherOf(r))))] : []),
       {
         type: "line" as const,
         label: LABEL.need,
