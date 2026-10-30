@@ -82,16 +82,29 @@ describe("planSupplementalWithdrawal — split", () => {
     expect(p.recognizedIncome.ordinaryIncome).toBeCloseTo(4_000, 6);
   });
 
-  it("a group that runs out passes the rest down the list, and each account is drawn once", () => {
+  // Spec: a 0% group is used only after the others run out — so a group's
+  // unmet share goes to the other split groups first, even when a 0% group
+  // (cash here) sits higher in the order.
+  it("a group that runs out passes the rest to the other split groups before any 0% group", () => {
     const thin = acct("brokerage", { category: "taxable", subType: "brokerage", value: 3_000, basis: 3_000 });
     const p = plan([cash, thin, ira, roth], 10_000, buildDefaultWithdrawalStrategy([cash, thin, ira, roth], settings),
       split({ taxable: 0.5, tax_deferred: 0.5 }));
-    // Taxable gives its 3k; the unmet 2k goes down the list: cash (5k) first.
     expect(p.byAccount.brokerage).toBeCloseTo(3_000, 6);
-    expect(p.byAccount.ira).toBeCloseTo(5_000, 6);
-    expect(p.byAccount.cash).toBeCloseTo(2_000, 6);
+    expect(p.byAccount.ira).toBeCloseTo(7_000, 6);
+    expect(p.byAccount.cash).toBeUndefined();
     expect(p.total).toBeCloseTo(10_000, 6);
     expect(new Set(p.draws.map((d) => d.accountId)).size).toBe(p.draws.length);
+  });
+
+  it("the reviewer's case: cash first in the order stays untouched while tax-deferred holds money", () => {
+    const savings = acct("cash", { category: "cash", value: 50_000 });
+    const small = acct("brokerage", { category: "taxable", subType: "brokerage", value: 20_000, basis: 20_000 });
+    const big = acct("ira", { category: "retirement", subType: "traditional_ira", value: 500_000 });
+    const accts = [savings, small, big];
+    const p = plan(accts, 100_000, buildDefaultWithdrawalStrategy(accts, settings), split({ taxable: 0.5, tax_deferred: 0.5 }));
+    expect(p.byAccount.brokerage).toBeCloseTo(20_000, 6);
+    expect(p.byAccount.ira).toBeCloseTo(80_000, 6);
+    expect(p.byAccount.cash).toBeUndefined();
   });
 
   it("covers a shortfall bigger than the split groups from the 0% groups", () => {

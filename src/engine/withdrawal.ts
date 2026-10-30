@@ -334,10 +334,14 @@ function allocateShortfall(
     }
     unmet += want;
   }
-  // Whatever a group couldn't give continues down the list.
-  for (const e of entries) {
-    if (unmet <= 0) break;
-    unmet -= take(e.accountId, unmet);
+  // Whatever a group couldn't give continues down the list — the other split
+  // groups first, then the 0% groups, which are used only once those run out.
+  const hasShare = (e: (typeof entries)[number]) => e.group != null && (allocation.splitPct[e.group] ?? 0) > 0;
+  for (const pass of [entries.filter(hasShare), entries.filter((e) => !hasShare(e))]) {
+    for (const e of pass) {
+      if (unmet <= 0) break;
+      unmet -= take(e.accountId, unmet);
+    }
   }
   return amounts;
 }
