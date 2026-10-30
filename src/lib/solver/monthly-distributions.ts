@@ -6,6 +6,7 @@
 // The ONE source of this view's arithmetic. The screen panel, its chart and
 // the presentation page all read these rows, so screen and print can't drift.
 import type { ClientData, ClientInfo, ProjectionYear } from "@/engine";
+import type { GoalYear } from "@/engine/types";
 import { controllingFamilyMember, normalizeOwners } from "@/engine/ownership";
 import { goalDrawAccountIds, isFundedGoal } from "@/engine/goals/goal-funding";
 import { ageLabel } from "./cashflow-year-detail";
@@ -34,7 +35,8 @@ export interface DistributionGoalLine {
   setAsideAccountNames: string[];
   /** GoalYear.dedicatedWithdrawal (household, 529 and entity alike) */
   fromSetAside: number;
-  /** GoalYear.outOfPocketWithdrawal — inside the account draws */
+  /** The household-paid out-of-pocket part — inside the account draws. An
+   *  entity's out-of-pocket part (paid by its own checking) is never here. */
   fromGeneral: number;
   /** GoalYear.shortfall */
   unfunded: number;
@@ -93,14 +95,16 @@ const NO_DETAIL: NonNullable<ProjectionYear["distributionDetail"]> = {
 };
 
 /**
- * Every living household member has reached their retirement age this year.
+ * The household members alive this year, client first.
  *
- * "Living" is checked against life expectancy as well as presence: the engine
- * keeps `ages.spouse` (and the client's age) counting after a death, so a
- * survivor year would otherwise wait forever on a spouse who died before
- * retiring. A member with no retirement age has nothing to wait for.
+ * Checked against life expectancy as well as presence: the engine keeps
+ * `ages.spouse` (and the client's age) counting after a death. A member is
+ * still alive in their death year (age === life expectancy).
  */
-export function isRetirementYear(year: ProjectionYear, client: ClientInfo): boolean {
+function livingMembers(
+  year: ProjectionYear,
+  client: ClientInfo,
+): { age: number; retireAt: number | undefined }[] {
   const members = [
     { age: year.ages.client, retireAt: client.retirementAge, diesAt: client.lifeExpectancy },
     {
@@ -109,13 +113,27 @@ export function isRetirementYear(year: ProjectionYear, client: ClientInfo): bool
       diesAt: client.spouseLifeExpectancy,
     },
   ];
-  return members.every(
-    ({ age, retireAt, diesAt }) =>
-      age == null ||
-      age > (diesAt ?? ASSUMED_LIFE_EXPECTANCY) ||
-      retireAt == null ||
-      age >= retireAt,
+  return members.flatMap(({ age, retireAt, diesAt }) =>
+    age != null && age <= (diesAt ?? ASSUMED_LIFE_EXPECTANCY) ? [{ age, retireAt }] : [],
   );
+}
+
+/**
+ * Every living household member has reached their retirement age this year.
+ * A survivor year doesn't wait on a spouse who died before retiring, and a
+ * member with no retirement age has nothing to wait for.
+ */
+export function isRetirementYear(year: ProjectionYear, client: ClientInfo): boolean {
+  return livingMembers(year, client).every(
+    ({ age, retireAt }) => retireAt == null || age >= retireAt,
+  );
+}
+
+/** `ageLabel`'s format, listing only the living members: "Age 79" in a
+ *  survivor year, not the deceased's still-counting age beside it. */
+function livingAgeLabel(year: ProjectionYear, client: ClientInfo): string {
+  const living = livingMembers(year, client);
+  return living.length > 0 ? `Age ${living.map((m) => m.age).join(" / ")}` : ageLabel(year);
 }
 
 /** At most this many accounts get their own column / colour. */
@@ -185,13 +203,20 @@ export function buildMonthlyDistributionRows(
 
     // ── Goals ──
     const setAsideGoals = (y.goals ?? []).filter((g) => !g.accumulation);
-    // The household-paid part sits inside `expenses.other`; a 529 or entity
-    // draw never touched household money and is not there (R2).
-    const setAsideHouseholdCost = sumOf(
-      setAsideGoals,
-      (g) => g.householdWithdrawal + g.outOfPocketWithdrawal,
-    );
-    const outOfPocket = sumOf(setAsideGoals, (g) => g.outOfPocketWithdrawal);
+    // The household-paid cost is exactly what the engine booked into
+    // `expenses.other` under the goal's id — NOT `householdWithdrawal +
+    // outOfPocketWithdrawal`. The engine sets `outOfPocketWithdrawal` whenever
+    // the option is on, but books it only for a household-owned goal with a
+    // checking account to pay from: an entity-owned goal's gap is paid by the
+    // entity's own checking, and with no default checking nothing pays it.
+    // A 529 or entity draw never touched household money either (R2, R7).
+    const householdCost = (g: GoalYear) => y.expenses.bySource[g.goalId] ?? 0;
+    // The part of that cost paid from household cash flow, i.e. inside the
+    // account draws above — never an entity's out-of-pocket part.
+    const householdOutOfPocket = (g: GoalYear) =>
+      Math.max(0, householdCost(g) - g.householdWithdrawal);
+    const setAsideHouseholdCost = sumOf(setAsideGoals, householdCost);
+    const outOfPocket = sumOf(setAsideGoals, householdOutOfPocket);
     const goals: DistributionGoalLine[] = setAsideGoals
       .filter((g) => g.goalExpense > 0)
       .map((g) => {
@@ -203,7 +228,7 @@ export function buildMonthlyDistributionRows(
             ? goalDrawAccountIds(expense, accountById).map(nameOf)
             : [],
           fromSetAside: g.dedicatedWithdrawal * k,
-          fromGeneral: g.outOfPocketWithdrawal * k,
+          fromGeneral: householdOutOfPocket(g) * k,
           unfunded: g.shortfall * k,
         };
       });
@@ -302,7 +327,7 @@ export function buildMonthlyDistributionRows(
 
     return {
       year: y.year,
-      ageLabel: ageLabel(y),
+      ageLabel: livingAgeLabel(y, clientData.client),
       retired: isRetirementYear(y, clientData.client),
       depleted: isDepleted(y, householdLiquidIds),
       need: {

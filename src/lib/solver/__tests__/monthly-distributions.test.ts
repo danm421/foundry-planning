@@ -78,6 +78,9 @@ const sum = (xs: number[]) => xs.reduce((s, x) => s + x, 0);
 /** The smallest account line worth a row: anything less prints as "$0". */
 const MIN_LINE_PER_MONTH = 0.5;
 
+/** Float noise allowed below zero on a need line, per month. */
+const NEED_EPSILON = 0.01;
+
 function build(clientData: ClientData, basis: DollarBasis = "nominal") {
   const years = runProjection(clientData);
   return { years, rows: buildMonthlyDistributionRows(years, clientData, basis) };
@@ -100,6 +103,15 @@ function expectCloses(rows: DistributionRow[]) {
     for (const a of fromAccounts.accounts) {
       expect(a.amount, `${r.year} ${a.name}`).toBeGreaterThanOrEqual(MIN_LINE_PER_MONTH);
     }
+    // Every need line is money the household spends. A negative one means the
+    // builder took out something that was never in it — which the closing
+    // check alone cannot see when the same amount is over-added elsewhere.
+    const { living, liabilities, realEstate, insurance, other, savings } = r.need;
+    const needLines = { living, liabilities, realEstate, insurance, other, savings };
+    for (const [name, v] of Object.entries(needLines)) {
+      expect(v, `${r.year} need.${name}`).toBeGreaterThanOrEqual(-NEED_EPSILON);
+    }
+    for (const l of r.need.goalLines) expect(l.amount).toBeGreaterThan(0);
     // The waterfall's parts are what the account money paid for, so they add
     // to it too (up to the same residue).
     expect(
@@ -411,6 +423,103 @@ describe("monthly distributions", () => {
     expectCloses(rows);
   });
 
+  it("an entity-owned goal's out-of-pocket part stays off the household view", () => {
+    // A trust-owned $100k education goal with $20k set aside in a trust
+    // brokerage and out-of-pocket on: the engine reports an 80k out-of-pocket
+    // part, but the trust's own checking pays it — nothing enters
+    // `expenses.other`.
+    const trust = [{ kind: "entity" as const, entityId: "ngt", percent: 1 }];
+    const clientData: ClientData = {
+      ...withGoal(
+        {
+          id: "trust-college",
+          type: "education",
+          name: "Trust college",
+          annualAmount: 100_000,
+          startYear: 2030,
+          endYear: 2030,
+          growthRate: 0,
+          dedicatedAccountIds: ["acct-trust-brokerage"],
+          payShortfallOutOfPocket: true,
+          ownerEntityId: "ngt",
+        },
+        [
+          {
+            ...defaultChecking,
+            id: "acct-trust-checking",
+            name: "Trust Checking",
+            value: 500_000,
+            basis: 500_000,
+            owners: trust,
+          },
+          {
+            ...defaultChecking,
+            id: "acct-trust-brokerage",
+            name: "Trust Brokerage",
+            category: "taxable",
+            subType: "brokerage",
+            isDefaultChecking: false,
+            value: 20_000,
+            basis: 20_000,
+            owners: trust,
+          },
+        ],
+      ),
+      entities: [{ id: "ngt", name: "NGT", includeInPortfolio: false, isGrantor: false }],
+    };
+    const { years, rows } = build(clientData);
+    const i = years.findIndex((y) => y.year === 2030);
+    const y = years[i];
+    const r = rows[i];
+    const goal = y.goals!.find((g) => g.goalId === "trust-college")!;
+    // Liveness: an out-of-pocket part the household never paid.
+    expect(goal.outOfPocketWithdrawal).toBeGreaterThan(0);
+    expect(y.expenses.bySource["trust-college"]).toBeUndefined();
+    // First, so the closing helper's own need-line guard is what catches an
+    // over-subtraction: it cancels against `goalShortfall` and still closes.
+    expectCloses(rows);
+
+    const line = r.goals.find((g) => g.goalId === "trust-college")!;
+    expect(line.setAsideAccountNames).toEqual(["Trust Brokerage"]);
+    expect(line.fromSetAside * 12).toBeCloseTo(goal.dedicatedWithdrawal, 4);
+    expect(line.fromGeneral).toBe(0);
+    expect(r.need.other * 12).toBeCloseTo(y.expenses.other, 4);
+    expect(r.fromAccounts.parts.goalShortfall).toBe(0);
+  });
+
+  it("an out-of-pocket part with no checking to pay it is not from general accounts", () => {
+    // No default checking: the engine's out-of-pocket spill has no account to
+    // leave from, so only the set-aside draw is booked in `expenses.other`.
+    const base = buildClientData();
+    expect(base.accounts.some((a) => a.isDefaultChecking)).toBe(false);
+    const boat: Expense = {
+      id: "boat",
+      type: "other",
+      name: "Boat",
+      annualAmount: 200_000,
+      startYear: 2030,
+      endYear: 2030,
+      growthRate: 0,
+      isGoal: true,
+      dedicatedAccountIds: ["acct-savings"],
+      payShortfallOutOfPocket: true,
+    };
+    const { years, rows } = build({ ...base, expenses: [...base.expenses, boat] });
+    const i = years.findIndex((y) => y.year === 2030);
+    const y = years[i];
+    const goal = y.goals!.find((g) => g.goalId === "boat")!;
+    expect(goal.outOfPocketWithdrawal).toBeGreaterThan(0);
+    expect(goal.householdWithdrawal).toBeGreaterThan(0);
+    expect(y.expenses.bySource["boat"]).toBeCloseTo(goal.householdWithdrawal, 4);
+
+    expect(rows[i].goals[0].fromGeneral).toBe(0);
+    expect(rows[i].need.other * 12).toBeCloseTo(
+      y.expenses.other - goal.householdWithdrawal,
+      4,
+    );
+    expect(rows[i].need.other).toBeGreaterThanOrEqual(-NEED_EPSILON);
+  });
+
   it("a goal with no set-aside account is a named need line", () => {
     const remodel: Expense = {
       id: "remodel",
@@ -618,7 +727,27 @@ describe("monthly distributions", () => {
     expect(years.find((y) => y.year === 2035)!.ages.spouse).toBe(63);
     expect(at(2034).retired).toBe(false);
     expect(at(2035).retired).toBe(true);
-    expect(at(2035).ageLabel).not.toContain("undefined");
+    // Her death year still counts her; after it the label holds one age.
+    expect(at(2032).ageLabel).toBe("Age 62 / 60");
+    expect(at(2035).ageLabel).toBe("Age 65");
+  });
+
+  it("the age label lists only living members", () => {
+    // John (1970) dies in 2050; Jane (1972) lives on.
+    const { years, rows } = build(
+      buildClientData({
+        accounts: withChecking(),
+        client: { ...baseClient, lifeExpectancy: 80, spouseLifeExpectancy: 85 },
+      }),
+    );
+    const at = (year: number) => rows[years.findIndex((y) => y.year === year)];
+    // The engine still counts John's age in the survivor years.
+    expect(years.find((y) => y.year === 2051)!.ages.client).toBe(81);
+    expect(at(2050).ageLabel).toBe("Age 80 / 78");
+    for (const r of rows.filter((r) => r.year > 2050)) {
+      expect(r.ageLabel).toMatch(/^Age \d+$/);
+    }
+    expect(at(2051).ageLabel).toBe("Age 79");
   });
 
   it("rankDistributionAccounts caps at four, largest first", () => {
