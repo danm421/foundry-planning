@@ -561,20 +561,70 @@ describe("WeekCalendar — dragging", () => {
     expect(onMove).not.toHaveBeenCalled();
   });
 
-  describe("account labels", () => {
-    const events = [row({ id: "standup", start: "2026-10-27T10:00", end: "2026-10-27T11:00" })];
-    const labels = new Map([[CONN, "foundryplanning"]]);
-
-    it("with labels, a block shows its account's tag", () => {
+  describe("account labels (I4)", () => {
+    const EMAIL = "dan@foundryplanning.com";
+    const tags = new Map([[CONN, { label: "foundryplanning", email: EMAIL }]]);
+    const renderWith = (events: Row[], withTags = true) =>
       render(
-        <WeekCalendar {...noop} weekStart="2026-10-26" days={5} events={events} today="2026-10-28" labels={labels} />,
+        <WeekCalendar
+          {...noop}
+          weekStart="2026-10-26"
+          days={5}
+          events={events}
+          today="2026-10-28"
+          tags={withTags ? tags : null}
+        />,
       );
-      expect(screen.getByText("foundryplanning")).toBeInTheDocument();
+
+    it("an hour-long block shows its account's label on its own line, and its full address on hover", () => {
+      renderWith([row({ id: "standup", start: "2026-10-27T10:00", end: "2026-10-27T11:00" })]);
+      const label = screen.getByText("foundryplanning");
+      expect(label).not.toHaveClass("sr-only");
+      expect(label).toHaveClass("text-ink-4");
+      expect(boxOf("standup")).toHaveAttribute("title", EMAIL);
     });
 
-    it("without labels, no tag", () => {
-      render(<WeekCalendar {...noop} weekStart="2026-10-26" days={5} events={events} today="2026-10-28" />);
-      expect(screen.queryByText("foundryplanning")).toBeNull();
+    it("a 30-minute (compact) block shows the label on its subject line, visibly", () => {
+      renderWith([row({ id: "sync", start: "2026-10-27T10:00", end: "2026-10-27T10:30" })]);
+      const label = screen.getByText("· foundryplanning");
+      expect(label).not.toHaveClass("sr-only");
+      expect(label).toHaveClass("text-ink-4");
+      expect(label.parentElement).toHaveTextContent(/^sync · foundryplanning$/);
+      expect(screen.getAllByText(/foundryplanning/)).toHaveLength(1);
+      expect(screen.getByText("· foundryplanning").closest("[title]")).toHaveAttribute("title", EMAIL);
+    });
+
+    it("someone else's compact meeting shows the label too, and hovers its address before the lock hint", () => {
+      renderWith([
+        row({ id: "training", start: "2026-10-27T10:00", end: "2026-10-27T10:30", isOrganizer: false, editable: false }),
+      ]);
+      expect(screen.getByText("· foundryplanning")).not.toHaveClass("sr-only");
+      expect(screen.getByText("· foundryplanning").closest("[title]")).toHaveAttribute(
+        "title",
+        `${EMAIL}\nYou didn't organize this meeting — open it in Outlook to change it.`,
+      );
+    });
+
+    it("an all-day chip carries the label and its address on hover", () => {
+      renderWith([
+        row({ id: "offsite", subject: "Team offsite", start: "2026-10-27T00:00", end: "2026-10-28T00:00", isAllDay: true }),
+      ]);
+      const strip = screen.getByRole("group", { name: "All-day events" });
+      expect(within(strip).getByText("· foundryplanning")).toHaveClass("text-ink-4");
+      expect(within(strip).getByText("Team offsite").closest("[title]")).toHaveAttribute("title", EMAIL);
+    });
+
+    it("without tags (one account), no label and no address", () => {
+      renderWith(
+        [
+          row({ id: "standup", start: "2026-10-27T10:00", end: "2026-10-27T11:00" }),
+          row({ id: "sync", start: "2026-10-28T10:00", end: "2026-10-28T10:30" }),
+          row({ id: "offsite", start: "2026-10-29T00:00", end: "2026-10-30T00:00", isAllDay: true }),
+        ],
+        false,
+      );
+      expect(screen.queryByText(/foundryplanning/)).toBeNull();
+      expect(document.querySelector(`[title*="${EMAIL}"]`)).toBeNull();
     });
   });
 });

@@ -635,6 +635,25 @@ describe("WorkspacePage — accounts", () => {
     expect(screen.getByText("Annual review")).toBeInTheDocument();
   });
 
+  it("(I4) with two accounts a meeting hovers its full address, and the editor names its calendar", async () => {
+    const user = userEvent.setup();
+    readQueue.push(Promise.resolve(mixed(null)));
+    renderPage("ready", [ACCOUNT, GOOGLE]);
+    await screen.findByText("Gym");
+    expect(screen.getByText("Gym").closest("[title]")).toHaveAttribute("title", "dana@gmail.com");
+    await user.click(screen.getByRole("button", { name: /^Gym/ }));
+    const dialog = screen.getByRole("dialog", { name: "Edit event" });
+    expect(within(dialog).getByText("Calendar")).toBeInTheDocument();
+    expect(within(dialog).getByText("dana@gmail.com")).toBeInTheDocument();
+  });
+
+  it("(I4) with one account the editor names no calendar", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole("button", { name: /Annual review/ }));
+    expect(within(screen.getByRole("dialog", { name: "Edit event" })).queryByText("Calendar")).toBeNull();
+  });
+
   it("still renders when storage throws on the hidden list", async () => {
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("blocked");

@@ -5,7 +5,7 @@ import { z } from "zod";
 import DialogShell from "@/components/dialog-shell";
 import { checkboxClassName, fieldLabelClassName, inputClassName, selectClassName } from "@/components/forms/input-styles";
 import { ExternalLinkIcon, XIcon } from "@/components/icons";
-import type { AttendeeSuggestion, WallClock, WorkspaceProvider } from "@/lib/workspace/types";
+import type { AccountSummary, AttendeeSuggestion, WallClock, WorkspaceProvider } from "@/lib/workspace/types";
 import { addDays, daysBetween, minutesOfTime, monthDay, timeOf, toWallClock } from "@/lib/workspace/week";
 
 /** What Save hands back: the account it goes to, plus the create route's body. */
@@ -36,7 +36,8 @@ const JOIN_LABEL: Record<WorkspaceProvider, string> = {
   google: "Join the Google Meet",
 };
 
-export type EditorAccount = { id: string; provider: WorkspaceProvider; label: string };
+/** An address a new meeting can go on; the `Calendar` select lists each by its full address. */
+export type EditorAccount = Pick<AccountSummary, "id" | "provider" | "email">;
 const SAVE_FAILED = "Couldn't save the meeting. Try again.";
 const CANCEL_FAILED = "Couldn't cancel the meeting. Try again.";
 
@@ -71,6 +72,7 @@ export function EventEditorDialog({
   mode,
   accounts = [],
   provider = "microsoft",
+  calendar,
   initial,
   onSave,
   onCancelMeeting,
@@ -81,6 +83,8 @@ export function EventEditorDialog({
   accounts?: EditorAccount[];
   /** Edit: the provider that holds the meeting. */
   provider?: WorkspaceProvider;
+  /** Edit: the address that holds the meeting, shown read-only; given with 2+ accounts, as the create select is. */
+  calendar?: string;
   initial: {
     subject: string;
     start: WallClock;
@@ -277,10 +281,15 @@ export function EventEditorDialog({
             >
               {accounts.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.label}
+                  {a.email}
                 </option>
               ))}
             </select>
+          </div>
+        ) : !creating && calendar ? (
+          <div>
+            <p className={fieldLabelClassName}>Calendar</p>
+            <p className="text-[14px] text-ink">{calendar}</p>
           </div>
         ) : null}
 

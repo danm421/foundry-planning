@@ -19,8 +19,8 @@ const BLANK = {
   meetingUrl: null,
 };
 
-const MS = { id: "ms-1", provider: "microsoft" as const, label: "hartwell" };
-const GOOGLE = { id: "g-1", provider: "google" as const, label: "gmail" };
+const MS = { id: "ms-1", provider: "microsoft" as const, email: "dana@hartwell.com" };
+const GOOGLE = { id: "g-1", provider: "google" as const, email: "dana@gmail.com" };
 
 const REVIEW = {
   subject: "Annual review",
@@ -230,6 +230,15 @@ describe("EventEditorDialog — which calendar", () => {
     expect(localStorage.getItem("workspace.lastAccount")).toBe("g-1");
   });
 
+  it("(M12) lists each calendar by its full address", () => {
+    renderCreate();
+    const options = within(screen.getByLabelText("Calendar")).getAllByRole("option");
+    expect(options.map((o) => [o.getAttribute("value"), o.textContent])).toEqual([
+      ["ms-1", "dana@hartwell.com"],
+      ["g-1", "dana@gmail.com"],
+    ]);
+  });
+
   it("with one account there is no select", () => {
     renderCreate(vi.fn(), [GOOGLE]);
     expect(screen.queryByLabelText("Calendar")).toBeNull();
@@ -250,6 +259,27 @@ describe("EventEditorDialog — which calendar", () => {
 });
 
 describe("EventEditorDialog — edit", () => {
+  it("(I4) names the meeting's calendar by its full address, read-only", () => {
+    render(
+      <EventEditorDialog
+        mode="edit"
+        provider="google"
+        calendar="dana@gmail.com"
+        initial={REVIEW}
+        onSave={vi.fn()}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.getByText("Calendar")).toBeInTheDocument();
+    expect(screen.getByText("dana@gmail.com")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox")).toBeNull();
+  });
+
+  it("(I4) without an address (one account), no Calendar line", () => {
+    render(<EventEditorDialog mode="edit" initial={REVIEW} onSave={vi.fn()} onClose={() => {}} />);
+    expect(screen.queryByText("Calendar")).toBeNull();
+  });
+
   it("a Google meeting shows the Meet link, and Cancel says Google Calendar", async () => {
     const user = userEvent.setup();
     render(

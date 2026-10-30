@@ -27,6 +27,9 @@ export type WeekEvent = WorkspaceEvent & {
   household: HouseholdLink | null;
 };
 
+/** How a meeting names its account (only with 2+ accounts): a short label, and the full address on hover. */
+export type AccountTag = { label: string; email: string };
+
 const HOUR_PX = 48;
 const PX_PER_MIN = HOUR_PX / 60;
 const GUTTER_PX = 44;
@@ -72,12 +75,21 @@ function tone(e: WeekEvent): string {
   return e.household ? "border-data-green bg-data-green/20" : "border-data-blue bg-data-blue/20";
 }
 
+/** A meeting's hover text: its account's full address (2+ accounts), then, for someone else's meeting, where to change it. */
+function hoverTitle(e: WeekEvent, tag: AccountTag | undefined): string | undefined {
+  const lines = [tag?.email, e.editable ? null : LOCKED_TITLE[e.provider]].filter((l): l is string => !!l);
+  return lines.length > 0 ? lines.join("\n") : undefined;
+}
+
+/** The account is named in text, never a color: green/blue already say client vs other. */
+const LABEL = "text-ink-4";
+
 export function WeekCalendar({
   weekStart,
   days,
   events,
   today,
-  labels,
+  tags,
   onMove,
   onOpen,
 }: {
@@ -86,8 +98,8 @@ export function WeekCalendar({
   events: WeekEvent[];
   /** `YYYY-MM-DD` in the browser's zone — an accepted stand-in for the mailbox's. */
   today: string;
-  /** Each account's short name by connection id; given only with 2+ accounts, then tagged on every block. */
-  labels?: ReadonlyMap<string, string> | null;
+  /** Each account's tag by connection id; given only with 2+ accounts, then on every meeting. */
+  tags?: ReadonlyMap<string, AccountTag> | null;
   /** A meeting (by `key`) dragged or resized to new times (only `editable` ones can be). */
   onMove: (eventKey: string, start: WallClock, end: WallClock) => Promise<void>;
   /** A meeting (by `key`) the advisor can edit was clicked, or Enter was pressed on it. */
@@ -151,16 +163,20 @@ export function WeekCalendar({
             </div>
             {laidOut.map(({ allDay }, i) => (
               <div key={dates[i]} className="flex min-w-0 flex-col gap-0.5 border-l border-hair p-0.5">
-                {allDay.map((e) => (
-                  <div
-                    key={e.key}
-                    title={e.editable ? undefined : LOCKED_TITLE[e.provider]}
-                    className={`flex min-w-0 items-center gap-1 rounded-[var(--radius-sm)] border-l-[3px] px-1.5 py-0.5 text-[11px] leading-[1.3] ${tone(e)}`}
-                  >
-                    <EventTitle event={e} />
-                    {e.household ? <HouseholdName household={e.household} /> : null}
-                  </div>
-                ))}
+                {allDay.map((e) => {
+                  const tag = tags?.get(e.connectionId);
+                  return (
+                    <div
+                      key={e.key}
+                      title={hoverTitle(e, tag)}
+                      className={`flex min-w-0 items-center gap-1 rounded-[var(--radius-sm)] border-l-[3px] px-1.5 py-0.5 text-[11px] leading-[1.3] ${tone(e)}`}
+                    >
+                      <EventTitle event={e} />
+                      {tag ? <InlineLabel label={tag.label} className="min-w-0 truncate" /> : null}
+                      {e.household ? <HouseholdName household={e.household} /> : null}
+                    </div>
+                  );
+                })}
               </div>
             ))}
           </div>
@@ -191,7 +207,7 @@ export function WeekCalendar({
                   <EditableEvent
                     key={p.event.key}
                     placed={p}
-                    label={labels?.get(p.event.connectionId)}
+                    tag={tags?.get(p.event.connectionId)}
                     date={dates[i]}
                     dragging={preview?.id === p.event.key}
                     onPress={(e, mode) =>
@@ -205,7 +221,7 @@ export function WeekCalendar({
                     onOpen={() => onOpen(p.event.key)}
                   />
                 ) : (
-                  <LockedEvent key={p.event.key} placed={p} label={labels?.get(p.event.connectionId)} />
+                  <LockedEvent key={p.event.key} placed={p} tag={tags?.get(p.event.connectionId)} />
                 ),
               )}
             </div>
@@ -241,7 +257,11 @@ function boxLayout({ topMin, endMin, column, columns }: PositionedEvent<WeekEven
   };
 }
 
-/** The meeting's times: drawn when there's room, always read out. */
+/**
+ * The lines under the subject: the meeting's times, then its account's label
+ * (2+ accounts). A compact box has room for neither: its times are still read
+ * out, and its label sits on the subject line instead (`InlineLabel`).
+ */
 function TimeLine({
   event: e,
   compact,
@@ -256,28 +276,33 @@ function TimeLine({
       <span className={compact ? "sr-only" : "tabular block truncate text-ink-3"}>
         {clock(e.start)} – {clock(e.end)}
       </span>
-      {/* The account is named in text, never a color: green/blue already say client vs other. */}
-      {label ? <span className={compact ? "sr-only" : "block truncate text-ink-4"}>{label}</span> : null}
+      {label && !compact ? <span className={`block truncate ${LABEL}`}>{label}</span> : null}
     </>
   );
+}
+
+/** An account label on the subject's own line: a compact box's, or an all-day chip's. */
+function InlineLabel({ label, className = "" }: { label: string; className?: string }): ReactElement {
+  return <span className={`${className} font-normal ${LABEL}`}>· {label}</span>;
 }
 
 /** Someone else's meeting: read-only, with the lock and a link to its calendar. */
 function LockedEvent({
   placed,
-  label,
+  tag,
 }: {
   placed: PositionedEvent<WeekEvent>;
-  label?: string;
+  tag?: AccountTag;
 }): ReactElement {
   const e = placed.event;
   const box = boxLayout(placed);
   return (
-    <div title={LOCKED_TITLE[e.provider]} className={`${box.className} ${tone(e)}`} style={box.style}>
+    <div title={hoverTitle(e, tag)} className={`${box.className} ${tone(e)}`} style={box.style}>
       <div className="flex min-w-0 items-center gap-1">
         <EventTitle event={e} />
+        {box.compact && tag ? <InlineLabel label={tag.label} className="min-w-0 truncate" /> : null}
       </div>
-      <TimeLine event={e} compact={box.compact} label={label} />
+      <TimeLine event={e} compact={box.compact} label={tag?.label} />
       {e.household && !box.compact ? <HouseholdName household={e.household} /> : null}
     </div>
   );
@@ -292,7 +317,7 @@ function LockedEvent({
  */
 function EditableEvent({
   placed,
-  label,
+  tag,
   date,
   dragging,
   onPress,
@@ -300,7 +325,7 @@ function EditableEvent({
   onOpen,
 }: {
   placed: PositionedEvent<WeekEvent>;
-  label?: string;
+  tag?: AccountTag;
   date: string;
   dragging: boolean;
   onPress: (e: PointerEvent, mode: DragMode) => void;
@@ -313,6 +338,7 @@ function EditableEvent({
   const endsHere = e.end <= toWallClock(date, 1440);
   return (
     <div
+      title={hoverTitle(e, tag)}
       // No `touch-none`: a swipe that starts on a meeting scrolls the week (touch never drags).
       className={`${box.className} ${tone(e)} cursor-pointer select-none has-[button:focus-visible]:outline has-[button:focus-visible]:outline-2 has-[button:focus-visible]:outline-accent ${dragging ? "z-20 outline outline-1 outline-ink-3" : ""}`}
       style={box.style}
@@ -323,8 +349,16 @@ function EditableEvent({
       onDragStart={(ev) => ev.preventDefault()}
     >
       <button type="button" className="block w-full min-w-0 cursor-pointer text-left focus-visible:outline-none">
-        <span className="block truncate font-medium text-ink">{e.subject || "(No title)"}</span>{" "}
-        <TimeLine event={e} compact={box.compact} label={label} />
+        <span className="block truncate font-medium text-ink">
+          {e.subject || "(No title)"}
+          {box.compact && tag ? (
+            <>
+              {" "}
+              <InlineLabel label={tag.label} />
+            </>
+          ) : null}
+        </span>{" "}
+        <TimeLine event={e} compact={box.compact} label={tag?.label} />
       </button>
       {e.household && !box.compact ? <HouseholdName household={e.household} /> : null}
       {endsHere ? (
@@ -342,7 +376,7 @@ function EditableEvent({
   );
 }
 
-/** The lock (for someone else's meeting) and the subject, linked to Outlook. */
+/** The lock (for someone else's meeting) and the subject, linked to the meeting in its own calendar (Outlook or Google Calendar). */
 function EventTitle({ event: e }: { event: WeekEvent }): ReactElement {
   const subject = e.subject || "(No title)";
   return (

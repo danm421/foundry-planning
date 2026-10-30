@@ -277,6 +277,8 @@ export function WorkspacePage({
   const shownWeek = onScreen && "events" in onScreen ? onScreen : null;
   const days = showWeekends ? 7 : 5;
   const labels = accounts.length >= 2 ? accountLabels(accounts) : null;
+  // With 2+ accounts each meeting names its address: the short label, and the full address on hover and in the editor.
+  const tags = labels && new Map(accounts.map((a) => [a.id, { label: labels.get(a.id) ?? a.email, email: a.email }]));
   // A meeting shows when its account is still connected and not hidden. The
   // server already leaves hidden accounts out; this covers the moment between
   // a Hide, or a Disconnect, and the re-read that follows it.
@@ -294,10 +296,7 @@ export function WorkspacePage({
 
   const [editor, setEditor] = useState<Editor | null>(null);
   // A new meeting can go on any connected account that isn't hidden.
-  const pickLabels = labels ?? accountLabels(accounts);
-  const pickable = accounts
-    .filter((a) => a.status === "connected" && !shownHidden.has(a.id))
-    .map((a) => ({ id: a.id, provider: a.provider, label: pickLabels.get(a.id) ?? a.email }));
+  const pickable = accounts.filter((a) => a.status === "connected" && !shownHidden.has(a.id));
 
   function updateEvents(change: (events: WeekEvent[]) => WeekEvent[]) {
     setResult((r) => (r && "events" in r ? { ...r, events: change(r.events) } : r));
@@ -518,7 +517,7 @@ export function WorkspacePage({
                   days={days}
                   events={visibleEvents}
                   today={shownWeek.today}
-                  labels={labels}
+                  tags={tags}
                   onMove={moveMeeting}
                   onOpen={openMeeting}
                 />
@@ -576,6 +575,7 @@ export function WorkspacePage({
         <EventEditorDialog
           mode="edit"
           provider={editor.event.provider}
+          calendar={tags?.get(editor.event.connectionId)?.email}
           initial={{
             subject: editor.event.subject,
             start: editor.event.start,
