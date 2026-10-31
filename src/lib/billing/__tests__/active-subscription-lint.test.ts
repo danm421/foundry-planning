@@ -446,6 +446,10 @@ describe("active-subscription lint", () => {
       // (src/lib/fact-finder/gate.ts), which calls requireActiveSubscription
       // before it returns ok — each route's own test pins the 403.
       if (body.includes("factFinderGate")) continue;
+      // The Holdings tab's import routes run `holdingsImportGate`
+      // (holdings/import/gate.ts), which calls requireActiveSubscriptionForFirm
+      // before it returns the account.
+      if (body.includes("holdingsImportGate")) continue;
       violations.push(rel);
     }
 

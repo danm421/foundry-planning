@@ -148,7 +148,10 @@ export function holdingRow(
         securityId: r.securityId,
         price: String(r.price ?? h.price ?? 0),
         priceAsOf: r.price != null ? r.asOf : null,
-        marketValue: null, // tickered: live price drives shares×price
+        // Tickered: live price drives shares×price — unless there are no shares
+        // to multiply (a sheet that gives only a value), when the stated value
+        // is all there is. The Holdings tab's row pick draws the same line.
+        marketValue: (h.shares ?? 0) > 0 || statementMv == null ? null : String(statementMv),
       }
     : {
         // Manual (bond / untickered fund / cash / unresolved ticker).

@@ -59,6 +59,7 @@ export const outputFileTracingIncludes: Record<string, string[]> = {
     // the same way (src/lib/fact-finder/worksheet/page-text.ts, look.ts).
     "/api/clients/*/imports/*/fact-finder/turn": OCR_CANVAS_FILES,
     "/api/clients/*/rebalance/extract-holdings": OCR_CANVAS_FILES,
+    "/api/clients/*/accounts/*/holdings/import/statement": OCR_CANVAS_FILES,
     "/api/clients/*/tax-returns": OCR_CANVAS_FILES,
     "/api/clients/*/tax-returns/*/documents": OCR_CANVAS_FILES,
     "/api/clients/*/tax-returns/*/second-read": OCR_CANVAS_FILES,

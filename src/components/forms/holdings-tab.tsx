@@ -4,6 +4,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AssetClassOption } from "./asset-mix-tab";
 import { HoldingOverrideEditor } from "./holding-override-editor";
+import { HoldingsImportDialog } from "./holdings-import-dialog";
+import { UploadIcon } from "@/components/icons";
 import { SecuritySearchDialog, SecuritySearchTrigger } from "./security-search-dialog";
 import { fieldLabelBaseClassName, inputBaseClassName, inputCompactClassName } from "./input-styles";
 import {
@@ -66,6 +68,7 @@ export function HoldingsTab({
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editingOverride, setEditingOverride] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
   /** Which ticker picker is open: the add row, or one saved holding. */
   const [searching, setSearching] = useState<
     { kind: "add" } | { kind: "row"; id: string } | null
@@ -290,6 +293,17 @@ export function HoldingsTab({
     }
   }
 
+  async function handleImported() {
+    setImporting(false);
+    if (!accountId) return;
+    try {
+      setRows(await listHoldings(clientId, accountId));
+    } catch {
+      setError("The holdings were imported, but couldn't be reloaded. Reopen the account to see them.");
+    }
+    onHoldingsChanged?.();
+  }
+
   async function handleOverrideSave(
     holdingId: string, overrides: { assetClassId: string; weight: number }[],
   ) {
@@ -378,6 +392,14 @@ export function HoldingsTab({
           >
             {adding ? "Adding…" : "+ Add"}
           </button>
+          <button
+            type="button"
+            onClick={() => setImporting(true)}
+            className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-sm)] border border-hair bg-card px-3 text-sm font-medium text-ink-2 transition-colors hover:border-hair-2 hover:text-ink"
+          >
+            <UploadIcon width={14} height={14} aria-hidden="true" />
+            Import
+          </button>
         </div>
         {/* Says out loud what the price lookup did — a silently blank Price box
             was being read as a broken field rather than an unpriced security. */}
@@ -395,7 +417,7 @@ export function HoldingsTab({
 
       {/* Holdings table */}
       {loaded && rows.length === 0 ? (
-        <p className="text-sm text-ink-3">No holdings yet. Add a ticker above.</p>
+        <p className="text-sm text-ink-3">No holdings yet. Add a ticker above, or import them from a spreadsheet or statement.</p>
       ) : (
         <div className="max-h-[min(46vh,340px)] overflow-auto rounded-md border border-hair">
           <table className="w-full text-sm">
@@ -494,6 +516,16 @@ export function HoldingsTab({
             else if (searchRow) void handleRowPick(searchRow, hit);
           }}
           onClose={() => setSearching(null)}
+        />
+      )}
+
+      {importing && (
+        <HoldingsImportDialog
+          clientId={clientId}
+          accountId={accountId}
+          existingCount={rows.length}
+          onImported={handleImported}
+          onClose={() => setImporting(false)}
         />
       )}
 

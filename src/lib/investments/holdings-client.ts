@@ -1,4 +1,8 @@
 import type { GrowthSource } from "./allocation";
+import type {
+  HoldingsImportMode, HoldingsImportSource, ImportHolding, SpreadsheetRead, StatementRead,
+} from "./holdings-import";
+import { stageFile } from "@/lib/uploads/stage-file";
 
 /** A holding row as returned by the enriched GET /holdings (Task 1). Numeric
  *  DB columns arrive as strings; the client keeps them as strings and parses
@@ -154,6 +158,37 @@ export async function searchSecurities(
     await fetch(url, { signal }),
   );
   return { hits: body.results ?? [], relaxedTo: body.relaxedTo ?? null };
+}
+
+/** Read positions off a .xlsx or .csv by its column headers. Writes nothing. */
+export async function readHoldingsSpreadsheet(
+  clientId: string, accountId: string, file: File,
+): Promise<SpreadsheetRead> {
+  const body = new FormData();
+  body.set("file", file);
+  return json(await fetch(`${base(clientId, accountId)}/import/spreadsheet`, { method: "POST", body }));
+}
+
+/** Upload a statement straight to storage, then have it read for positions.
+ *  Writes nothing. */
+export async function readHoldingsStatement(
+  clientId: string, accountId: string, file: File,
+): Promise<StatementRead> {
+  const stagedPathname = await stageFile(`${base(clientId, accountId)}/import/statement/upload-token`, file);
+  return json(
+    await fetch(
+      `${base(clientId, accountId)}/import/statement`,
+      jsonInit("POST", { stagedPathname, filename: file.name }),
+    ),
+  );
+}
+
+/** Save reviewed positions onto the account, replacing its holdings or adding to them. */
+export async function importHoldings(
+  clientId: string, accountId: string,
+  input: { source: HoldingsImportSource; mode: HoldingsImportMode; holdings: ImportHolding[] },
+): Promise<void> {
+  await json(await fetch(`${base(clientId, accountId)}/import`, jsonInit("POST", input)));
 }
 
 export interface HoldingRefreshSummary {

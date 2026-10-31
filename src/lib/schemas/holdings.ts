@@ -1,11 +1,17 @@
 import { z } from "zod";
 import { uuidLike } from "./common";
+import {
+  HOLDINGS_IMPORT_SOURCES,
+  MAX_IMPORT_HOLDINGS,
+  MAX_NAME,
+  MAX_TICKER,
+} from "@/lib/investments/holdings-import";
 
 export const holdingCreateSchema = z
   .object({
     securityId: uuidLike.nullish(),
-    displayTicker: z.string().trim().min(1).max(32).nullish(),
-    displayName: z.string().trim().max(200).nullish(),
+    displayTicker: z.string().trim().min(1).max(MAX_TICKER).nullish(),
+    displayName: z.string().trim().max(MAX_NAME).nullish(),
     shares: z.number().min(0),
     price: z.number().min(0),
     priceAsOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
@@ -50,6 +56,34 @@ export const securitySearchSchema = z
   .object({ q: z.string().trim().min(MIN_SEARCH_QUERY).max(120) })
   .strict();
 export type SecuritySearchQuery = z.infer<typeof securitySearchSchema>;
+
+/** One position of a Holdings-tab import — `ImportHolding`, as the read routes returned it. */
+const importHoldingSchema = z
+  .object({
+    ticker: z.string().trim().toUpperCase().min(1).max(MAX_TICKER).optional(),
+    name: z.string().trim().min(1).max(MAX_NAME).optional(),
+    shares: z.number().min(0).optional(),
+    price: z.number().min(0).optional(),
+    marketValue: z.number().min(0).optional(),
+    costBasis: z.number().min(0).optional(),
+  })
+  .strict()
+  .refine((h) => h.ticker != null || h.name != null, { message: "Each holding needs a ticker or a name" });
+
+export const holdingsImportSchema = z
+  .object({
+    source: z.enum(HOLDINGS_IMPORT_SOURCES),
+    mode: z.enum(["replace", "append"]),
+    holdings: z.array(importHoldingSchema).min(1).max(MAX_IMPORT_HOLDINGS),
+  })
+  .strict();
+
+export const holdingsStatementReadSchema = z
+  .object({
+    stagedPathname: z.string().min(1).max(512),
+    filename: z.string().trim().min(1).max(255),
+  })
+  .strict();
 
 export type HoldingCreateBody = z.infer<typeof holdingCreateSchema>;
 export type HoldingUpdateBody = z.infer<typeof holdingUpdateSchema>;
